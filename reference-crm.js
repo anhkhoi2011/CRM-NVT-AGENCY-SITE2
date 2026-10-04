@@ -1384,7 +1384,7 @@
   function catalog(){
     ensureProductImageStyles();
     const body=q('#tab-products tbody');
-    table(body,data.products.map(p=>[p.name,p.sku,p.type==='RENTAL'?'Bên Thuê':'Bên Bán',p.type==='RENTAL'?p.rentalMonths+' tháng':'Vĩnh viễn',money(p.price),(Number(p.vatRate??.1)*100).toFixed(2).replace(/\.00$/,'')+'% ('+money(Math.round(p.price*Number(p.vatRate??.1)))+')',p.active===false?'Tạm dừng':p.type==='RENTAL'?'Đang cho thuê':'Đang bán','']));
+    table(body,data.products.map(p=>[p.name,p.sku,PRODUCT_KINDS.find(([kind])=>kind===productKind(p))?.[1]||'Khác',p.type==='RENTAL'?p.rentalMonths+' tháng':'Vĩnh viễn',money(p.price),(Number(p.vatRate??.1)*100).toFixed(2).replace(/\.00$/,'')+'% ('+money(Math.round(p.price*Number(p.vatRate??.1)))+')',p.active===false?'Tạm dừng':p.type==='RENTAL'?'Đang cho thuê':'Đang bán','']));
     Array.from(body.rows).forEach((row,i)=>{const p=data.products[i],button=row.querySelector('button');if(button){button.removeAttribute('onclick');button.onclick=()=>productModal(p.id);button.disabled=data.user.role!=='ADMIN';}const chip=row.cells[6]?.querySelector('.chip');if(chip)chip.className='chip '+(p.active===false?'chip-warm':'chip-green');});
     Array.from(body.rows).forEach((row,i)=>{const p=data.products[i],productCell=row.cells[0],nameHost=productCell?.querySelector('.cell-main')||productCell,heading=nameHost?.querySelector('b')||nameHost?.querySelector('strong')||nameHost;if(!p||!heading||heading.querySelector('.reference-product-thumb'))return;const label=document.createElement('span');label.textContent=p.name||'';const thumb=document.createElement(p.imageData?'img':'span');thumb.className='reference-product-thumb';if(p.imageData){thumb.src=p.imageData;thumb.alt='';}else thumb.textContent=String(p.name||'?').trim().slice(0,1).toUpperCase()||'?';const entry=document.createElement('div');entry.className='reference-product-name';entry.append(thumb,label);if(heading===nameHost)nameHost.replaceChildren(entry);else heading.replaceWith(entry);});
     const buttons=qa('#tab-products .headline-row button');buttons.forEach(n=>n.removeAttribute('onclick'));
@@ -2323,7 +2323,7 @@
 
     let iframe = host.querySelector('#accountingIframe');
     if (!iframe) {
-      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261004-order-runtime-11" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
+      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261004-product-groups-12" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
       iframe = host.querySelector('#accountingIframe');
       iframe?.addEventListener('load',()=>{host.classList.add('is-ready');syncMembersToAccountingMindmap();},{once:true});
     } else {
