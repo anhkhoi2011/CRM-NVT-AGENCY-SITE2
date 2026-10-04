@@ -1907,3 +1907,30 @@ test('Course trainer configurations persist separately by product plus cohort fo
  restored=await f.api.read(admin);assert.equal(restored.state.courseConfigs.find(x=>x.productId==='p1'&&x.courseKey==='K03').trainerIds[0],'replacement');assert.equal(restored.state.courseConfigs.find(x=>x.productId==='p2'&&x.courseKey==='K03').trainerIds[0],'t2');assert.equal(restored.state.courseConfigs.find(x=>x.productId==='p1'&&x.courseKey==='K01').trainerIds[0],'t3');
  await assert.rejects(()=>api.saveCourseConfig({productId:'missing',courseKey:'K03'}),/Sản phẩm/);
 });
+
+test('Admin backfill edits one daily record and validates input',async()=>{
+ const c=referenceBridge();vm.runInContext("state.members=[{id:'staff',name:'Staff',role:'ACCOUNTING'}];state.attendance=[];state.settings.attendanceDeadline='09:00';",c);
+ await c.window.crmApi.saveAttendance({accountId:'staff',date:'2026-01-02',time:'09:15',note:'Makeup'});
+ await c.window.crmApi.saveAttendance({accountId:'staff',date:'2026-01-02',time:'08:45',note:'Correct time'});
+ assert.equal(vm.runInContext('state.attendance.length',c),1);assert.equal(vm.runInContext('state.attendance[0].lateMinutes',c),0);
+ assert.equal(vm.runInContext('state.attendance[0].editedById',c),'admin');assert.equal(vm.runInContext('state.attendance[0].status',c),'ONTIME');
+ for(const input of [{date:'2026-02-30',time:'09:00'},{date:'2099-01-01',time:'09:00'},{date:'2026-01-02',time:'25:00'}])await assert.rejects(c.window.crmApi.saveAttendance({accountId:'staff',note:'Reason',...input}));
+ vm.runInContext("currentAccount.role='SALE'",c);await assert.rejects(c.window.crmApi.saveAttendance({accountId:'staff',date:'2026-01-02',time:'09:00',note:'Reason'}));
+});
+test('Admin attendance SQL roundtrip keeps correction over legacy Telegram',async()=>{
+ const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',active:1});
+ const record={id:'ATT-backfill',accountId:'sale',name:'Sale',teamId:'',ip:'Admin ghi bù',ipValid:true,date:'2026-01-02',at:'2026-01-02 09:15:00',late:true,lateMinutes:15,note:'Makeup',editedById:'admin',editedBy:'Admin'};
+ const first=await f.api.write(admin,'admin-backfill',[change('attendance',record)]);
+ const updated={...first.state.attendance[0],at:'2026-01-02 08:30:00',late:false,lateMinutes:0,note:'Correct time'};
+ await f.api.write(admin,'admin-edit',[change('attendance',updated,first.versions['attendance/'+record.id])]);
+ f.db.staffAttendance.push({id:'legacy-different-id',user_id:'sale',attendance_date:record.date,check_in_time:'2026-01-02 10:00:00',status:'LATE'});
+ const read=await f.api.read(admin);assert.equal(read.state.attendance.length,1);assert.equal(read.state.attendance[0].at,updated.at);assert.equal(read.state.attendance[0].note,'Correct time');
+ await assert.rejects(f.api.write(sale,'sale-edit',[change('attendance',{...read.state.attendance[0],note:'Self edit'},read.versions['attendance/'+record.id])]),e=>e.status===403);
+ await assert.rejects(f.api.write(admin,'duplicate-admin',[change('attendance',{...updated,id:'duplicate'})]),e=>e.status===409);
+});
+test('Backfill save failure retains draft and retry does not duplicate',async()=>{
+ const c=referenceBridge();vm.runInContext("state.members=[{id:'staff',name:'Sale',role:'SALE'}];state.attendance=[];let calls=0;flushServerPersistence=async()=>++calls!==2;",c);
+ const input={accountId:'staff',date:'2026-01-03',time:'08:30',note:'Makeup'};
+ await assert.rejects(c.window.crmApi.saveAttendance(input));assert.equal(vm.runInContext('state.attendance.length',c),1);
+ await c.window.crmApi.saveAttendance(input);assert.equal(vm.runInContext('state.attendance.length',c),1);
+});

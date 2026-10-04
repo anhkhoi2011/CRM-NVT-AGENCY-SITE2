@@ -93,7 +93,24 @@
   window.crmApi = {
     openWorkflow,workflowRoot,workflowEvent,
     exportData(kind,start,end){requireRole(['ADMIN','LEADER','MARKETING','ACCOUNTING']);const methods={customers:exportCustomers,orders:exportOrders,revenue:exportRevenue,marketing:exportMarketing,team:exportTeam,reports:exportFullReport};if(!methods[kind])throw Error('Loại xuất không hợp lệ.');if(start&&end){customDateStart=start;customDateEnd=end;datePreset='CUSTOM';}methods[kind]();},
-    async attendanceSettings(input){requireRole(['ADMIN']);return persist(()=>{const time=cleanClockTime(input.deadline,'');if(!time)throw Error('Giờ vào làm không hợp lệ.');state.settings.attendanceIp=String(input.ip||'').slice(0,200);state.settings.attendanceDeadline=time;state.settings.acceptTimeoutHours=24;return {ok:true};},'attendance-settings');},
+    async attendanceSettings(input){requireRole(['ADMIN']);return persist(()=>{const time=cleanClockTime(input.deadline,'');if(!time)throw Error('Giờ vào làm không hợp lệ.');state.settings.attendanceDeadline=time;state.settings.acceptTimeoutHours=24;return {ok:true};},'attendance-settings');},
+    async saveAttendance(input){
+      requireRole(['ADMIN']);
+      return persist(()=>{
+        const member=state.members.find(m=>m.id===input.accountId);
+        if(!member)throw Error('Nhân viên không tồn tại.');
+        const date=String(input.date||''),time=String(input.time||'');
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date||date>dayIso(0))throw Error('Chọn ngày hợp lệ, không sau hôm nay.');
+        if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('Giờ điểm danh không hợp lệ.');
+        const note=String(input.note||'').trim();if(!note||note.length>300)throw Error('Nhập lý do điều chỉnh, tối đa 300 ký tự.');
+        const previous=state.attendance.find(r=>r.accountId===member.id&&r.date===date);
+        const lateMinutes=Math.max(0,timeToMinutes(time)-timeToMinutes(state.settings.attendanceDeadline||'09:00'));
+        const next={...previous,id:previous?.id||'ATT-'+date+'-'+member.id,accountId:member.id,name:member.name,teamId:member.teamId||'',date,at:date+' '+time+':00',ip:previous?.ip||'Admin ghi bù',ipValid:previous?.ipValid!==false,late:lateMinutes>0,status:lateMinutes>0?'LATE':'ONTIME',lateMinutes,note,editedBy:currentAccount.name,editedById:currentAccount.id,editedAt:stamp(),source:previous?.source||'ADMIN'};
+        if(previous)state.attendance[state.attendance.indexOf(previous)]=next;else state.attendance.unshift(next);
+        audit(previous?'UPDATE_ATTENDANCE':'MAKEUP_ATTENDANCE',next.id,member.name+' · '+next.at+' · '+note);
+        return {ok:true,id:next.id};
+      },'save-attendance:'+input.accountId+':'+input.date);
+    },
     async checkIn(){requireRole(['ADMIN','MANAGER','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED']);return persist(()=>{const changed=checkInToday({save:false,render:false});return {ok:true,alreadyCheckedIn:changed===false};},'check-in');},
     async saveBrokerageMetric(metric){
       requireRole(['ADMIN','ACCOUNTING']);

@@ -30,7 +30,7 @@ function fixture(shared={claims:new Map(),attendance:new Map(),changes:new Set()
  let releaseLock;
  const connection={execute,query:async()=>[[]],beginTransaction:async()=>{await shared.lock;shared.lock=new Promise(r=>{releaseLock=r;});},commit:async()=>{},rollback:async()=>{},release(){events.push('release');releaseLock?.();}};
  const context={module:{exports:{}},console,AbortSignal,Buffer,FormData,Blob,process:{env:{TELEGRAM_BOT_TOKEN:'fake-token',TELEGRAM_CHECKIN_GAP_MS:'0'}},setTimeout,clearTimeout,fetch:async(url,options)=>{const method=url.split('/').pop();events.push(method);if(slowAnswer&&method==='answerCallbackQuery')return new Promise(()=>{});if(network&&method==='sendMessage'){sent.push({method,...JSON.parse(options.body)});throw Error('ETIMEDOUT');}sent.push({method,...JSON.parse(options.body)});return {json:async()=>failing&&method==='sendMessage'?{ok:false,error_code:429,parameters:{retry_after:0}}:{ok:true,result:{message_id:1}}};},require(name){
-  if(name==='./db.js')return {pool:{execute,getConnection:async()=>connection},telegramPool:{getConnection:async()=>connection},dbQuery:async(sql)=>{events.push('lookup');if(lookupFailure)throw Error('DB_QUERY_TIMEOUT');return [user];}};
+  if(name==='./db.js')return {pool:{execute,getConnection:async()=>connection},telegramPool:{getConnection:async()=>connection},dbQuery:async(sql)=>{events.push('lookup');if(lookupFailure)throw Error('DB_QUERY_TIMEOUT');if(shared.lookupFailures>0){shared.lookupFailures--;throw Object.assign(Error('temporary lookup timeout'),{code:'DB_QUERY_TIMEOUT'});}return shared.staff || [user];}};
   if(name==='./support-chat.cjs')return {};
   return require(name);
  }};
@@ -43,16 +43,11 @@ test('Repeated scheduler calls and worker restarts send only one reminder per re
  const b=fixture(a.shared);await Promise.all([a.api.sendMorningCheckinAlert(),b.api.sendMorningCheckinAlert()]);
  assert.equal(a.sent.length+b.sent.length,1);assert.match(a.sent[0].text,/NHẮC ĐIỂM DANH/);
 });
-test('Telegram 429 is retried after retry_after, then delivered exactly once with no later resend',async()=>{
+test('Rejected reminders are attempted once per day, including after worker restart',async()=>{
  const f=fixture();f.fail(true);assert.equal((await f.api.sendMorningCheckinAlert()).failed,1);
- f.fail(false);assert.equal((await f.api.sendMorningCheckinAlert()).failed,0);
- for(let i=0;i<11;i++)await f.api.sendMorningCheckinAlert(); // 09:00-09:10 quét mỗi phút
- const delivered=f.sent.length-2; // 2 lần đầu bị Telegram từ chối (không tới người dùng)
- assert.equal(delivered,1);const claim=[...f.shared.claims.values()][0];assert.equal(claim.status,'SENT');assert.equal(claim.messageId,1);
-});
-test('Rejected reminders stop after a few attempts instead of resending all morning',async()=>{
- const f=fixture();f.fail(true);for(let i=0;i<11;i++)await f.api.sendMorningCheckinAlert();
- assert.equal(f.sent.length,6);assert.equal([...f.shared.claims.values()][0].attempts,3);
+ f.fail(false);for(let i=0;i<11;i++)await f.api.sendMorningCheckinAlert();
+ const next=fixture(f.shared);await next.api.sendMorningCheckinAlert();
+ assert.equal(f.sent.length+next.sent.length,1);assert.equal([...f.shared.claims.values()][0].attempts,1);
 });
 test('Network timeout keeps the reminder reserved because it may already be delivered',async()=>{
  const f=fixture();f.network(true);await f.api.sendMorningCheckinAlert();f.network(false);
@@ -100,3 +95,20 @@ test('Transient database timeout during check-in is retried automatically',async
  const f=fixture();f.shared.attendanceFailures=1;await f.api.handleTelegramUpdate(callback);
  assert.equal(f.shared.attendance.size,1);assert.match(f.sent.at(-1).text,/Đã đồng bộ vào CRM/);
 });
+
+test('Several accounts linked to one chat receive only one daily reminder across concurrent workers',async()=>{
+ const shared={claims:new Map(),attendance:new Map(),changes:new Set(),staff:[{id:'a',name:'A',telegram_chat_id:'123'},{id:'b',name:'B',telegram_chat_id:'123'},{id:'c',name:'C',telegram_chat_id:'456'}]};
+ const a=fixture(shared),b=fixture(shared);await Promise.all([a.api.sendMorningCheckinAlert(),b.api.sendMorningCheckinAlert()]);
+ const sent=[...a.sent,...b.sent];assert.equal(sent.filter(m=>String(m.chat_id)==='123').length,1);assert.equal(sent.filter(m=>String(m.chat_id)==='456').length,1);
+});
+test('Shared support token cannot replace system webhook or drop check-in callbacks',async()=>{
+ const f=fixture();const result=await f.api.setSupportWebhook('https://example.test/support');assert.equal(result.skipped,true);assert.equal(f.sent.length,0);
+ await f.api.handleTelegramUpdate(callback,'support');assert.equal(f.shared.attendance.size,1);assert.equal(f.events[0],'answerCallbackQuery');
+});
+test('New calendar day permits one new reminder while same-day calls remain suppressed',async()=>{
+ const f=fixture();const day=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Ho_Chi_Minh'});
+ f.shared.claims.set('checkin:2000-01-01:sale-1',{status:'SENT'});f.shared.claims.set('checkin-chat:2000-01-01:123',{status:'SENT'});
+ await f.api.sendMorningCheckinAlert();await f.api.sendMorningCheckinAlert();assert.equal(f.sent.length,1);assert.equal(f.shared.claims.get('checkin:'+day+':sale-1').status,'SENT');
+});
+
+test('Transient linked-account lookup failure retries before reporting check-in failure',async()=>{const f=fixture();f.shared.lookupFailures=1;await f.api.handleTelegramUpdate(callback);assert.equal(f.shared.attendance.size,1);assert.equal(f.sent.filter(item=>item.method==='sendMessage').length,0);});

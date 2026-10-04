@@ -191,6 +191,8 @@ async function mirrorAttendanceRecords(c,data){
   if(!date||date.length!==10)continue;
   const id=String(row.id||`ATT-${date}-${row.user_id}`),member=data.members.get(String(row.user_id));
   const record=normalize(id,{id,accountId:String(row.user_id),date,at:rawAt||`${date} 00:00:00`,status:row.status,ip:'Telegram',note:'Điểm danh qua Telegram'},member);
+  // Preserve canonical CRM records, including Admin corrections to legacy check-ins.
+  if([...data.attendance.values()].some(r=>r.accountId===record.accountId&&r.date===date))continue;
   if(canonical(data.attendance.get(id))!==canonical(record))changedRecords.set(id,record);
   data.attendance.set(id,record);
  }
@@ -984,6 +986,17 @@ async function writeLocked(user,requestId,changes,options={}){
    if(key==='members'&&old?.role==='ADMIN'&&old.active!==false&&(!value||value.role!=='ADMIN'||value.active===false)&&[...data.members.values()].filter(r=>r.role==='ADMIN'&&r.active!==false).length<=1)error(400,'Phải giữ ít nhất một Admin hoạt động');
    if(revision(old===undefined?undefined:publicValue(user,key,old,data))!==base)error(409,`Bản ghi ${key}/${id} đã được máy khác cập nhật. Xuất bản nháp rồi tải lại.`);
    authorize(user,key,key==='settings'&&old?publicValue(user,key,old,data):old,change.value,key==='customers'?data:prospective);
+   if(key==='attendance'&&value&&user.role==='ADMIN'&&value.editedById){
+    const date=String(value.date||''),at=String(value.at||'');
+    if(!prospective.members.has(value.accountId))error(400,'Nhân viên không tồn tại');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date||date>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Ho_Chi_Minh'})||at.slice(0,10)!==date||!/^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d:00$/.test(at))error(400,'Ngày giờ điểm danh không hợp lệ');
+    if(old&&(old.accountId!==value.accountId||old.date!==value.date))error(400,'Không được chuyển bản ghi sang nhân viên hoặc ngày khác');
+    if(value.editedById!==user.id||typeof value.note!=='string'||!value.note.trim()||value.note.length>300)error(400,'Thông tin điều chỉnh không hợp lệ');
+    const minutes=t=>{const [h,m]=t.split(':').map(Number);return h*60+m;};
+    const lateMinutes=Math.max(0,minutes(at.slice(11,16))-minutes(data.settings.get('$')?.attendanceDeadline||'09:00'));
+    if(value.lateMinutes!==lateMinutes||value.late!==(lateMinutes>0))error(400,'Kết quả đi muộn không khớp giờ điểm danh');
+    if(!old&&attendanceDays.has(JSON.stringify([value.accountId,date])))error(409,'Ngày này vừa có điểm danh. Tải lại trước khi sửa.');
+   }
    if(key==='attendance'&&!old&&change.value){
     const dayKey=JSON.stringify([change.value.accountId,change.value.date]);
     if(attendanceDays.has(dayKey)){duplicateAttendance.add(change);continue;}

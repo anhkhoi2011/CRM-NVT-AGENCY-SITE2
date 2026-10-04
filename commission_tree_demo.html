@@ -322,6 +322,20 @@
  font-size: 11px;
  color: var(--text-faint);
  }
+ .course-stat-controls {
+ display: grid;
+ grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+ gap: 6px;
+ margin-top: 2px;
+ }
+ .course-stat-controls select {
+ width: 100%; min-width: 0; height: 30px; padding: 0 7px;
+ border: 1px solid #ddd6fe; border-radius: 6px;
+ background: #faf5ff; color: #5b21b6;
+ font-size: 11px; font-weight: 700; outline: 0;
+ }
+ .course-stat-controls select:focus { border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139,92,246,.12); }
+ .course-stat-empty { color: #94a3b8; font-style: italic; }
 
  /* Role Badges Lv1 - Lv2 - Lv3 - Minimalist Luxury */
  .role-badge {
@@ -1449,12 +1463,16 @@ body.accounting-modal-open { overflow: hidden; }
         <!-- Ô 2.2: Doanh Thu Khóa Học -->
         <div class="kpi-card purple">
           <div class="kpi-label">Doanh Thu Khóa Học</div>
-          <div class="kpi-val" id="statTotalCourseRev" style="color:#7c3aed;">0 đ</div>
-          <div class="kpi-sub" id="statCourseDetail">
-            <span>Đào tạo: <b id="statCourseTrainerShare">0 đ</b></span>
-            <span>•</span>
-            <span>Công ty: <b id="statCourseCompanyShare">0 đ</b></span>
+          <div class="course-stat-controls">
+            <select id="courseRevenueViewMode" aria-label="Cách xem doanh thu khóa học" onchange="setCourseRevenueViewMode(this.value)">
+              <option value="TOTAL">Tổng quan</option>
+              <option value="TRAINER">Theo người đào tạo</option>
+              <option value="COHORT">Theo khóa</option>
+            </select>
+            <select id="courseRevenueViewTarget" aria-label="Đối tượng xem doanh thu khóa học" onchange="setCourseRevenueViewTarget(this.value)" hidden></select>
           </div>
+          <div class="kpi-val" id="statTotalCourseRev" style="color:#7c3aed;">0 đ</div>
+          <div class="kpi-sub" id="statCourseDetail">Đào tạo: 0 đ • Công ty: 0 đ</div>
         </div>
 
         <!-- Ô 2.3: Doanh Thu Bộ Chỉ Báo -->
@@ -4554,29 +4572,90 @@ function renderMindmapTree() {
     if (subCompanyKeepEl) subCompanyKeepEl.textContent = `Công ty giữ lại: ${formatMoney(COURSES_DATA.reduce((sum, c) => sum + courseCommissionSummary(c).company, 0))}`;
   }
 
+  let courseRevenueViewMode = 'TOTAL';
+  let courseRevenueViewTarget = '';
+
+  function setCourseRevenueViewMode(mode) {
+    courseRevenueViewMode = ['TOTAL','TRAINER','COHORT'].includes(mode) ? mode : 'TOTAL';
+    courseRevenueViewTarget = '';
+    updateCourseStatBox();
+  }
+
+  function setCourseRevenueViewTarget(target) {
+    courseRevenueViewTarget = String(target || '');
+    updateCourseStatBox();
+  }
+
   function updateCourseStatBox() {
-    let courseRev = 0;
-    let trainerComm = 0;
-    let companyShare = 0;
+    const courses = COURSES_DATA.filter(course => course.category === 'course');
+    const modeSelect = document.getElementById('courseRevenueViewMode');
+    const targetSelect = document.getElementById('courseRevenueViewTarget');
+    const valueElement = document.getElementById('statTotalCourseRev');
+    const detailElement = document.getElementById('statCourseDetail');
+    if (modeSelect) modeSelect.value = courseRevenueViewMode;
 
-    let filteredCourses = COURSES_DATA.filter(c => c.category === 'course');
+    const trainerMap = new Map();
+    const cohortKeys = new Set();
+    for (const course of courses) {
+      if (course.cohortKey) cohortKeys.add(String(course.cohortKey));
+      for (const trainer of course.trainers || []) {
+        const id = String(trainer.id);
+        if (!trainerMap.has(id)) trainerMap.set(id, trainer.name || id);
+      }
+    }
 
+    let targets = [];
+    if (courseRevenueViewMode === 'TRAINER') {
+      targets = [...trainerMap].map(([value,label]) => ({value,label})).sort((a,b) => a.label.localeCompare(b.label,'vi',{numeric:true}));
+    } else if (courseRevenueViewMode === 'COHORT') {
+      targets = [...cohortKeys].sort((a,b) => a.localeCompare(b,'vi',{numeric:true})).map(value => ({value,label:value}));
+    }
 
-    filteredCourses.forEach(c => {
-      const rev = (c.totalRevenue || 0);
-      courseRev += rev;
-      trainerComm += courseCommissionSummary(c).trainer;
-      companyShare += courseCommissionSummary(c).company;
-    });
+    if (targetSelect) {
+      targetSelect.hidden = courseRevenueViewMode === 'TOTAL';
+      if (!targetSelect.hidden) {
+        const previous = courseRevenueViewTarget;
+        targetSelect.replaceChildren();
+        if (!targets.length) targetSelect.add(new Option(courseRevenueViewMode === 'TRAINER' ? 'Chưa có người đào tạo' : 'Chưa có khóa', ''));
+        else targets.forEach(target => targetSelect.add(new Option(target.label,target.value)));
+        courseRevenueViewTarget = targets.some(target => target.value === previous) ? previous : (targets[0]?.value || '');
+        targetSelect.value = courseRevenueViewTarget;
+      }
+    }
 
-    const statCourseRevEl = document.getElementById('statTotalCourseRev');
-    if (statCourseRevEl) statCourseRevEl.textContent = formatMoney(courseRev);
+    if (courseRevenueViewMode === 'TRAINER') {
+      const trainerId = courseRevenueViewTarget;
+      const assigned = courses.filter(course => (course.trainers || []).some(trainer => String(trainer.id) === trainerId));
+      const revenue = assigned.reduce((sum,course) => sum + (Number(course.totalRevenue) || 0), 0);
+      const commission = assigned.reduce((sum,course) => {
+        const trainer = (course.trainers || []).find(item => String(item.id) === trainerId);
+        return sum + Math.round((Number(course.totalRevenue) || 0) * Number(trainer?.rate ?? course.rateTrainer ?? 15) / 100);
+      }, 0);
+      if (valueElement) valueElement.textContent = formatMoney(revenue);
+      if (detailElement) detailElement.innerHTML = trainerId
+        ? 'Hoa hồng đào tạo: <b>' + formatMoney(commission) + '</b> • ' + assigned.length + ' sản phẩm–khóa'
+        : '<span class="course-stat-empty">Chưa cấu hình người đào tạo</span>';
+      return;
+    }
 
-    const statTrainerShareEl = document.getElementById('statCourseTrainerShare');
-    if (statTrainerShareEl) statTrainerShareEl.textContent = formatMoney(trainerComm);
+    if (courseRevenueViewMode === 'COHORT') {
+      const cohort = courseRevenueViewTarget;
+      const selected = courses.filter(course => String(course.cohortKey || '') === cohort);
+      const revenue = selected.reduce((sum,course) => sum + (Number(course.totalRevenue) || 0), 0);
+      const trainerCommission = selected.reduce((sum,course) => sum + courseCommissionSummary(course).trainer, 0);
+      const trainerNames = [...new Set(selected.flatMap(course => (course.trainers || []).map(trainer => trainer.name || trainer.id)))];
+      if (valueElement) valueElement.textContent = formatMoney(revenue);
+      if (detailElement) detailElement.innerHTML = cohort
+        ? selected.length + ' sản phẩm • Đào tạo: <b>' + formatMoney(trainerCommission) + '</b> • ' + (trainerNames.length ? trainerNames.join(', ') : 'Chưa gán')
+        : '<span class="course-stat-empty">Chưa có dữ liệu ở cột Khóa</span>';
+      return;
+    }
 
-    const statCompanyShareEl = document.getElementById('statCourseCompanyShare');
-    if (statCompanyShareEl) statCompanyShareEl.textContent = formatMoney(companyShare);
+    const revenue = courses.reduce((sum,course) => sum + (Number(course.totalRevenue) || 0), 0);
+    const trainerCommission = courses.reduce((sum,course) => sum + courseCommissionSummary(course).trainer, 0);
+    const companyShare = courses.reduce((sum,course) => sum + courseCommissionSummary(course).company, 0);
+    if (valueElement) valueElement.textContent = formatMoney(revenue);
+    if (detailElement) detailElement.innerHTML = 'Đào tạo: <b>' + formatMoney(trainerCommission) + '</b> • Công ty: <b>' + formatMoney(companyShare) + '</b>';
   }
 
   // ====================================================================
@@ -7521,7 +7600,7 @@ window.printOrderInvoice = printOrderInvoice;
     for (const product of state.products) {
       ensureGroup(product);
       if (String(product.kind).toUpperCase() === 'COURSE') {
-        const cohorts = new Set([...(product.courseKeys?.length ? product.courseKeys : (state.courseKeys || [])), ...state.courseConfigs.filter(c => String(c.productId) === String(product.id)).map(c => c.courseKey)]);
+        const cohorts = new Set([...(state.courseKeys || []), ...state.courseConfigs.filter(c => String(c.productId) === String(product.id)).map(c => c.courseKey)]);
         for (const cohort of cohorts) if (String(cohort).trim()) ensureGroup(product, String(cohort).trim());
       }
     }

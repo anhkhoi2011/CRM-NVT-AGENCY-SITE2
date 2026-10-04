@@ -207,7 +207,24 @@ test('Training table renders all products and requires cohort selection before o
  const body=element();let opened='';c.document={getElementById:()=>body,createElement:element};c.Option=function(label,value){return {label,value};};c.currentTrainingModalCategory='ALL';c.formatMoney=String;c.openCoursePersonnelDetailModal=id=>opened=id;
  vm.runInContext(html.slice(html.indexOf('  const trainingProductSelections'),html.indexOf('  function onCourseRatesChange(')),c);c.renderTrainingConfigTable();assert.equal(body.children.length,4);
  const first=body.children[0],second=body.children[1];assert.match(first.innerHTML,/Course One/);assert.match(second.innerHTML,/Course Two/);
- const select=first.querySelector('.training-cohort-cell').children[0];assert.deepEqual(select.children.map(o=>o.label),['— Chọn khóa —','K01','K03']);assert.equal(first.querySelector('button').disabled,true);
- select.value=select.children[2].value;select.onchange();assert.equal(first.querySelector('button').disabled,false);first.querySelector('button').onclick();assert.equal(opened,select.value);assert.equal(second.querySelector('button').disabled,true);
+ const select=first.querySelector('.training-cohort-cell').children[0];assert.deepEqual(select.children.map(o=>o.label),['— Chọn khóa —','K01','K02','K03']);assert.equal(first.querySelector('button').disabled,true);
+ select.value=select.children[3].value;select.onchange();assert.equal(first.querySelector('button').disabled,false);first.querySelector('button').onclick();assert.equal(opened,select.value);assert.equal(second.querySelector('button').disabled,true);
  assert.equal(body.children[2].querySelector('.training-cohort-cell').children.length,0);assert.equal(body.children[2].querySelector('button').disabled,false);
+});
+
+test('Course revenue KPI switches between total, trainer and cohort views',()=>{
+ const source=html.slice(html.indexOf("  let courseRevenueViewMode = 'TOTAL';"),html.indexOf('  // ====================================================================',html.indexOf("  let courseRevenueViewMode = 'TOTAL';")));
+ function select(){return {value:'',hidden:false,options:[],replaceChildren(){this.options=[];},add(option){this.options.push(option);}};}
+ const nodes={courseRevenueViewMode:select(),courseRevenueViewTarget:select(),statTotalCourseRev:{textContent:''},statCourseDetail:{innerHTML:''}};
+ const ctx=vm.createContext({COURSES_DATA:[
+  {id:'a',category:'course',cohortKey:'K01',totalRevenue:1000000,rateTrainer:15,trainers:[{id:'t1',name:'Trainer One',rate:10}]},
+  {id:'b',category:'course',cohortKey:'K03',totalRevenue:2000000,rateTrainer:15,trainers:[{id:'t2',name:'Trainer Two',rate:20}]},
+  {id:'c',category:'indicator',totalRevenue:9000000,trainers:[{id:'t1',name:'Trainer One',rate:10}]}
+ ],document:{getElementById:id=>nodes[id]},Option:function(label,value){return {label,value};},formatMoney:value=>String(value),courseCommissionSummary:course=>({trainer:(course.trainers||[]).reduce((sum,t)=>sum+course.totalRevenue*t.rate/100,0),company:0})});
+ vm.runInContext(source,ctx);ctx.updateCourseStatBox();assert.equal(nodes.statTotalCourseRev.textContent,'3000000');assert.match(nodes.statCourseDetail.innerHTML,/500000/);
+ ctx.setCourseRevenueViewMode('TRAINER');assert.deepEqual(nodes.courseRevenueViewTarget.options.map(o=>o.label),['Trainer One','Trainer Two']);assert.equal(nodes.statTotalCourseRev.textContent,'1000000');assert.match(nodes.statCourseDetail.innerHTML,/100000/);
+ ctx.setCourseRevenueViewTarget('t2');assert.equal(nodes.statTotalCourseRev.textContent,'2000000');assert.match(nodes.statCourseDetail.innerHTML,/400000/);
+ ctx.setCourseRevenueViewMode('COHORT');assert.deepEqual(nodes.courseRevenueViewTarget.options.map(o=>o.label),['K01','K03']);assert.equal(nodes.statTotalCourseRev.textContent,'1000000');assert.match(nodes.statCourseDetail.innerHTML,/Trainer One/);
+ ctx.setCourseRevenueViewTarget('K03');assert.equal(nodes.statTotalCourseRev.textContent,'2000000');assert.match(nodes.statCourseDetail.innerHTML,/Trainer Two/);
+ ctx.setCourseRevenueViewMode('TOTAL');assert.equal(nodes.courseRevenueViewTarget.hidden,true);assert.equal(nodes.statTotalCourseRev.textContent,'3000000');
 });

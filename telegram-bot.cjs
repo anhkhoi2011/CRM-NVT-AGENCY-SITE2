@@ -129,6 +129,7 @@ async function setWebhook(webhookUrl, secretToken = '', bot = 'system') {
 }
 
 async function setSupportWebhook(webhookUrl, secretToken = '') {
+  if (SUPPORT_BOT_TOKEN === SYSTEM_BOT_TOKEN) return {ok:true,skipped:true,reason:'System webhook owns the shared bot token'};
   return setWebhook(webhookUrl, secretToken, 'support');
 }
 
@@ -163,7 +164,7 @@ function formatDateTimeVN(dt) {
 async function handleTelegramUpdate(update, bot = 'system') {
   if (!update || typeof update !== 'object') return { ok: true };
 
-  if (bot === 'support') return handleSupportTelegramUpdate(update);
+  if (bot === 'support' && !(SUPPORT_BOT_TOKEN === SYSTEM_BOT_TOKEN && update.callback_query)) return handleSupportTelegramUpdate(update);
 
   // 1. Xử lý Message từ người dùng
   if (update.message) {
@@ -465,7 +466,7 @@ async function handleCallbackQueryLegacy(query) {
   void answerCallbackQuery(query.id, 'Đang lưu điểm danh...');
   try {
     if (query.message.chat.type !== 'private' || String(query.from?.id) !== String(chatId)) throw Error('Hãy điểm danh trong cuộc trò chuyện riêng đã liên kết với CRM.');
-    const rows = await dbQuery('SELECT * FROM users WHERE telegram_chat_id = ? AND active = 1 LIMIT 1', [String(chatId)]);
+    const rows = await retryTransient(() => dbQuery('SELECT * FROM users WHERE telegram_chat_id = ? AND active = 1 LIMIT 1', [String(chatId)]));
     if (!rows.length) throw Error('Bạn chưa liên kết tài khoản. Mở Hồ sơ cá nhân trên CRM để liên kết Telegram.');
     const record = await retryTransient(() => recordTelegramAttendance(rows[0]));
     const text = '✅ <b>Đã điểm danh lúc ' + escapeHtml(String(record.at).slice(11,19)) + '</b>\nĐã đồng bộ vào CRM cho <b>' + escapeHtml(rows[0].name) + '</b>.';
@@ -738,7 +739,6 @@ async function notifyStaleLeadWarning(customer, sale, leader) {
 /**
  * Tính năng 1: Gửi thông báo Điểm danh đầu ngày (09h00)
  */
-const MAX_CHECKIN_ATTEMPTS = 3;
 const CHECKIN_SEND_GAP_MS = Number(process.env.TELEGRAM_CHECKIN_GAP_MS ?? 60);
 async function sendMorningCheckinAlert() {
   let failed = 0;
@@ -746,35 +746,27 @@ async function sendMorningCheckinAlert() {
     const day = new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Ho_Chi_Minh'});
     const staff = await dbQuery("SELECT id, telegram_chat_id, name, role FROM users WHERE role <> 'ADMIN' AND active = 1 AND telegram_chat_id IS NOT NULL");
     for (const member of staff) {
-      const key = 'checkin:' + day + ':' + String(member.id).slice(0,160);
-      // Reserve per recipient across Passenger workers and restarts, before sending.
-      // Do not hold a MySQL connection while waiting for Telegram's network response.
-      const [claim] = await pool.execute("INSERT IGNORE INTO crm_documents(collection,id,body,deleted) VALUES ('telegramDaily',?,?,0)", [key,JSON.stringify({day,userId:member.id,status:'ATTEMPTED',attempts:1})]);
-      let attempts = 1;
-      if (!claim.affectedRows) {
-        // Không bao giờ xóa dấu đã gửi (trước đây xóa khi Telegram báo 429 nên mỗi lần quét/khởi động lại
-        // lại gửi thêm 1 tin, người dùng nhận hơn 10 tin). Chỉ gửi lại khi lần trước bị Telegram từ chối rõ ràng,
-        // tối đa 3 lần; UPDATE có điều kiện để 2 tiến trình không cùng gửi lại.
-        const [rows] = await pool.execute("SELECT body FROM crm_documents WHERE collection='telegramDaily' AND id=? LIMIT 1",[key]);
-        const previous = rows[0] ? (typeof rows[0].body === 'string' ? JSON.parse(rows[0].body) : rows[0].body) : null;
-        if (previous?.status !== 'FAILED' || Number(previous.attempts || 1) >= MAX_CHECKIN_ATTEMPTS) continue;
-        attempts = Number(previous.attempts || 1) + 1;
-        const [retry] = await pool.execute("UPDATE crm_documents SET body=? WHERE collection='telegramDaily' AND id=? AND JSON_UNQUOTE(JSON_EXTRACT(body,'$.status'))='FAILED' AND CAST(JSON_EXTRACT(body,'$.attempts') AS UNSIGNED)=?",[JSON.stringify({...previous,status:'ATTEMPTED',attempts}),key,attempts-1]);
-        if (!retry.affectedRows) continue;
-      }
-      const text = '⏰ <b>NHẮC ĐIỂM DANH ĐẦU NGÀY</b>\nChào <b>' + escapeHtml(member.name) + '</b>! Bấm nút bên dưới để điểm danh hôm nay.';
-      const markup = {reply_markup:{inline_keyboard:[[{text:'✅ ĐIỂM DANH',callback_data:'checkin'}]]}};
-      let result = await sendMessage(member.telegram_chat_id,text,markup);
-      if (result?.error_code === 429) {
-        // Gửi nhanh cho cả team dễ bị giới hạn tốc độ: đợi đúng thời gian Telegram yêu cầu rồi thử lại 1 lần.
-        await new Promise(resolve => setTimeout(resolve, Math.min(5, Math.max(0, Number(result.parameters?.retry_after ?? 1) || 0)) * 1000));
-        result = await sendMessage(member.telegram_chat_id,text,markup);
-      }
-      // Mất mạng thì tin có thể đã tới nơi, nên giữ trạng thái UNKNOWN (không gửi lại) thay vì FAILED.
-      const status = result?.ok ? 'SENT' : (result?.error_code && result.error_code !== 403 ? 'FAILED' : 'UNKNOWN');
-      if (!result?.ok) failed++;
-      await pool.execute("UPDATE crm_documents SET body=? WHERE collection='telegramDaily' AND id=?",[JSON.stringify({day,userId:member.id,status,attempts,messageId:result?.result?.message_id||null,errorCode:result?.error_code||null}),key]).catch(error=>console.warn('[Telegram attendance reminder] status',error.code||error.message));
-      await new Promise(resolve => setTimeout(resolve, CHECKIN_SEND_GAP_MS));
+      try {
+        const chatId = String(member.telegram_chat_id || '').trim();
+        if (!chatId) continue;
+        const key = 'checkin:' + day + ':' + String(member.id).slice(0,160);
+        const state = {day,userId:member.id,status:'ATTEMPTED',attempts:1};
+        // Keep the legacy user key; never resend after rejection, restart or an uncertain network result.
+        const [claim] = await pool.execute("INSERT IGNORE INTO crm_documents(collection,id,body,deleted) VALUES ('telegramDaily',?,?,0)", [key,JSON.stringify(state)]);
+        if (!claim.affectedRows) continue;
+        // Several CRM accounts can point at the same Telegram conversation.
+        const chatKey = 'checkin-chat:' + day + ':' + chatId;
+        const [chatClaim] = await pool.execute("INSERT IGNORE INTO crm_documents(collection,id,body,deleted) VALUES ('telegramDaily',?,?,0)", [chatKey,JSON.stringify(state)]);
+        if (!chatClaim.affectedRows) continue;
+        const text = '⏰ <b>NHẮC ĐIỂM DANH ĐẦU NGÀY</b>\nChào <b>' + escapeHtml(member.name) + '</b>! Bấm nút bên dưới để điểm danh hôm nay.';
+        const markup = {reply_markup:{inline_keyboard:[[{text:'✅ ĐIỂM DANH',callback_data:'checkin'}]]}};
+        const result = await sendMessage(chatId,text,markup);
+        const status = result?.ok ? 'SENT' : result?.error_code ? 'FAILED' : 'UNKNOWN';
+        if (!result?.ok) failed++;
+        const saved = JSON.stringify({...state,status,messageId:result?.result?.message_id||null,errorCode:result?.error_code||null});
+        for (const id of [key,chatKey]) await pool.execute("UPDATE crm_documents SET body=? WHERE collection='telegramDaily' AND id=?",[saved,id]);
+        await new Promise(resolve => setTimeout(resolve, CHECKIN_SEND_GAP_MS));
+      } catch (error) { failed++; console.warn('[Telegram attendance recipient]',error.code||error.message); }
     }
   } catch(error) { failed++; console.warn('[Telegram attendance reminder]',error.code||error.message); }
   return {failed};
@@ -979,7 +971,7 @@ async function runTelegramScheduler({skipLeadDrain=false}={}) {
       // Đánh dấu trước khi gửi để tránh chạy chồng trong cùng tiến trình.
       lastCheckinDate = vnDateStr;
       await sendMorningCheckinAlert();
-      // Khóa SQL giữ từng người đã gửi; chỉ thử lại người bị Telegram từ chối rõ ràng.
+      // Khóa SQL giữ từng người đã gửi; không gửi lại trong ngày kể cả khi Telegram báo lỗi.
       // Giữ nguyên ngày đã gửi, không phát lại toàn bộ danh sách khi một người bị lỗi.
     }
 

@@ -43,7 +43,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261004-product-cohorts-16';
+const BUILD_VERSION = '20261004-attendance-admin-21';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -1696,11 +1696,11 @@ server.listen(PORT, HOST, () => {
       }else console.warn('[Telegram] Worker tự động đã tắt; cần chạy telegram-worker.cjs riêng.');
     }).catch(error=>console.warn('[telegram-start]',error.code||error.message));
   }
-  if (TELEGRAM_WEBHOOK_URL) {
+  if (!DEMO_MODE && TELEGRAM_WEBHOOK_URL) {
     void telegramBot.setWebhook(TELEGRAM_WEBHOOK_URL, TELEGRAM_WEBHOOK_SECRET)
       .then(result => console.log(`[Telegram Bot] Webhook ${result?.ok ? 'da dong bo' : 'chua dong bo'}: ${TELEGRAM_WEBHOOK_URL}`));
   }
-  if (process.env.TELEGRAM_SUPPORT_BOT_TOKEN && TELEGRAM_SUPPORT_WEBHOOK_URL) {
+  if (!DEMO_MODE && process.env.TELEGRAM_SUPPORT_BOT_TOKEN && TELEGRAM_SUPPORT_WEBHOOK_URL) {
     void telegramBot.setSupportWebhook(TELEGRAM_SUPPORT_WEBHOOK_URL, TELEGRAM_SUPPORT_WEBHOOK_SECRET)
       .then(result => console.log(`[Telegram support bot] Webhook ${result?.ok ? 'da dong bo' : 'chua dong bo'}: ${TELEGRAM_SUPPORT_WEBHOOK_URL}`));
   }

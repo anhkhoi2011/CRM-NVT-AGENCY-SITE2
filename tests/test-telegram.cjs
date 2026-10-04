@@ -4,7 +4,7 @@ const ROOT=require('node:path').resolve(__dirname,'..');process.chdir(ROOT);
 require=require('node:module').createRequire(ROOT+'/');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const now=()=>new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19);
-function fixture(){
+function fixture(env={}){
  const sent=[],users=[{id:'s',role:'SALE',telegram_chat_id:'1'},{id:'l',role:'LEADER',telegram_chat_id:'2'},{id:'m',role:'MANAGER',telegram_chat_id:'3'},{id:'admin',role:'ADMIN',telegram_chat_id:'4'}],notices=[],customers=[],offers=[],locks=[],supportReplies=[];let failure=false;
  const query=async(sql,args=[])=>{
   if(sql.includes('GET_LOCK')){locks.push('acquire');return [[{acquired:1}]];}
@@ -17,7 +17,7 @@ function fixture(){
  };
  const connection={query,execute:query,release(){locks.push('connection-release');}};
  const module={exports:{}};
- vm.runInNewContext(fs.readFileSync('telegram-bot.cjs','utf8'),{module,console,AbortSignal,Buffer,FormData,Blob,process:{env:{TELEGRAM_BOT_TOKEN:'test-only',TELEGRAM_ADMIN_CHAT_ID:'999'}},fetch:async(url,options)=>{sent.push({method:url.split('/').pop(),...JSON.parse(options.body)});return {json:async()=>({ok:!failure,result:{message_id:321}})};},require:name=>{
+ vm.runInNewContext(fs.readFileSync('telegram-bot.cjs','utf8'),{module,console,AbortSignal,Buffer,FormData,Blob,process:{env:{TELEGRAM_BOT_TOKEN:'test-only',TELEGRAM_ADMIN_CHAT_ID:'999',...env}},fetch:async(url,options)=>{sent.push({method:url.split('/').pop(),...JSON.parse(options.body)});return {json:async()=>({ok:!failure,result:{message_id:321}})};},require:name=>{
   if(name==='./db.js')return {pool:{getConnection:async()=>connection},telegramPool:{getConnection:async()=>connection},dbQuery:async(sql,args=[])=>{
    if(sql.includes('FROM users'))return sql.includes("role = 'ADMIN'")?users.filter(u=>u.role==='ADMIN'):users.filter(u=>u.id===args[0]);
    throw Error(sql);
@@ -111,7 +111,8 @@ test('Duplicate outbox notifies Admin and preserves an active pending Sale owner
 test('System webhook subscribes to button callbacks so check-in and accept-data reach the server',async()=>{
  const f=fixture();await f.api.setWebhook('https://crm.example.test/api/telegram/webhook','secret');
  const call=f.sent.at(-1);assert.equal(call.method,'setWebhook');assert.deepEqual(call.allowed_updates,['message','callback_query']);assert.equal(call.secret_token,'secret');assert.ok(call.max_connections<=10);
- await f.api.setSupportWebhook('https://crm.example.test/api/telegram/support-webhook','s2');assert.deepEqual(f.sent.at(-1).allowed_updates,['message']);
+ const shared=await f.api.setSupportWebhook('https://crm.example.test/api/telegram/support-webhook','s2');assert.equal(shared.skipped,true);assert.equal(f.sent.length,1);
+ const distinct=fixture({TELEGRAM_SUPPORT_BOT_TOKEN:'separate-support-token'});await distinct.api.setSupportWebhook('https://crm.example.test/api/telegram/support-webhook','s2');assert.deepEqual(distinct.sent[0].allowed_updates,['message']);
 });
 test('Telegram webhook answers before processing and SSE is off unless explicitly enabled',()=>{
  const server=fs.readFileSync('webhook-server.cjs','utf8'),block=server.slice(server.indexOf("const update = JSON.parse(buffer"),server.indexOf("console.warn('[Telegram Webhook] error:', err.message)"));

@@ -3066,7 +3066,7 @@ function attendanceView() {
       `<section class="panel"><div class="panel-body">${mine ? `<div class="kpi"><strong>${escapeHtml(mine.at.slice(11))}</strong><small>${mine.late ? `Đi muộn ${mine.lateMinutes || 0} phút` : 'Đúng giờ'} · ${mine.ipValid ? 'Đúng wifi' : 'Ngoài wifi'} · IP ${escapeHtml(mine.ip)}</small></div>` : '<div class="empty"><b>Chưa điểm danh</b><span>Bấm nút Điểm danh hôm nay ở góc phải trên.</span></div>'}</div></section>` +
       `<section class="panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Lịch điểm danh 3 tháng</div><div class="panel-sub">Sau ${escapeHtml(state.settings.attendanceDeadline || '09:00')} sẽ bị gắn nhãn Đi muộn · Cuối tuần tô xám</div></div></div><div class="panel-body" style="padding:0">${attendanceCalendarHtml(myAccountId)}</div></section>`;
   }
-  const config = currentAccount.role === 'ADMIN' ? `<section class="panel" style="margin-bottom:14px"><div class="panel-body"><div class="form-grid"><label class="form-field">IP Wi-Fi cho phép · phân cách dấu phẩy<input id="attendanceIp" value="${escapeHtml(state.settings.attendanceIp || '')}" placeholder="Ví dụ 192.168.1.10, 113.161.2.3"></label><label class="form-field">Giờ vào làm · quá giờ báo trễ<input id="attendanceDeadline" type="time" value="${escapeHtml(state.settings.attendanceDeadline || '09:00')}"></label><label class="form-field">Số giờ chờ Sale nhận data<input id="acceptTimeoutHours" type="number" value="24" readonly></label></div><button class="button button-primary" id="saveAttendanceSettings" style="margin-top:12px">Lưu quy định</button></div></section>` : '';
+  const config = currentAccount.role === 'ADMIN' ? `<section class="panel" style="margin-bottom:14px"><div class="panel-body"><div class="form-grid"><label class="form-field">Giờ vào làm · quá giờ báo trễ<input id="attendanceDeadline" type="time" value="${escapeHtml(state.settings.attendanceDeadline || '09:00')}"></label><label class="form-field">Số giờ chờ Sale nhận data<input id="acceptTimeoutHours" type="number" value="24" readonly></label></div><button class="button button-primary" id="saveAttendanceSettings" style="margin-top:12px">Lưu quy định</button></div></section>` : '';
   const checkedIds = new Set(rows.map(item => item.accountId));
   const missing = activeStaff().filter(person => attendanceRoles.has(person.role) && (currentAccount.role === 'ADMIN' || (person.teamId === currentAccount.teamId && (person.leaderId === currentAccount.leaderId || person.id === currentAccount.leaderId))) && !checkedIds.has(person.id));
   const actionCell = person => currentAccount.role === 'ADMIN' ? `<td><button class="button button-small" type="button" data-attendance-detail="${escapeHtml(person.id)}">Chi ti&#7871;t</button></td>` : '';
@@ -3133,7 +3133,6 @@ function saveAttendanceSettings() {
   const deadline = cleanClockTime($('#attendanceDeadline')?.value, '');
   const hours = 24;
   if (!deadline) { toast('Giờ vào làm không hợp lệ'); return; }
-  state.settings.attendanceIp = cleanText($('#attendanceIp')?.value || '', '', 200);
   state.settings.attendanceDeadline = deadline;
   state.settings.acceptTimeoutHours = hours;
   audit('UPDATE_SETTING', 'ATTENDANCE', `giờ chốt ${deadline} · wifi "${state.settings.attendanceIp || 'bỏ trống'}" · chờ nhận ${hours}h`);
