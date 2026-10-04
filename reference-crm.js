@@ -2323,7 +2323,7 @@
 
     let iframe = host.querySelector('#accountingIframe');
     if (!iframe) {
-      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261004-product-groups-12" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
+      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261004-webhook-data-13" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
       iframe = host.querySelector('#accountingIframe');
       iframe?.addEventListener('load',()=>{host.classList.add('is-ready');syncMembersToAccountingMindmap();},{once:true});
     } else {
@@ -2586,7 +2586,7 @@
     if(['ADMIN','MANAGER','LEADER'].includes(data.user.actualRole||data.user.role)&&q('section.active#tab-data')){
       renderManagementDataTable(data.user.actualRole||data.user.role);
     }
-    text('sidebarDataBadge',data.user.role==='SALE'?(data.pendingOffers||[]).length:data.customers.filter(c=>!c.saleId).length);
+    text('sidebarDataBadge',data.user.role==='SALE'?(data.pendingOffers||[]).length:data.customers.filter(c=>isWebhookDataCustomer(c)&&!c.saleId).length);
     q('#sidebarCareBadge')?.remove();
     q('#sidebarTeamBadge')?.remove();
     const alias={data:data.user.role==='LEADER'?'pool':data.user.role==='SALE'?'accept':'distribution'};
@@ -3500,16 +3500,22 @@
       if(typeFilter){typeFilter.hidden=false;typeFilter.removeAttribute('aria-hidden');}
     }
   }
+  function isWebhookDataCustomer(customer){
+    if(!customer)return false;
+    const source=String(customer.source||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').trim().toLowerCase();
+    // New order customers carry a marker; older records only have the source label.
+    if(customer.createdVia==='ORDER'||customer.manualEntry===true||['nhap don hang','khach hang cu','khach hang ngoai data'].includes(source))return false;
+    return Boolean(customer.webhookEventId||customer.webhookSlug||['landing page','landing page webhook','webhook'].includes(source));
+  }
   function renderManagementDataTable(role){
     const body=q('#dataQueueTableBody'),table=body?.closest('table');
     if(!body||!table||!['ADMIN','MANAGER','LEADER'].includes(role))return;
-    const isManualCustomer=customer=>{const source=String(customer?.source||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();return customer?.manualEntry===true||source==='khach hang cu'||source==='khach hang ngoai data';};
     const members=data.managerHierarchy?.members||data.members||[],currentId=data.user.id;
     const leaders=role==='ADMIN'?members.filter(m=>m.active!==false&&m.role==='LEADER'):role==='MANAGER'?members.filter(m=>m.active!==false&&m.role==='LEADER'&&m.managerId===currentId):members.filter(m=>m.active!==false&&m.role==='LEADER'&&m.id===currentId);
     const leaderIds=new Set(leaders.map(m=>m.id));
     const sales=role==='ADMIN'?members.filter(m=>m.active!==false&&m.role==='SALE'):members.filter(m=>m.active!==false&&m.role==='SALE'&&(leaderIds.has(m.leaderId)||(role==='MANAGER'&&m.managerId===currentId)));
     const salesIds=new Set(sales.map(m=>m.id));
-    const visible=role==='ADMIN'?data.customers.filter(c=>!isManualCustomer(c)):data.customers.filter(c=>!isManualCustomer(c)&&(role==='MANAGER'?(c.ownerId===currentId||c.managerId===currentId||leaderIds.has(c.leaderId)||salesIds.has(c.saleId)):(c.ownerId===currentId||c.leaderId===currentId||salesIds.has(c.saleId))));
+    const visible=role==='ADMIN'?data.customers.filter(c=>isWebhookDataCustomer(c)):data.customers.filter(c=>isWebhookDataCustomer(c)&&(role==='MANAGER'?(c.ownerId===currentId||c.managerId===currentId||leaderIds.has(c.leaderId)||salesIds.has(c.saleId)):(c.ownerId===currentId||c.leaderId===currentId||salesIds.has(c.saleId))));
     const websiteFor=customer=>(data.websites||[]).find(item=>item.id===customer?.websiteId||item.webhookSlug===customer?.webhookSlug||item.sourceUrl===customer?.source||item.webhookUrlOverride===customer?.source||item.publicWebhookUrl===customer?.source);
     const validUrl=value=>{try{const url=new URL(String(value||'').trim());return ['http:','https:'].includes(url.protocol)?url.toString():'';}catch{return '';}};
     const sourceUrlFor=customer=>{const website=websiteFor(customer);return validUrl(customer?.landingPageUrl)||validUrl(website?.sourceUrl)||validUrl(website?.webhookUrlOverride)||validUrl(website?.publicWebhookUrl);};
