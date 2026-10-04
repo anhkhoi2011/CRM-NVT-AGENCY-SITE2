@@ -1974,7 +1974,6 @@ body.accounting-modal-open { overflow: hidden; }
             <input type="number" id="inputRatePerLot" step="5000" oninput="updateModalPreview()" style="font-weight:800; color:#c2410c; font-size:13.5px; padding:7px 10px; border:1.5px solid #ea580c; border-radius:6px; width:100%;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
               <small style="color:#ea580c; font-size:11px; font-weight:800;" id="txtRateK">50k/lot</small>
-              <small style="color:#64748b; font-size:10px;" id="txtRoleHint">Mặc định Sale: 50k/lot</small>
             </div>
           </div>
 
@@ -1983,9 +1982,7 @@ body.accounting-modal-open { overflow: hidden; }
             <div style="display:flex; gap:8px; align-items:center;">
               <input type="number" id="inputProductRate" min="0" max="100" step="1" value="10" oninput="updateModalPreview()" style="width:110px; border:1.5px solid #38bdf8; font-weight:800; color:#0369a1; padding:7px 10px; border-radius:6px; font-size:13.5px;">
               <span style="font-weight:800; color:#0369a1; font-size:14px;">%</span>
-              <span style="font-size:11px; color:#64748b;">(Mặc định toàn hệ thống là 10% hoặc 15%)</span>
             </div>
-            <small style="color:#0284c7; font-size:11px; margin-top:4px; display:block;">Cài đặt này áp dụng riêng cho nhân sự này và tự động lưu khi bấm nút bên dưới.</small>
           </div>
         </div>
       </div>
@@ -2038,7 +2035,6 @@ body.accounting-modal-open { overflow: hidden; }
             </div>
             <div style="display:flex; justify-content:space-between; margin-top:6px; flex-wrap:wrap; gap:4px;">
               <small style="color:#64748b; font-size:11.5px; font-weight:700;" id="txtSubordinatesCount">0 cấp dưới trực thuộc</small>
-              <small style="color:#7c3aed; font-size:11.5px; font-weight:800;" id="txtDownlineHint">Hưởng chênh lệch động từ cấp dưới</small>
             </div>
           </div>
         </div>
@@ -3088,6 +3084,16 @@ Tổng gửi: <span id="sendSelectedTotalMoney" style="color:#059669; font-size:
   return { nodePositions, edges };
 }
 
+function getMindmapBounds(nodePositions) {
+  const positions = Object.values(nodePositions);
+  return {
+    minX: Math.min(...positions.map(p => p.x)),
+    minY: Math.min(...positions.map(p => p.y)),
+    maxX: Math.max(...positions.map(p => p.x + (p.isRoot ? 250 : 245))),
+    maxY: Math.max(...positions.map(p => p.y + (p.isRoot ? 74 : 46)))
+  };
+}
+
 function renderMindmapTree() {
   const branchesGroup = document.getElementById('svgBranchesGroup');
   const nodesGroup = document.getElementById('svgNodesGroup');
@@ -3098,15 +3104,12 @@ function renderMindmapTree() {
 
   const { nodePositions, edges } = computeMindmapLayout(APEX_DATA);
 
-  // Cập nhật kích thước canvas SVG thích ứng với số lượng node
-  const treeSvg = document.getElementById('treeSvg');
+  // Resize the actual SVG so lower branches are not clipped by its viewport.
+  const treeSvg = document.getElementById('mindmapSvg');
   if (treeSvg) {
-    const allY = Object.values(nodePositions).map(p => p.y);
-    const allX = Object.values(nodePositions).map(p => p.x);
-    const maxY = Math.max(...allY, 800);
-    const maxX = Math.max(...allX, 1400);
-    treeSvg.style.minHeight = (maxY + 160) + 'px';
-    treeSvg.style.minWidth = (maxX + 360) + 'px';
+    const bounds = getMindmapBounds(nodePositions);
+    treeSvg.setAttribute('width', bounds.maxX + 36);
+    treeSvg.setAttribute('height', bounds.maxY + 36);
   }
 
   // Vẽ đường cong kết nối (Bezier Curves)
@@ -3518,12 +3521,6 @@ function renderMindmapTree() {
     const txtRateK = document.getElementById('txtRateK');
     if (txtRateK) txtRateK.textContent = (fin.ratePerLot / 1000) + 'k/lot';
 
-    const txtRoleHint = document.getElementById('txtRoleHint');
-    if (txtRoleHint) {
-      if (person.roleLevel === 'LV1') txtRoleHint.textContent = 'Mặc định Manager: 90k/lot (hoặc 80k)';
-      else if (person.roleLevel === 'LV2') txtRoleHint.textContent = 'Mặc định Leader: 70k/lot (hoặc 60k)';
-      else txtRoleHint.textContent = 'Mặc định Sale: 50k/lot (tùy chỉnh 50k - 60k)';
-    }
 
     // 2. Phân chia rõ ràng giữa Sale và Quản lý
     const downlineSection = document.getElementById('downlineConfigSection');
@@ -3542,12 +3539,6 @@ function renderMindmapTree() {
       const subCountEl = document.getElementById('txtSubordinatesCount');
       if (subCountEl) subCountEl.textContent = `${fin.subordinatesCount || 0} nhân sự cấp dưới trực thuộc trong cây`;
 
-      const hintEl = document.getElementById('txtDownlineHint');
-      if (hintEl) {
-        hintEl.textContent = (person.roleLevel === 'LV1')
-          ? `Manager (${(fin.ratePerLot/1000)}k/lot) hưởng chênh lệch động: [${(fin.ratePerLot/1000)}k - định mức cấp dưới]`
-          : `Leader (${(fin.ratePerLot/1000)}k/lot) hưởng chênh lệch động: [${(fin.ratePerLot/1000)}k - định mức Sale]`;
-      }
 
       const dlHhEl = document.getElementById('txtDownlineHhDisplay');
       if (dlHhEl) dlHhEl.textContent = formatVND(fin.downlineCommission);
@@ -3648,12 +3639,6 @@ function renderMindmapTree() {
       if (dlLotsEl) dlLotsEl.value = `${dl.downlineLots} lot tiêu chuẩn`;
       const dlHhEl = document.getElementById('txtDownlineHhDisplay');
       if (dlHhEl) dlHhEl.textContent = formatVND(downlineComm);
-      const hintEl = document.getElementById('txtDownlineHint');
-      if (hintEl) {
-        hintEl.textContent = (person.roleLevel === 'LV1')
-          ? `Manager (${(ratePerLot/1000)}k/lot) hưởng chênh lệch động: [${(ratePerLot/1000)}k - định mức cấp dưới]`
-          : `Leader (${(ratePerLot/1000)}k/lot) hưởng chênh lệch động: [${(ratePerLot/1000)}k - định mức Sale]`;
-      }
     }
 
     const totalNet = lotComm + downlineComm + prodComm + bonus;
@@ -4038,18 +4023,14 @@ function renderMindmapTree() {
     const vh = viewport.clientHeight;
     if (!vw || !vh) return;
 
-    // Bounding box của toàn bộ cây mindmap:
-    // minX: 40, minY: 120, maxX: 1360, maxY: 931
+    const { nodePositions } = computeMindmapLayout(APEX_DATA);
+    const bounds = getMindmapBounds(nodePositions);
     const pad = 36;
-    const contentW = (1360 - 40) + pad * 2; // ~1392px
-    const contentH = (931 - 120) + pad * 2; // ~883px
-    const cx = (40 + 1360) / 2; // 700
-    const cy = (120 + 931) / 2; // 525.5
-
-    const scaleX = vw / contentW;
-    const scaleY = vh / contentH;
-    let targetScale = Math.min(scaleX, scaleY);
-    targetScale = Math.min(1.15, Math.max(0.35, targetScale));
+    const contentW = bounds.maxX - bounds.minX + pad * 2;
+    const contentH = bounds.maxY - bounds.minY + pad * 2;
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const targetScale = Math.min(1.15, vw / contentW, vh / contentH);
 
     mindmapZoom = targetScale;
     mindmapPanX = (vw / 2) - (cx * targetScale);
