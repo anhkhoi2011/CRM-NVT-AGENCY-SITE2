@@ -106,6 +106,16 @@ test('Create-order Sale selector uses actual role and all in-scope Sale members'
  const sale=renderFor({role:'SALE',actualRole:'SALE',id:'sale-1'});assert.match(sale.markup,/Sale 1/);assert.doesNotMatch(sale.markup,/Sale 2/);assert.match(sale.markup,/id="aoSale" disabled/);
 });
 
+test('Accepting data does not redirect Sale to the customer overview',()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
+ const start=source.indexOf('  const ordinaryQueue=renderDataQueue;renderDataQueue=function(){');
+ const end=source.indexOf('  const ordinaryQueueFilter=',start);
+ const handler=source.slice(start,end);
+ assert.ok(handler.includes('run(()=>api.acceptOffer(button.dataset.acceptOffer))'));
+ assert.equal(handler.includes("switchTab('tab-customers')"),false);
+ assert.equal(handler.includes('custSearchInput')&&handler.includes('topGlobalSearch'),false);
+});
+
 test('Inclusive VAT keeps every entered dong and allocates receipts consistently',()=>{for(const total of [1,6,16,1000000,5500000,5500006]){const a=payments.amounts({total});assert.equal(a.total,total);assert.equal(a.subtotal+a.vatAmount,total);assert.equal(a.vatAmount,Math.round(total/11));}assert.equal(payments.amounts({subtotal:5000000}).total,5500000);assert.throws(()=>payments.amounts({total:1.5}));});
 test('Inclusive rounding is accepted by server for sale orders',()=>{const o={...order(),...payments.amounts({total:5500006})};o.balanceDue=o.total-o.amountPaid;crm.authorize(sale,'orders',null,o,data);crm.validate('orders',o,o.id);});
 test('QR and saved transfer content use customer full name and phone',async()=>{const f=form();f.node('#aoName').value='Nguyễn Văn An';f.node('#aoTotal').value='1000000';f.node('#aoTotal').oninput();await f.save();assert.match(f.node('#aoInvoice').innerHTML,new RegExp('des='+encodeURIComponent('Nguyễn Văn An 0901234567')));f.node('#aoConfirmed').checked=true;await f.node('#aoBillFile').onchange({target:{files:[{name:'bill.jpg'}]}});await f.save();assert.equal(f.created[0].total,1000000);assert.equal(f.created[0].subtotal,909091);assert.equal(f.created[0].amountPaid,1000000);assert.equal(f.created[0].paymentReference,'Nguyễn Văn An 0901234567');});

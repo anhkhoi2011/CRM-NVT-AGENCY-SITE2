@@ -3622,7 +3622,10 @@
         button.dataset.busy='1';button.disabled=true;button.setAttribute('aria-busy','true');button.textContent='\u0110ang nh\u1eadn...';
         try{
           const result=await run(()=>api.acceptOffer(button.dataset.acceptOffer));
-          if(result?.ok){q('#custSearchInput')&&(q('#custSearchInput').value='');q('#topGlobalSearch')&&(q('#topGlobalSearch').value='');switchTab('tab-customers');}
+          if(result?.ok){
+            // Giữ nguyên tab Data, bộ lọc và trang hiện tại để Sale có thể nhận tiếp data còn lại.
+            // run() sẽ tải snapshot mới và dựng lại đúng tab đang mở.
+          }
         }finally{button.dataset.busy='';button.disabled=false;button.removeAttribute('aria-busy');button.textContent=label;}
       });
       // Thong ke data duoc giao khong giam khi Sale bam nhan.
