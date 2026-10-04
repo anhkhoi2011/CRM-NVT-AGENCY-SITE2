@@ -1873,3 +1873,17 @@ test('Order-created customer requires accompanying bill order; hidden duplicate 
  await assert.rejects(()=>f.api.write(actor,'duplicate',[change('customers',cust),change('orders',o)]),/Số điện thoại đã tồn tại/);
  assert.equal(f.db.customers.length,1);assert.equal(f.db.orders.length,0);
 });
+
+test('Course trainer configuration survives SQL roundtrip for Admin and Accounting, without changing receipts',async()=>{
+ const f=fixture();const c=referenceBridge();const api=c.window.crmApi;
+ await api.saveCourseConfig({courseKey:'K03',trainerIds:['trainer'],trainerRates:{trainer:12},leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65});
+ const config=JSON.parse(vm.runInContext('JSON.stringify(state.courseConfigs[0])',c));
+ await f.api.write(admin,'course-trainer-create',[change('courseConfigs',config)]);
+ const accounting={id:'accountant',role:'ACCOUNTING'};let r=await f.api.read(accounting);let saved=r.state.courseConfigs.find(x=>x.courseKey==='K03');
+ assert.equal(saved.trainerIds[0],'trainer');assert.equal(saved.trainerRates.trainer,12);assert.equal(saved.leaderIds.length,0);
+ await f.api.write(accounting,'course-trainer-edit',[change('courseConfigs',{...saved,trainerIds:['trainer2'],trainerRates:{trainer2:0}},r.versions['courseConfigs/'+saved.id])]);
+ r=await f.api.read(admin);saved=r.state.courseConfigs.find(x=>x.courseKey==='K03');assert.equal(saved.trainerIds[0],'trainer2');assert.equal(saved.trainerRates.trainer2,0);
+ assert.equal(r.state.orders.length,0);assert.ok(f.events.includes('commit'));
+ f.fail();await assert.rejects(f.api.write(accounting,'course-trainer-failure',[change('courseConfigs',{...saved,trainerIds:[]},r.versions['courseConfigs/'+saved.id])]),/failure/);
+ assert.equal((await f.api.read(admin)).state.courseConfigs[0].trainerIds[0],'trainer2');assert.ok(f.events.includes('rollback'));
+});

@@ -1281,6 +1281,14 @@ body.accounting-modal-open { overflow: hidden; }
   white-space: nowrap;
 }
 
+.course-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:16px;border-top:1px solid #e2e8f0;background:#f8fafc}
+.course-summary-grid>div{display:flex;flex-direction:column;gap:5px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:7px;background:#fff}
+.course-summary-grid span{font-size:12px;color:#64748b}.course-summary-grid strong{font-size:14px;color:#0f172a;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.course-summary-grid .company-share{background:#ecfdf5;border-color:#a7f3d0}.course-summary-grid .company-share strong{color:#047857}
+@media(max-width:520px){#coursePersonnelDetailModal .modal-card{max-height:95vh;overflow-y:auto}.course-summary-grid{gap:6px;padding:10px}#cdmAddTrainerSelect{max-width:190px}}
+.report-sort-button{display:inline-flex;align-items:center;justify-content:inherit;gap:6px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;padding:0;cursor:pointer;text-align:inherit;white-space:nowrap}
+.report-sort-button:focus-visible{outline:2px solid #2563eb;outline-offset:4px}
+[data-report-sort][aria-sort="ascending"],[data-report-sort][aria-sort="descending"]{color:#2563eb;background:#eff6ff}
 </style>
 <script>
   if (window.self !== window.top || (window.location.search && window.location.search.includes('embedded=1'))) {
@@ -1591,25 +1599,25 @@ body.accounting-modal-open { overflow: hidden; }
  <table class="crm-table" id="reportTable">
  <thead>
             <tr>
-              <th style="width:40px; text-align:center;">STT</th>
-              <th>Nhân Sự</th>
-              <th style="width:90px; text-align:center;">Vị Trí</th>
-              <th>Quản Lý Trực Thuộc</th>
-              <th style="text-align:right;" title="Lot tiêu chuẩn cơ bản (hệ số 1.0)">Lot Chuẩn</th>
-              <th style="text-align:right;" title="Quy đổi x 0.35">Lot Micro</th>
-              <th style="text-align:right;" title="Quy đổi x 0.8">Lot Mini</th>
-              <th style="text-align:right; font-weight:800;" title="Chuẩn + (Mini*0.8) + (Micro*0.35)">Tổng Lot Cá Nhân</th>
-              <th style="text-align:center;" title="Định mức VNĐ nhận cho mỗi 1 lot cá nhân">Định Mức / Lot</th>
-              <th style="text-align:right; font-weight:800;">HH Lot Cá Nhân</th>
-              <th style="text-align:center;" title="Tổng lot phát sinh từ toàn bộ tuyến dưới">Lot Tuyến Dưới</th>
-              <th style="text-align:right; font-weight:800;" title="Hoa hồng chênh lệch từ tuyến dưới">HH Tuyến Dưới</th>
-              <th style="text-align:center;">DS Chỉ Báo</th>
-              <th style="text-align:center;">DS Khóa Học</th>
-              <th style="text-align:center;">DS Nhóm VIP</th>
-              <th style="text-align:center;" title="Hoa hồng khi trực tiếp bán Khóa học, Chỉ báo, Nhóm VIP">HH Bán SP</th>
-              <th style="text-align:left;" title="Hoa hồng Đào Tạo & Quản lý Leader">HH Đào Tạo & Leader</th>
-              <th style="text-align:center;" title="Thưởng nóng / KPI">Thưởng KPI</th>
-              <th style="text-align:right; font-weight:900; background:#f1f5f9; color:#0f172a;">Thực Nhận</th>
+              <th style="width:40px; text-align:center;" data-report-sort="index" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('index')">STT <span data-sort-indicator="index" aria-hidden="true">↕</span></button></th>
+              <th data-report-sort="name" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('name')">Nhân Sự <span data-sort-indicator="name" aria-hidden="true">↕</span></button></th>
+              <th style="width:90px; text-align:center;" data-report-sort="roleLevel" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('roleLevel')">Vị Trí <span data-sort-indicator="roleLevel" aria-hidden="true">↕</span></button></th>
+              <th data-report-sort="directManager" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('directManager')">Quản Lý Trực Thuộc <span data-sort-indicator="directManager" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:right;" title="Lot tiêu chuẩn cơ bản (hệ số 1.0)" data-report-sort="basicLot" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('basicLot')">Lot Chuẩn <span data-sort-indicator="basicLot" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:right;" title="Quy đổi x 0.35" data-report-sort="microLot" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('microLot')">Lot Micro <span data-sort-indicator="microLot" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:right;" title="Quy đổi x 0.8" data-report-sort="miniLot" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('miniLot')">Lot Mini <span data-sort-indicator="miniLot" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:right; font-weight:800;" title="Chuẩn + (Mini*0.8) + (Micro*0.35)" data-report-sort="stdLot" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('stdLot')">Tổng Lot Cá Nhân <span data-sort-indicator="stdLot" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:center;" title="Định mức VNĐ nhận cho mỗi 1 lot cá nhân" data-report-sort="ratePerLot" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('ratePerLot')">Định Mức / Lot <span data-sort-indicator="ratePerLot" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:right; font-weight:800;" data-report-sort="hhLot" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('hhLot')">HH Lot Cá Nhân <span data-sort-indicator="hhLot" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:center;" title="Tổng lot phát sinh từ toàn bộ tuyến dưới" data-report-sort="downlineLots" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('downlineLots')">Lot Tuyến Dưới <span data-sort-indicator="downlineLots" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:right; font-weight:800;" title="Hoa hồng chênh lệch từ tuyến dưới" data-report-sort="hhDownline" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('hhDownline')">HH Tuyến Dưới <span data-sort-indicator="hhDownline" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:center;" data-report-sort="indicatorRev" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('indicatorRev')">DS Chỉ Báo <span data-sort-indicator="indicatorRev" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:center;" data-report-sort="courseRev" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('courseRev')">DS Khóa Học <span data-sort-indicator="courseRev" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:center;" data-report-sort="vipRev" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('vipRev')">DS Nhóm VIP <span data-sort-indicator="vipRev" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:center;" title="Hoa hồng khi trực tiếp bán Khóa học, Chỉ báo, Nhóm VIP" data-report-sort="hhSaleProducts" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('hhSaleProducts')">HH Bán SP <span data-sort-indicator="hhSaleProducts" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:left;" title="Hoa hồng Đào Tạo & Quản lý Leader" data-report-sort="trainingLeader" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('trainingLeader')">HH Đào Tạo & Leader <span data-sort-indicator="trainingLeader" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:center;" title="Thưởng nóng / KPI" data-report-sort="bonus" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('bonus')">Thưởng KPI <span data-sort-indicator="bonus" aria-hidden="true">↕</span></button></th>
+              <th style="text-align:right; font-weight:900; background:#f1f5f9; color:#0f172a;" data-report-sort="netIncome" aria-sort="none"><button type="button" class="report-sort-button" onclick="sortPersonnelReport('netIncome')">Thực Nhận <span data-sort-indicator="netIncome" aria-hidden="true">↕</span></button></th>
               <th style="text-align:center; width:80px;">Thao Tác</th>
             </tr>
           </thead>
@@ -2326,7 +2334,7 @@ body.accounting-modal-open { overflow: hidden; }
     <div class="modal-header" style="background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
       <div>
         <h3 style="color:#0f172a; margin:0; font-size:15px; font-weight:700;">Cấu Hình Khóa Học & Đào Tạo</h3>
-        <span style="font-size:12px; color:#64748b;">Quản lý Người Đào Tạo, Leader phụ trách và tỷ lệ phân bổ</span>
+        <span style="font-size:12px; color:#64748b;">Chọn khóa từ cột Khóa của khách hàng và cấu hình người đào tạo</span>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <button class="modal-close" onclick="closeTrainingConfigModal()">✕</button>
@@ -2334,12 +2342,16 @@ body.accounting-modal-open { overflow: hidden; }
     </div>
 
     <div class="modal-body" style="padding:16px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+        <label for="trainingCourseSelect" style="font-weight:700;white-space:nowrap;">Chọn khóa</label>
+        <select id="trainingCourseSelect" style="min-width:220px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;" onchange="if(this.value)openCoursePersonnelDetailModal(this.value)"></select>
+      </div>
       <!-- Filter/Category Tabs -->
       <div style="display:flex; gap:8px; margin-bottom:12px;">
-        <button type="button" class="filter-btn active" id="tabCourseFilterALL" onclick="filterTrainingModalCategory('ALL')">Tất Cả Sản Phẩm (8)</button>
-        <button type="button" class="filter-btn" id="tabCourseFilterCOURSE" onclick="filterTrainingModalCategory('course')">Chỉ Khóa Học (4)</button>
-        <button type="button" class="filter-btn" id="tabCourseFilterINDICATOR" onclick="filterTrainingModalCategory('indicator')">Chỉ Báo (2)</button>
-        <button type="button" class="filter-btn" id="tabCourseFilterVIP" onclick="filterTrainingModalCategory('vip')">Nhóm VIP (2)</button>
+        <button type="button" class="filter-btn active" id="tabCourseFilterALL" onclick="filterTrainingModalCategory('ALL')">Tất cả</button>
+        <button type="button" class="filter-btn" id="tabCourseFilterCOURSE" onclick="filterTrainingModalCategory('course')">Khóa học</button>
+        <button type="button" class="filter-btn" id="tabCourseFilterINDICATOR" onclick="filterTrainingModalCategory('indicator')">Chỉ báo</button>
+        <button type="button" class="filter-btn" id="tabCourseFilterVIP" onclick="filterTrainingModalCategory('vip')">Nhóm VIP</button>
       </div>
 
       <!-- Courses & Training Products Table -->
@@ -2350,9 +2362,8 @@ body.accounting-modal-open { overflow: hidden; }
               <th style="width:36px;">STT</th>
               <th>Tên Khóa Học / Sản Phẩm</th>
               <th style="width:100px;">Loại</th>
-              <th style="text-align:right;">Tổng Doanh Thu</th>
+              <th style="text-align:right;">Thực thu trước VAT</th>
               <th style="background:#f5f3ff; color:#6d28d9; width:160px;">Người Đào Tạo</th>
-              <th style="background:#fff7ed; color:#c2410c; width:220px;">Leader Phụ Trách</th>
               <th style="text-align:center; width:120px; background:#f5f3ff;">Thao Tác</th>
             </tr>
           </thead>
@@ -2365,25 +2376,20 @@ body.accounting-modal-open { overflow: hidden; }
 
     <div class="modal-footer" style="background:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
       <button type="button" class="tool-btn" onclick="closeTrainingConfigModal()">Đóng Cửa Sổ</button>
-      <button type="button" class="tool-btn primary" onclick="saveTrainingConfig()" style="background:linear-gradient(135deg, #b45309, #d97706); color:#fff; font-weight:800; padding:8px 18px;">
-        Lưu Cấu Hình & Cập Nhật Hệ Thống
-      </button>
     </div>
   </div>
 </div>
 
 
 <!-- ====================================================================
-     MODAL 5: TINH CHỈNH CHI TIẾT TỪNG NGƯỜI (TRAINER, LEADER, SALE) CHO 1 KHÓA
-     - Leader được chọn nhiều người cho 1 khóa
-     - Tùy chỉnh % cho từng Đào Tạo, từng Leader, từng Sale
+     MODAL 5: CẤU HÌNH NGƯỜI ĐÀO TẠO THEO KHÓA
      ==================================================================== -->
 <div class="modal-backdrop" id="coursePersonnelDetailModal" style="z-index: 1080;">
-  <div class="modal-card" style="max-width: 960px; max-height: 92vh; display:flex; flex-direction:column;">
+  <div class="modal-card" style="max-width: 760px; max-height: 92vh; display:flex; flex-direction:column;">
     <div class="modal-header" style="background:#f5f3ff; border-bottom:1px solid #ddd6fe; flex-shrink:0;">
       <div>
         <h3 id="cdmCourseTitle" style="color:#6d28d9; margin:0; font-size:16px;">Tùy Chỉnh Chi Tiết: Khóa Học SMC Thực Chiến (Lớp K01)</h3>
-        <span id="cdmCourseSubtitle" style="font-size:12px; color:#64748b;">Chọn Người Đào Tạo, chọn nhiều Leader, và quản lý tất cả Sale (Mặc định 15% - Tinh chỉnh từng người)</span>
+        <span id="cdmCourseSubtitle" style="font-size:12px; color:#64748b;">Chọn khóa và người đào tạo</span>
       </div>
       <button class="modal-close" onclick="closeCoursePersonnelDetailModal()">✕</button>
     </div>
@@ -2393,7 +2399,7 @@ body.accounting-modal-open { overflow: hidden; }
       <div style="background:#faf5ff; border:1px solid #ddd6fe; border-radius:8px; padding:12px 14px; margin-bottom:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
           <div style="font-size:12px; font-weight:800; color:#6d28d9; text-transform:uppercase;">
-            1. NGƯỜI ĐÀO TẠO & % HOA HỒNG ĐÀO TẠO
+            NGƯỜI ĐÀO TẠO & HOA HỒNG
           </div>
           <div style="display:flex; gap:6px; align-items:center;">
             <select id="cdmAddTrainerSelect" style="font-size:11px; padding:4px 8px; border-radius:5px; border:1px solid #cbd5e1;"></select>
@@ -2407,83 +2413,20 @@ body.accounting-modal-open { overflow: hidden; }
         </div>
       </div>
 
-      <!-- KHỐI 2: LEADER PHỤ TRÁCH (CHỌN NHIỀU LEADER CHO 1 KHÓA) -->
-      <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:12px 14px; margin-bottom:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-          <div style="font-size:12px; font-weight:800; color:#c2410c; text-transform:uppercase;">
-            2. LEADER PHỤ TRÁCH (CHỌN NHIỀU LEADER CHO 1 KHÓA & TÙY CHỈNH % TỪNG NGƯỜI)
-          </div>
-          <div style="display:flex; gap:6px; align-items:center;">
-            <button type="button" onclick="cdmSelectAllLeaders(true)" style="font-size:11px; padding:3px 8px; background:#ffffff; color:#c2410c; border:1px solid #fed7aa; border-radius:4px; font-weight:800; cursor:pointer;">
-              Chọn Tất Cả Leader
-            </button>
-            <button type="button" onclick="cdmSelectAllLeaders(false)" style="font-size:11px; padding:3px 8px; background:#ffffff; color:#64748b; border:1px solid #cbd5e1; border-radius:4px; font-weight:600; cursor:pointer;">
-              Bỏ Chọn Hết
-            </button>
-          </div>
-        </div>
-        <div id="cdmLeadersCheckboxGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:8px;">
-          <!-- Rendered dynamically with checkboxes for all 7 leaders -->
-        </div>
-      </div>
-
-      <!-- KHỐI 3: DANH SÁCH TẤT CẢ SALE (MẶC ĐỊNH 15% - TINH CHỈNH TỪNG NGƯỜI) -->
-      <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:12px 14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-          <div style="font-size:12px; font-weight:800; color:#0369a1; text-transform:uppercase;">
-            3. DANH SÁCH TẤT CẢ SALE (MẶC ĐỊNH 15% - TINH CHỈNH TỪNG NGƯỜI)
-          </div>
-          <div style="display:flex; gap:6px; align-items:center;">
-            <button type="button" onclick="applyDefault15PercentToAllSales()" style="font-size:11px; padding:3px 10px; background:#ffffff; color:#0369a1; border:1px solid #7dd3fc; border-radius:4px; font-weight:800; cursor:pointer;">
-              Đặt 15% Cho Tất Cả Sale
-            </button>
-          </div>
-        </div>
-
-        <div class="table-responsive" style="max-height: 280px; overflow-y:auto; border:1px solid #e0f2fe; border-radius:6px; background:#fff;">
-          <table class="crm-table" style="margin-bottom:0;">
-            <thead style="position:sticky; top:0; background:#f8fafc; z-index:5;">
-              <tr>
-                <th style="width:36px; text-align:center;">STT</th>
-                <th>Nhân Sự Sale</th>
-                <th>Nhóm / Quản Lý</th>
-                <th style="text-align:center; width:95px;">Số HV Bán</th>
-                <th style="text-align:right; width:120px;">Doanh Số</th>
-                <th style="text-align:center; width:95px; background:#e0f2fe; color:#0369a1;">% Sale</th>
-                <th style="text-align:right; width:125px;">HH Sale Thực Nhận</th>
-              </tr>
-            </thead>
-            <tbody id="cdmSalesTableBody">
-              <!-- Rendered dynamically -->
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;">Hoa hồng Leader tự tính theo tiền thực thu của Sale trực thuộc bán khóa này.</p>
     </div>
 
-    <!-- Modal Footer with Summary -->
-    <div class="modal-footer" style="background:#f8fafc; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
-      <div style="font-size:11.5px; color:#475569; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-        <span>Doanh Thu Lớp: <strong id="cdmSummaryRevenue" style="color:#0f172a; font-family:'JetBrains Mono';">0 đ</strong></span>
-        <span>|</span>
-        <span>Học Viên: <strong id="cdmSummaryStudents" style="color:#7c3aed;">0</strong></span>
-        <span>|</span>
-        <span>Tổng HH Sale: <strong id="cdmSummarySaleComm" style="color:#0369a1; font-family:'JetBrains Mono';">0 đ</strong></span>
-        <span>|</span>
-        <span>Tổng HH Leader: <strong id="cdmSummaryLeaderComm" style="color:#c2410c; font-family:'JetBrains Mono';">0 đ</strong></span>
-        <span>|</span>
-        <span>HH Đào Tạo: <strong id="cdmSummaryTrainerComm" style="color:#6d28d9; font-family:'JetBrains Mono';">0 đ</strong></span>
-        <span>|</span>
-        <span style="background:#ecfdf5; padding:2px 8px; border-radius:4px; border:1px solid #a7f3d0;">
-          Công Ty Giữ Lại: <strong id="cdmSummaryCompanyShare" style="color:#047857; font-family:'JetBrains Mono'; font-weight:800;">0 đ</strong>
-        </span>
-      </div>
-      <div style="display:flex; gap:8px; flex-shrink:0; align-items:center;">
-        <button type="button" class="tool-btn" onclick="closeCoursePersonnelDetailModal()" style="font-size:12px; padding:7px 14px; border-radius:6px; cursor:pointer; white-space:nowrap;">Đóng</button>
-        <button type="button" class="tool-btn primary" onclick="saveCoursePersonnelDetail()" style="background:#6d28d9; color:#fff; font-weight:700; font-size:12px; padding:7px 16px; border-radius:6px; border:none; cursor:pointer; white-space:nowrap;">
-          Lưu Phân Bổ
-        </button>
-      </div>
+    <div class="course-summary-grid">
+      <div><span>Thực thu trước VAT</span><strong id="cdmSummaryRevenue">0 đ</strong></div>
+      <div><span>Học viên đã thanh toán</span><strong id="cdmSummaryStudents">0</strong></div>
+      <div><span>Hoa hồng Sale</span><strong id="cdmSummarySaleComm">0 đ</strong></div>
+      <div><span>Hoa hồng Leader</span><strong id="cdmSummaryLeaderComm">0 đ</strong></div>
+      <div><span>Hoa hồng đào tạo</span><strong id="cdmSummaryTrainerComm">0 đ</strong></div>
+      <div class="company-share"><span>Công ty giữ lại</span><strong id="cdmSummaryCompanyShare">0 đ</strong></div>
+    </div>
+    <div class="modal-footer" style="background:#f8fafc;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
+      <button type="button" class="tool-btn" onclick="closeCoursePersonnelDetailModal()">Đóng</button>
+      <button type="button" class="tool-btn primary" onclick="saveCoursePersonnelDetail()" style="background:#6d28d9;color:#fff;font-weight:700;">Lưu người đào tạo</button>
     </div>
   </div>
 </div>
@@ -2815,35 +2758,16 @@ Tổng gửi: <span id="sendSelectedTotalMoney" style="color:#059669; font-size:
     // Tuyến dưới lot
     const dl = getDownlineDetails(item, APEX_DATA);
 
-    // 1. Hoa hồng Sale trực tiếp bán Sản phẩm (Khóa học + Chỉ báo + Nhóm VIP)
-    // Tùy chỉnh % riêng cho từng Sale ở từng khóa nếu có cấu hình salesConfig
-    const defaultSaleRate = (item.productRate !== undefined && item.productRate !== null) ? Number(item.productRate) : 15;
+    const defaultSaleRate = Number(item.productRate ?? 15);
     const monthFactor = 1;
-    let courseRev = Math.round((item.courseRev || 0) * monthFactor);
-    let hhSaleCourse = 0;
-
-    // Tính chi tiết hoa hồng khóa học theo từng khóa nếu Sale có cấu hình salesConfig
-    let hasCustomCourseSales = false;
-    COURSES_DATA.forEach(crs => {
-      if (crs.category === 'course' && crs.salesConfig && crs.salesConfig[item.id]) {
-        hasCustomCourseSales = true;
-        const cfg = crs.salesConfig[item.id];
-        const sRev = Number(cfg.revenue) || 0;
-        const sRate = (cfg.rateSale !== undefined && cfg.rateSale !== null) ? Number(cfg.rateSale) : defaultSaleRate;
-        hhSaleCourse += Math.round(sRev * (sRate / 100));
-      }
-    });
-
-    if (!hasCustomCourseSales) {
-      hhSaleCourse = Math.round(courseRev * (defaultSaleRate / 100));
-    }
-
-    const indicatorRev = Math.round((item.indicatorRev || 0) * monthFactor);
-    const vipRev = Math.round((item.vipRev || 0) * monthFactor);
-    const hhSaleIndicator = Math.round(indicatorRev * (defaultSaleRate / 100));
-    const hhSaleVip = Math.round(vipRev * (defaultSaleRate / 100));
+    const courseRev = Number(item.courseRev) || 0;
+    const indicatorRev = Number(item.indicatorRev) || 0;
+    const vipRev = Number(item.vipRev) || 0;
     const totalProductRev = courseRev + indicatorRev + vipRev;
-    const hhSaleProducts = hhSaleCourse + hhSaleIndicator + hhSaleVip;
+    const hhSaleProducts = COURSES_DATA.reduce((sum, crs) => {
+      const cfg = crs.salesConfig?.[item.id];
+      return sum + (cfg ? Math.round((Number(cfg.revenue) || 0) * Number(cfg.rateSale ?? crs.rateSale ?? defaultSaleRate) / 100) : 0);
+    }, 0);
 
     // 2. Hoa hồng Đào Tạo (15% doanh số các khóa/chỉ báo/VIP do người này làm Người Đào Tạo)
     const trainerInfo = calculateTrainerCommission(item.id);
@@ -3230,7 +3154,31 @@ function renderMindmapTree() {
  // ====================================================================
  // 5. RENDER BẢNG BÁO CÁO DOANH THU (LV1 - LV2 - LV3)
  // ====================================================================
+ let personnelReportSort = {key:'index', direction:1};
+ function sortPersonnelReport(key) {
+   personnelReportSort = {key, direction:personnelReportSort.key === key ? -personnelReportSort.direction : 1};
+   renderReportTable();
+ }
+ function sortedPersonnelReport(people) {
+   const {key, direction} = personnelReportSort;
+   const rows = people.map((person,index) => {
+     const fin = calculatePersonnelFinance(person);
+     const value = key === 'index' ? index : key === 'trainingLeader' ? fin.hhTrainer + fin.hhLeaderCourse : (fin[key] ?? person[key] ?? 0);
+     return {person,index,value};
+   });
+   rows.sort((a,b) => {
+     const cmp = typeof a.value === 'string' ? a.value.localeCompare(String(b.value),'vi',{numeric:true,sensitivity:'base'}) : Number(a.value)-Number(b.value);
+     return cmp * direction || a.index-b.index;
+   });
+   return rows.map(row => row.person);
+ }
  function renderReportTable() {
+  document.querySelectorAll('[data-report-sort]').forEach(th => {
+    const key = th.dataset.reportSort, active = personnelReportSort.key === key;
+    th.setAttribute('aria-sort', active ? (personnelReportSort.direction === 1 ? 'ascending' : 'descending') : 'none');
+    const indicator = th.querySelector('[data-sort-indicator]');
+    if (indicator) indicator.textContent = active ? (personnelReportSort.direction === 1 ? '↑' : '↓') : '↕';
+  });
   const countEl = document.getElementById('crmReportMemberCount');
   if (countEl) countEl.textContent = APEX_DATA.length;
   for (const [level, id, label] of [['LV1','filterBtnLv1','Manager'],['LV2','filterBtnLv2','Leader'],['LV3','filterBtnLv3','Sale']]) {
@@ -3249,10 +3197,10 @@ function renderMindmapTree() {
  const tbody = document.getElementById('reportTableBody');
  tbody.innerHTML = '';
 
- const filtered = APEX_DATA.filter(p => {
+ const filtered = sortedPersonnelReport(APEX_DATA.filter(p => {
  if (currentRoleFilter === 'ALL') return true;
  return p.roleLevel === currentRoleFilter;
- });
+ }));
 
   const filteredCount = document.getElementById('crmReportFilteredCount');
   if (filteredCount) filteredCount.textContent = filtered.length;
@@ -3308,7 +3256,7 @@ function renderMindmapTree() {
         ? `<div style="color:#0f172a; font-weight:700; font-size:11px;">+ ${formatMoney(fin.hhTrainer)} <span style="font-size:10px; color:#64748b; background:#f1f5f9; padding:1px 4px; border-radius:3px;">${fin.trainerCoursesCount} khóa</span></div>`
         : '';
       const leaderBadge = fin.hhLeaderCourse > 0
-        ? `<div style="color:#334155; font-weight:600; font-size:10.5px;">+ ${formatMoney(fin.hhLeaderCourse)} <span style="font-size:9.5px; color:#64748b;">(Leader 5%)</span></div>`
+        ? `<div style="color:#334155; font-weight:600; font-size:10.5px;">+ ${formatMoney(fin.hhLeaderCourse)} <span style="font-size:9.5px; color:#64748b;">(Leader)</span></div>`
         : '';
       const trainingLeaderCell = (fin.hhTrainer === 0 && fin.hhLeaderCourse === 0)
         ? '<span class="downline-none">—</span>'
@@ -3436,6 +3384,7 @@ function renderMindmapTree() {
   if (kpiNetEl) kpiNetEl.textContent = formatMoney(totalNet);
   const kpiSubNetDetailEl = document.getElementById('kpiSubNetDetail');
   if (kpiSubNetDetailEl) kpiSubNetDetailEl.textContent = `Lot: ${formatMoney(totalAllLotComm)} • SP: ${formatMoney(totalAllProductComm)} • Thưởng: ${formatMoney(totalBonus)}`;
+  handleSearch(document.getElementById('reportSearchInput')?.value || '');
   }
 
  // ====================================================================
@@ -4477,13 +4426,13 @@ function renderMindmapTree() {
 
     COURSES_DATA.forEach(crs => {
       let isTrainer = false;
-      let rate = crs.rateTrainer || 15;
+      let rate = crs.rateTrainer ?? 15;
 
       if (crs.trainers && Array.isArray(crs.trainers) && crs.trainers.length > 0) {
         const found = crs.trainers.find(t => t.id === personId);
         if (found) {
           isTrainer = true;
-          rate = (found.rate !== undefined && found.rate !== null && found.rate !== '') ? Number(found.rate) : (crs.rateTrainer || 15);
+          rate = (found.rate !== undefined && found.rate !== null && found.rate !== '') ? Number(found.rate) : (crs.rateTrainer ?? 15);
         }
       } else if (crs.trainerId === personId) {
         isTrainer = true;
@@ -4505,60 +4454,32 @@ function renderMindmapTree() {
     };
   }
 
-  // Tính toán hoa hồng Leader (Hỗ trợ CHỌN NHIỀU LEADER CHO 1 KHÓA & TÙY CHỈNH % TỪNG LEADER)
-  function calculateLeaderCourseCommission(person, dataList) {
-    if (person.roleLevel !== 'LV2' && person.roleLevel !== 'LV1') return 0;
-    let totalLeaderComm = 0;
-    let assignedCourseCount = 0;
-
-    // 1. Duyệt qua tất cả các khóa học, chỉ báo, nhóm VIP mà Leader này được phân công quản lý
-    COURSES_DATA.forEach(crs => {
-      let isAssigned = false;
-      let rate = crs.rateLeader || 5;
-
-      if (crs.leaders && Array.isArray(crs.leaders) && crs.leaders.length > 0) {
-        const found = crs.leaders.find(l => l.id === person.id);
-        if (found) {
-          isAssigned = true;
-          rate = (found.rate !== undefined && found.rate !== null && found.rate !== '') ? Number(found.rate) : (crs.rateLeader || 5);
-        }
-      } else if (crs.leaderId === person.id) {
-        isAssigned = true;
-        rate = (crs.rateLeader !== undefined && crs.rateLeader !== null && crs.rateLeader !== '') ? Number(crs.rateLeader) : 5;
-      }
-
-      if (isAssigned) {
-        assignedCourseCount++;
-        totalLeaderComm += Math.round((crs.totalRevenue || 0) * (rate / 100));
-      }
-    });
-
-    // 2. Nếu Leader này chưa được gán vào khóa nào cụ thể, tính theo doanh số tuyến dưới theo cây phả hệ
-    if (assignedCourseCount === 0) {
-      let totalDownlineCourseRev = 0;
-      if (person.roleLevel === 'LV2') {
-        const sales = dataList.filter(s => s.parentId === person.id);
-        sales.forEach(s => {
-          totalDownlineCourseRev += (s.courseRev || 0) + (s.indicatorRev || 0) + (s.vipRev || 0);
-        });
-        totalLeaderComm += Math.round(totalDownlineCourseRev * 0.05);
-      } else if (person.roleLevel === 'LV1') {
-        const directSubs = dataList.filter(s => s.parentId === person.id);
-        directSubs.forEach(sub => {
-          if (sub.roleLevel === 'LV2') {
-            const teamSales = dataList.filter(s => s.parentId === sub.id);
-            teamSales.forEach(s => {
-              totalDownlineCourseRev += (s.courseRev || 0) + (s.indicatorRev || 0) + (s.vipRev || 0);
-            });
-          } else {
-            totalDownlineCourseRev += (sub.courseRev || 0) + (sub.indicatorRev || 0) + (sub.vipRev || 0);
-          }
-        });
-        totalLeaderComm += Math.round(totalDownlineCourseRev * 0.05);
+  function courseLeaderCommission(crs, person, dataList = APEX_DATA) {
+    if (!['LV1','LV2'].includes(person.roleLevel)) return 0;
+    let revenue = 0;
+    if (crs.leaderRevenue) {
+      revenue = Number(crs.leaderRevenue[String(person.id)]) || 0;
+    } else {
+      for (const sale of dataList) {
+        if (sale.roleLevel !== 'LV3') continue;
+        const ownerId = sale.leaderId || sale.parentId || sale.managerId;
+        if (String(ownerId || '') === String(person.id)) revenue += Number(crs.salesConfig?.[sale.id]?.revenue) || 0;
       }
     }
+    const rate = Number(crs.leaderRates?.[person.id] ?? crs.rateLeader ?? 5);
+    return Math.round(revenue * rate / 100);
+  }
 
-    return totalLeaderComm;
+  function calculateLeaderCourseCommission(person, dataList) {
+    return COURSES_DATA.reduce((sum, crs) => sum + courseLeaderCommission(crs, person, dataList), 0);
+  }
+
+  function courseCommissionSummary(crs) {
+    const revenue = Number(crs.totalRevenue) || 0;
+    const sale = Object.values(crs.salesConfig || {}).reduce((sum, cfg) => sum + Math.round((Number(cfg.revenue) || 0) * Number(cfg.rateSale ?? crs.rateSale ?? 15) / 100), 0);
+    const trainer = (crs.trainers || []).reduce((sum, t) => sum + Math.round(revenue * Number(t.rate ?? crs.rateTrainer ?? 15) / 100), 0);
+    const leader = APEX_DATA.reduce((sum, person) => sum + courseLeaderCommission(crs, person), 0);
+    return {revenue, sale, trainer, leader, company: revenue - sale - trainer - leader};
   }
 
 
@@ -4613,9 +4534,9 @@ function renderMindmapTree() {
     const statIndEl = document.getElementById('statTotalIndicatorRev');
     if (statIndEl) statIndEl.textContent = formatMoney(totalIndRev);
     const statIndSaleEl = document.getElementById('statIndSaleShare');
-    if (statIndSaleEl) statIndSaleEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'indicator').reduce((sum, c) => sum + Math.round(c.totalRevenue * c.rateSale / 100), 0));
+    if (statIndSaleEl) statIndSaleEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'indicator').reduce((sum, c) => sum + courseCommissionSummary(c).sale, 0));
     const statIndCompEl = document.getElementById('statIndCompanyShare');
-    if (statIndCompEl) statIndCompEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'indicator').reduce((sum, c) => sum + Math.round(c.totalRevenue * c.rateCompany / 100), 0));
+    if (statIndCompEl) statIndCompEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'indicator').reduce((sum, c) => sum + courseCommissionSummary(c).company, 0));
 
     // Doanh thu Nhóm VIP
     let totalVipRev = 0;
@@ -4623,9 +4544,9 @@ function renderMindmapTree() {
     const statVipEl = document.getElementById('statTotalVipRev');
     if (statVipEl) statVipEl.textContent = formatMoney(totalVipRev);
     const statVipSaleEl = document.getElementById('statVipSaleShare');
-    if (statVipSaleEl) statVipSaleEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'vip').reduce((sum, c) => sum + Math.round(c.totalRevenue * c.rateSale / 100), 0));
+    if (statVipSaleEl) statVipSaleEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'vip').reduce((sum, c) => sum + courseCommissionSummary(c).sale, 0));
     const statVipCompEl = document.getElementById('statVipCompanyShare');
-    if (statVipCompEl) statVipCompEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'vip').reduce((sum, c) => sum + Math.round(c.totalRevenue * c.rateCompany / 100), 0));
+    if (statVipCompEl) statVipCompEl.textContent = formatMoney(COURSES_DATA.filter(c => c.category === 'vip').reduce((sum, c) => sum + courseCommissionSummary(c).company, 0));
 
     // Ô 2.1: Tổng Doanh Thu Tất Cả Sản Phẩm (Khóa học + Chỉ báo + VIP)
     let totalAllProductRev = 0;
@@ -4633,7 +4554,7 @@ function renderMindmapTree() {
     const statAllProdRevEl = document.getElementById('statTotalAllProductRev');
     if (statAllProdRevEl) statAllProdRevEl.textContent = formatMoney(totalAllProductRev);
     const subCompanyKeepEl = document.getElementById('statSubCompanyKeepShare');
-    if (subCompanyKeepEl) subCompanyKeepEl.textContent = `Công ty giữ lại: ${formatMoney(COURSES_DATA.reduce((sum, c) => sum + Math.round(c.totalRevenue * c.rateCompany / 100), 0))}`;
+    if (subCompanyKeepEl) subCompanyKeepEl.textContent = `Công ty giữ lại: ${formatMoney(COURSES_DATA.reduce((sum, c) => sum + courseCommissionSummary(c).company, 0))}`;
   }
 
   function updateCourseStatBox() {
@@ -4647,8 +4568,8 @@ function renderMindmapTree() {
     filteredCourses.forEach(c => {
       const rev = (c.totalRevenue || 0);
       courseRev += rev;
-      trainerComm += Math.round(rev * ((c.rateTrainer ?? 0) / 100));
-      companyShare += Math.round(rev * ((c.rateCompany ?? 0) / 100));
+      trainerComm += courseCommissionSummary(c).trainer;
+      companyShare += courseCommissionSummary(c).company;
     });
 
     const statCourseRevEl = document.getElementById('statTotalCourseRev');
@@ -4669,12 +4590,19 @@ function renderMindmapTree() {
   // MODAL CHI TIẾT TỪNG NGƯỜI: CHỌN NHIỀU LEADER, CHỈNH % ĐÀO TẠO, LEADER, SALE
   // ====================================================================
   let currentDetailCourseId = null;
+  let currentDetailCourseDraft = null;
 
   function openCoursePersonnelDetailModal(crsId) {
     currentDetailCourseId = crsId;
     const crs = COURSES_DATA.find(c => c.id === crsId);
     if (!crs) return;
 
+    currentDetailCourseDraft = structuredClone(crs);
+    openCourseDraft();
+  }
+
+  function openCourseDraft() {
+    const crs = currentDetailCourseDraft;
     // Ensure trainers and leaders arrays exist
     if (!crs.trainers) {
       crs.trainers = crs.trainerId ? [{ id: crs.trainerId, name: APEX_DATA.find(p=>p.id===crs.trainerId)?.name || crs.trainerId, rate: crs.rateTrainer || 15 }] : [];
@@ -4688,25 +4616,25 @@ function renderMindmapTree() {
 
     // Set modal headers
     const titleEl = document.getElementById('cdmCourseTitle');
-    if (titleEl) titleEl.textContent = `Tùy Chỉnh Phân Bổ: ${crs.name}`;
+    if (titleEl) titleEl.textContent = `Đào tạo: ${crs.name}`;
     const subEl = document.getElementById('cdmCourseSubtitle');
-    if (subEl) subEl.textContent = `Mã: ${crs.code || crs.id} • Giá: ${formatMoney(crs.price || 5000000)}/HV • Chọn nhiều Leader & tùy chỉnh % cho từng người`;
+    if (subEl) subEl.textContent = `Khóa: ${crs.courseKey || crs.code || crs.id}`;
 
     // Populate Add Trainer & Add Leader select dropdowns
     populateCdmSelects();
 
     // Render lists
     renderCdmTrainersList();
-    renderCdmLeadersList();
-    renderCdmSalesTable();
     updateCdmSummary();
 
     document.getElementById('coursePersonnelDetailModal').classList.add('active');
   }
 
   function closeCoursePersonnelDetailModal() {
+    if (window.__PENDING_COURSE_CONFIG === 'detail') return;
     document.getElementById('coursePersonnelDetailModal').classList.remove('active');
     currentDetailCourseId = null;
+    currentDetailCourseDraft = null;
   }
 
   function populateCdmSelects() {
@@ -4718,19 +4646,12 @@ function renderMindmapTree() {
       });
     }
 
-    const ldSel = document.getElementById('cdmAddLeaderSelect');
-    if (ldSel) {
-      ldSel.innerHTML = '<option value="">-- Chọn Leader --</option>';
-      APEX_DATA.filter(p => p.roleLevel === 'LV2' || p.roleLevel === 'LV1').forEach(l => {
-        ldSel.innerHTML += `<option value="${l.id}">${l.name} (${l.roleTitle})</option>`;
-      });
-    }
   }
 
   function renderCdmTrainersList() {
     const listEl = document.getElementById('cdmTrainersList');
     if (!listEl) return;
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
+    const crs = currentDetailCourseDraft;
     if (!crs || !crs.trainers) return;
 
     if (crs.trainers.length === 0) {
@@ -4749,7 +4670,7 @@ function renderMindmapTree() {
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <label style="font-size:11px; font-weight:700; color:#6d28d9;">% Đào Tạo:</label>
-          <input type="number" min="0" max="100" step="1" value="${t.rate || 15}"
+          <input type="number" min="0" max="100" step="1" value="${t.rate ?? 15}"
                  onchange="updateTrainerRateInCourse('${t.id}', this.value)"
                  style="width:52px; text-align:center; font-family:'JetBrains Mono'; font-weight:800; font-size:11.5px; color:#6d28d9; border:1px solid #ddd6fe; border-radius:4px; padding:2px;">
           <span style="font-size:11px; font-weight:800; color:#6d28d9;">%</span>
@@ -4764,7 +4685,7 @@ function renderMindmapTree() {
     const sel = document.getElementById('cdmAddTrainerSelect');
     const pId = sel?.value;
     if (!pId) return;
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
+    const crs = currentDetailCourseDraft;
     if (!crs) return;
 
     if (!crs.trainers) crs.trainers = [];
@@ -4780,7 +4701,7 @@ function renderMindmapTree() {
   }
 
   function updateTrainerRateInCourse(tId, newRate) {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
+    const crs = currentDetailCourseDraft;
     if (!crs || !crs.trainers) return;
     const t = crs.trainers.find(x => x.id === tId);
     if (t) t.rate = Math.max(0, Math.min(100, Number(newRate) || 0));
@@ -4788,281 +4709,22 @@ function renderMindmapTree() {
   }
 
   function removeTrainerFromCourse(tId) {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
+    const crs = currentDetailCourseDraft;
     if (!crs || !crs.trainers) return;
     crs.trainers = crs.trainers.filter(t => t.id !== tId);
     renderCdmTrainersList();
     updateCdmSummary();
   }
 
-  function renderCdmLeadersList() {
-    const gridEl = document.getElementById('cdmLeadersCheckboxGrid');
-    if (!gridEl) return;
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs) return;
-
-    if (!crs.leaders) {
-      crs.leaders = crs.leaderId ? [{ id: crs.leaderId, name: APEX_DATA.find(p=>p.id===crs.leaderId)?.name || crs.leaderId, rate: crs.rateLeader || 5 }] : [];
-    }
-
-    gridEl.innerHTML = '';
-    const allLeaders = APEX_DATA.filter(p => p.roleLevel === 'LV2' || p.roleLevel === 'LV1');
-
-    allLeaders.forEach(ld => {
-      const assigned = crs.leaders.find(l => l.id === ld.id);
-      const isChecked = !!assigned;
-      const currentRate = isChecked ? (assigned.rate !== undefined ? assigned.rate : 5) : 5;
-      const estComm = Math.round((crs.totalRevenue || 0) * (currentRate / 100));
-
-      const card = document.createElement('div');
-      card.style.cssText = `background:${isChecked ? '#ffffff' : '#fafafa'}; border:1.5px solid ${isChecked ? '#ea580c' : '#e2e8f0'}; border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:6px; transition:all 0.15s ease;`;
-      if (isChecked) card.style.boxShadow = '0 2px 6px rgba(234, 88, 12, 0.15)';
-
-      card.innerHTML = `
-        <div style="display:flex; align-items:center; justify-content:space-between;">
-          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:800; font-size:12px; color:${isChecked ? '#c2410c' : '#475569'}; margin:0;">
-            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleCdmLeaderSelection('${ld.id}', this.checked)" style="width:16px; height:16px; accent-color:#ea580c; cursor:pointer;">
-            <span>${ld.name}</span>
-          </label>
-          <span style="font-size:10px; color:#64748b; background:#f1f5f9; padding:1px 5px; border-radius:4px; font-weight:700;">${ld.roleTitle}</span>
-        </div>
-        <div style="display:flex; align-items:center; justify-content:space-between; padding-top:4px; border-top:1px dashed ${isChecked ? '#fed7aa' : '#e2e8f0'};">
-          <div style="display:flex; align-items:center; gap:4px;">
-            <span style="font-size:11px; font-weight:700; color:${isChecked ? '#c2410c' : '#94a3b8'};">% Leader:</span>
-            <input type="number" min="0" max="100" step="1" value="${currentRate}" ${isChecked ? '' : 'disabled'}
-                   onchange="updateCdmLeaderRate('${ld.id}', this.value)"
-                   style="width:48px; text-align:center; font-family:'JetBrains Mono'; font-weight:800; font-size:11.5px; color:#c2410c; border:1px solid #fed7aa; border-radius:4px; padding:2px; ${isChecked ? 'background:#fff;' : 'background:#f1f5f9;'}">
-            <span style="font-size:11px; font-weight:800; color:${isChecked ? '#c2410c' : '#94a3b8'};">%</span>
-          </div>
-          ${isChecked ? `<span style="font-size:11px; font-family:'JetBrains Mono'; font-weight:800; color:#ea580c;">≈ ${formatMoney(estComm)}</span>` : '<span style="font-size:10.5px; color:#94a3b8; font-style:italic;">Chưa chọn</span>'}
-        </div>
-      `;
-      gridEl.appendChild(card);
-    });
-  }
-
-  function toggleCdmLeaderSelection(leaderId, isChecked) {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs) return;
-    if (!crs.leaders) crs.leaders = [];
-
-    if (isChecked) {
-      if (!crs.leaders.some(l => l.id === leaderId)) {
-        const p = APEX_DATA.find(x => x.id === leaderId);
-        crs.leaders.push({ id: leaderId, name: p ? p.name : leaderId, rate: 5 });
-      }
-    } else {
-      crs.leaders = crs.leaders.filter(l => l.id !== leaderId);
-    }
-    crs.leaderId = crs.leaders.length > 0 ? crs.leaders[0].id : 'AUTO';
-    renderCdmLeadersList();
-    updateCdmSummary();
-  }
-
-  function updateCdmLeaderRate(leaderId, rateVal) {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs || !crs.leaders) return;
-    const l = crs.leaders.find(x => x.id === leaderId);
-    if (l) {
-      l.rate = Math.max(0, Math.min(100, Number(rateVal) || 0));
-    }
-    renderCdmLeadersList();
-    updateCdmSummary();
-  }
-
-  function addLeaderToCurrentCourse() {
-    const sel = document.getElementById('cdmAddLeaderSelect');
-    const pId = sel ? sel.value : null;
-    if (pId) toggleCdmLeaderSelection(pId, true);
-  }
-
-  function updateLeaderRateInCourse(leaderId, rateVal) {
-    updateCdmLeaderRate(leaderId, rateVal);
-  }
-
-  function removeLeaderFromCourse(leaderId) {
-    toggleCdmLeaderSelection(leaderId, false);
-  }
-
-  function cdmSelectAllLeaders(selectAll) {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs) return;
-    const allLeaders = APEX_DATA.filter(p => p.roleLevel === 'LV2' || p.roleLevel === 'LV1');
-    if (selectAll) {
-      crs.leaders = allLeaders.map(ld => ({
-        id: ld.id,
-        name: ld.name,
-        rate: 5
-      }));
-      crs.leaderId = allLeaders[0].id;
-    } else {
-      crs.leaders = [];
-      crs.leaderId = 'AUTO';
-    }
-    renderCdmLeadersList();
-    updateCdmSummary();
-  }
-
-  function renderCdmSalesTable() {
-    const tbody = document.getElementById('cdmSalesTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs) return;
-
-    const unitPrice = crs.price || 5000000;
-    if (!crs.salesConfig) crs.salesConfig = {};
-
-    // Danh sách TẤT CẢ Sale trong công ty (LV3 ưu tiên trước, hoặc tất cả nhân sự)
-    const salesList = APEX_DATA.filter(p => p.roleLevel === 'LV3');
-    // Nếu muốn hiển thị tất cả nhân sự có thể bán hàng, cũng có thể bao gồm
-    const displayList = salesList.length > 0 ? salesList : APEX_DATA;
-
-    displayList.forEach((person, idx) => {
-      // Mặc định 15% cho tất cả Sale
-      if (!crs.salesConfig[person.id]) {
-        crs.salesConfig[person.id] = { students: 0, rateSale: 15 };
-      }
-      const cfg = crs.salesConfig[person.id];
-      if (cfg.rateSale === undefined || cfg.rateSale === null) {
-        cfg.rateSale = 15;
-      }
-
-      const sCount = cfg.students || 0;
-      const sRev = sCount * unitPrice;
-      const sRate = cfg.rateSale;
-      const sComm = Math.round(sRev * (sRate / 100));
-
-      const tr = document.createElement('tr');
-      if (sCount > 0) tr.style.background = '#f0fdf4';
-
-      tr.innerHTML = `
-        <td style="color:#64748b; font-weight:700; text-align:center;">${idx + 1}</td>
-        <td>
-          <div style="font-weight:800; color:#0f172a; font-size:12px;">${person.name}</div>
-          <div style="font-size:10px; color:#64748b; font-family:'JetBrains Mono';">ID: ${person.displayId || person.accountId || (String(person.id || '').startsWith('u-reg-') ? '—' : person.id)} • ${person.roleTitle}</div>
-        </td>
-        <td style="font-size:11px; color:#475569;">${person.directManager || 'Direct'}</td>
-        <td style="text-align:center;">
-          <input type="number" min="0" max="100" step="1" value="${sCount}"
-                 readonly title="Số học viên được tổng hợp từ đơn CRM" onchange="updateSaleStudentsInCourse('${person.id}', this.value)"
-                 title="Nhập số học viên ${person.name} bán được (ví dụ: 4, 2, 0...)"
-                 style="width:50px; text-align:center; font-family:'JetBrains Mono'; font-weight:800; font-size:11.5px; color:#15803d; border:1px solid #86efac; border-radius:4px; padding:2px; background:#fff;">
-        </td>
-        <td style="text-align:right; font-family:'JetBrains Mono'; font-weight:700; color:#0f172a;" id="cdmRev_${person.id}">
-          ${formatMoney(sRev)}
-        </td>
-        <td style="text-align:center; background:#f0f9ff;">
-          <div style="display:inline-flex; align-items:center; gap:2px;">
-            <input type="number" min="0" max="100" step="1" value="${sRate}"
-                   onchange="updateSaleRateInCourse('${person.id}', this.value)"
-                   title="Tùy chỉnh % hoa hồng riêng cho ${person.name} ở khóa này (Mặc định 15%)"
-                   style="width:46px; text-align:center; font-family:'JetBrains Mono'; font-weight:800; font-size:11px; color:#0284c7; border:1px solid #7dd3fc; border-radius:4px; padding:2px; background:#fff;">
-            <span style="font-size:10px; font-weight:800; color:#0284c7;">%</span>
-          </div>
-        </td>
-        <td style="text-align:right; font-family:'JetBrains Mono'; font-weight:800; color:#059669;" id="cdmComm_${person.id}">
-          +${formatMoney(sComm)}
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  function applyDefault15PercentToAllSales() {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs) return;
-    if (!crs.salesConfig) crs.salesConfig = {};
-
-    APEX_DATA.forEach(p => {
-      if (!crs.salesConfig[p.id]) crs.salesConfig[p.id] = { students: 0, rateSale: 15 };
-      crs.salesConfig[p.id].rateSale = 15;
-    });
-
-    renderCdmSalesTable();
-    updateCdmSummary();
-  }
-
-  function updateSaleStudentsInCourse(pId, countVal) {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs) return;
-    if (!crs.salesConfig) crs.salesConfig = {};
-    if (!crs.salesConfig[pId]) crs.salesConfig[pId] = { students: 0, rateSale: 15 };
-
-    const count = Math.max(0, parseInt(countVal) || 0);
-    crs.salesConfig[pId].students = count;
-
-    const unitPrice = crs.price || 5000000;
-    const sRev = count * unitPrice;
-    const sComm = Math.round(sRev * ((crs.salesConfig[pId].rateSale || 15) / 100));
-
-    const revEl = document.getElementById('cdmRev_' + pId);
-    if (revEl) revEl.textContent = formatMoney(sRev);
-    const commEl = document.getElementById('cdmComm_' + pId);
-    if (commEl) commEl.textContent = '+' + formatMoney(sComm);
-
-    updateCdmSummary();
-  }
-
-  function updateSaleRateInCourse(pId, rateVal) {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if (!crs) return;
-    if (!crs.salesConfig) crs.salesConfig = {};
-    if (!crs.salesConfig[pId]) crs.salesConfig[pId] = { students: 0, rateSale: 15 };
-
-    const rate = Math.max(0, Math.min(100, Number(rateVal) || 0));
-    crs.salesConfig[pId].rateSale = rate;
-
-    const unitPrice = crs.price || 5000000;
-    const sRev = (crs.salesConfig[pId].students || 0) * unitPrice;
-    const sComm = Math.round(sRev * (rate / 100));
-
-    const commEl = document.getElementById('cdmComm_' + pId);
-    if (commEl) commEl.textContent = '+' + formatMoney(sComm);
-
-    updateCdmSummary();
-  }
-
   function updateCdmSummary() {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
+    const crs = currentDetailCourseDraft;
     if (!crs) return;
 
-    const unitPrice = crs.price || 5000000;
-    let totalStudents = 0;
-    let totalRev = 0;
-    let totalSaleComm = 0;
-
-    if (crs.salesConfig) {
-      Object.keys(crs.salesConfig).forEach(pId => {
-        const cfg = crs.salesConfig[pId];
-        const count = cfg.students || 0;
-        totalStudents += count;
-        const rev = count * unitPrice;
-        totalRev += rev;
-        totalSaleComm += Math.round(rev * ((cfg.rateSale || 15) / 100));
-      });
-    }
-
-    if (totalRev > 0) {
-      crs.studentsCount = totalStudents;
-      crs.totalRevenue = totalRev;
-    }
-
-    let totalTrainerComm = 0;
-    if (crs.trainers) {
-      crs.trainers.forEach(t => {
-        totalTrainerComm += Math.round(crs.totalRevenue * ((t.rate || 15) / 100));
-      });
-    }
-
-    let totalLeaderComm = 0;
-    if (crs.leaders) {
-      crs.leaders.forEach(l => {
-        totalLeaderComm += Math.round(crs.totalRevenue * ((l.rate || 5) / 100));
-      });
-    }
-
-    const companyShare = Math.max(0, crs.totalRevenue - totalSaleComm - totalTrainerComm - totalLeaderComm);
+    const summary = courseCommissionSummary(crs);
+    const totalSaleComm = summary.sale;
+    const totalTrainerComm = summary.trainer;
+    const totalLeaderComm = summary.leader;
+    const companyShare = summary.company;
 
     const revEl = document.getElementById('cdmSummaryRevenue');
     if (revEl) revEl.textContent = formatMoney(crs.totalRevenue);
@@ -5079,25 +4741,15 @@ function renderMindmapTree() {
   }
 
   function saveCoursePersonnelDetail() {
-    const crs = COURSES_DATA.find(c => c.id === currentDetailCourseId);
-    if(window.parent!==window){persistCourseConfigs(crs?[crs]:[],'detail');return;}
-    if (crs && crs.salesConfig) {
-      // Sync student sales into APEX_DATA.courseRev
-      Object.keys(crs.salesConfig).forEach(pId => {
-        const p = APEX_DATA.find(x => x.id === pId);
-        if (p) {
-          const cfg = crs.salesConfig[pId];
-          if (cfg.students !== undefined) {
-            p.courseRev = (cfg.students || 0) * (crs.price || 5000000);
-          }
-        }
-      });
-    }
-
+    const crs = currentDetailCourseDraft;
+    if (!crs) return;
+    if (courseCommissionSummary(crs).company < 0) { alert('Tổng hoa hồng vượt tiền thực thu. Vui lòng kiểm tra tỷ lệ đào tạo.'); return; }
+    if (window.parent !== window) { persistCourseConfigs([crs], 'detail'); return; }
+    const index = COURSES_DATA.findIndex(c => c.id === crs.id);
+    if (index >= 0) COURSES_DATA[index] = structuredClone(crs);
     closeCoursePersonnelDetailModal();
     renderTrainingConfigTable();
     renderAllViews();
-    alert(`✓ Đã lưu thành công cấu hình chi tiết cho ${crs.name}! Toàn bộ hệ thống đã được tính toán lại.`);
   }
 
   function openTrainingConfigModal() {
@@ -5213,6 +4865,11 @@ function renderMindmapTree() {
     const tbody = document.getElementById('trainingConfigTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
+    const selector = document.getElementById('trainingCourseSelect');
+    if (selector) {
+      selector.replaceChildren(new Option('— Chọn khóa —', ''));
+      COURSES_DATA.filter(c => c.category === 'course').forEach(c => selector.add(new Option(c.name, c.id)));
+    }
 
     const list = (currentTrainingModalCategory === 'ALL')
       ? COURSES_DATA
@@ -5235,20 +4892,6 @@ function renderMindmapTree() {
         trainerName = APEX_DATA.find(p=>p.id===crs.trainerId)?.name || crs.trainerId;
       }
 
-      // Leader tóm tắt gọn gàng (không bị tràn màn hình)
-      let leaderSummaryHtml = '';
-      if (crs.leaders && crs.leaders.length > 0) {
-        const leaderNames = crs.leaders.map(l => l.name).join(', ');
-        leaderSummaryHtml = `
-          <div style="font-weight:700; font-size:11.5px; color:#c2410c; display:flex; align-items:center; gap:4px;">
-            <span>${leaderNames}</span>
-            <span style="font-size:10px; background:#ffedd5; color:#c2410c; padding:1px 5px; border-radius:4px; font-weight:800;">${crs.leaders.length} Leader</span>
-          </div>
-        `;
-      } else {
-        leaderSummaryHtml = '<span style="font-size:11px; color:#94a3b8; font-style:italic;">Chưa chọn Leader</span>';
-      }
-
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td style="color:#64748b; font-weight:700; text-align:center;">${idx + 1}</td>
@@ -5258,7 +4901,7 @@ function renderMindmapTree() {
             ${crs.batchName ? `<span style="background:#e0e7ff; color:#4338ca; font-size:10px; font-weight:800; padding:1px 6px; border-radius:4px; margin-left:4px;">${crs.batchName}</span>` : ''}
           </div>
           <div style="font-size:10px; color:#64748b; font-family:'JetBrains Mono';">
-            ${crs.courseGroup || 'Đào tạo'} • Khai giảng: ${crs.startDate || '09/2026'} • ${crs.studentsCount || 0} học viên
+            ${crs.courseGroup || 'Đào tạo'}${crs.startDate ? ' • Khai giảng: ' + crs.startDate : ''} • ${crs.studentsCount || 0} học viên
           </div>
         </td>
         <td>
@@ -5279,9 +4922,6 @@ function renderMindmapTree() {
         </td>
         <td style="background:#faf5ff;">
           <div style="font-weight:700; font-size:11.5px; color:#6d28d9;">${trainerName}</div>
-        </td>
-        <td style="background:#fff7ed;">
-          ${leaderSummaryHtml}
         </td>
         <td style="text-align:center; background:#f8fafc;">
           <button type="button" onclick="openCoursePersonnelDetailModal('${crs.id}')"
@@ -5349,7 +4989,7 @@ function renderMindmapTree() {
 
   function persistCourseConfigs(courses,view){
     if(window.__PENDING_COURSE_CONFIG)return;
-    const payload=courses.map(course=>({courseKey:course.courseKey||course.id,trainerIds:(course.trainers||[]).map(p=>p.id),leaderIds:(course.leaders||[]).map(p=>p.id),trainerRates:Object.fromEntries((course.trainers||[]).map(p=>[p.id,Number(p.rate)||0])),leaderRates:Object.fromEntries((course.leaders||[]).map(p=>[p.id,Number(p.rate)||0])),saleRates:Object.fromEntries(Object.entries(course.salesConfig||{}).map(([id,cfg])=>[id,Number(cfg.rateSale)||0])),rateSale:course.rateSale,rateLeader:course.rateLeader,rateTrainer:course.rateTrainer,rateCompany:course.rateCompany,startDate:course.startDate||''}));
+    const payload=courses.map(course=>({courseKey:course.courseKey||course.id,trainerIds:(course.trainers||[]).map(p=>p.id),leaderIds:(course.leaders||[]).map(p=>p.id),trainerRates:Object.fromEntries((course.trainers||[]).map(p=>[p.id,Number(p.rate)||0])),leaderRates:Object.fromEntries((course.leaders||[]).map(p=>[p.id,Number(p.rate)||0])),saleRates:{...(course.saleRates||{}),...Object.fromEntries(Object.entries(course.salesConfig||{}).map(([id,cfg])=>[id,Number(cfg.rateSale)||0]))},rateSale:course.rateSale,rateLeader:course.rateLeader,rateTrainer:course.rateTrainer,rateCompany:course.rateCompany,startDate:course.startDate||''}));
     if(!payload.length){alert('Chưa có sản phẩm để lưu cấu hình.');return;}
     window.__PENDING_COURSE_CONFIG=view;
     postAccountingMessage('ACCOUNTING_COURSE_CONFIG_SAVE',{payload});
@@ -5753,20 +5393,11 @@ function _old_navigateAccountingMonth(direction) {
   window.submitCreateNewBatch = submitCreateNewBatch;
   window.saveTrainingConfig = saveTrainingConfig;
   // Removed obsolete popover window exports
-  window.toggleCdmLeaderSelection = toggleCdmLeaderSelection;
-  window.updateCdmLeaderRate = updateCdmLeaderRate;
-  window.cdmSelectAllLeaders = cdmSelectAllLeaders;
   window.openCoursePersonnelDetailModal = openCoursePersonnelDetailModal;
   window.closeCoursePersonnelDetailModal = closeCoursePersonnelDetailModal;
   window.addTrainerToCurrentCourse = addTrainerToCurrentCourse;
   window.updateTrainerRateInCourse = updateTrainerRateInCourse;
   window.removeTrainerFromCourse = removeTrainerFromCourse;
-  window.addLeaderToCurrentCourse = addLeaderToCurrentCourse;
-  window.updateLeaderRateInCourse = updateLeaderRateInCourse;
-  window.removeLeaderFromCourse = removeLeaderFromCourse;
-  window.updateSaleStudentsInCourse = updateSaleStudentsInCourse;
-  window.updateSaleRateInCourse = updateSaleRateInCourse;
-  window.applyDefault15PercentToAllSales = applyDefault15PercentToAllSales;
   window.saveCoursePersonnelDetail = saveCoursePersonnelDetail;
 
   window.updatePersonnelCourseRev = updatePersonnelCourseRev;
@@ -7887,34 +7518,55 @@ window.printOrderInvoice = printOrderInvoice;
     const configs = new Map(state.courseConfigs.map(c => [String(c.courseKey), c]));
     const groups = new Map();
     const revenueBySale = new Map();
-    for (const order of state.orders) {
-      if (!order) continue;
-      const periodEvents=OrderPayments.events(order).filter(event=>currentGlobalMonth==='ALL'||String(event.occurredAt||'').slice(0,7)===currentGlobalMonth);
-      const amount=periodEvents.reduce((sum,event)=>sum+event.netAmount,0);
-      if(!amount)continue;
-      const product = products.get(String(order.productId)) || {};
-      const category = String(product.kind || order.productKind || 'OTHER').toLowerCase();
-      const key = String(order.productId || order.productName || order.id);
-      if (!groups.has(key)) {
-        const cfg = configs.get(String(product.courseKey || key)) || {};
-        groups.set(key, {
-          ...cfg, courseKey:product.courseKey||key, id: key, code: product.sku || '', name: product.name || order.productName || 'Sản phẩm',
-          category, categoryLabel: {course:'Khóa học',indicator:'Chỉ báo',vip:'Nhóm VIP'}[category] || 'Sản phẩm khác',
-          courseGroup: product.name || order.productName || '', batchName: '',
-          price: Number(product.price) || 0, studentsCount: 0, totalRevenue: 0, salesConfig: {},
-          trainers: (cfg.trainerIds || []).map(id => ({id, name:(state.members||[]).find(p=>String(p.id)===String(id))?.name||id, rate: Number(cfg.trainerRates?.[id]??cfg.rateTrainer) || 0})),
-          leaders: (cfg.leaderIds || []).map(id => ({id, name:(state.members||[]).find(p=>String(p.id)===String(id))?.name||id, rate: Number(cfg.leaderRates?.[id]??cfg.rateLeader) || 0})),
-          rateSale: Number(cfg.rateSale) || 0, rateTrainer: Number(cfg.rateTrainer) || 0,
-          rateLeader: Number(cfg.rateLeader) || 0, rateCompany: Number(cfg.rateCompany) || 0
+    const studentSets = new Map();
+    const customers = new Map((state.customers || []).map(c => [String(c.id), c]));
+    const members = new Map((state.members || []).map(m => [String(m.id), m]));
+    const ensureGroup = (key, product = {}, category = 'course', fallbackName = '') => {
+      const groupKey = category + ':' + key;
+      if (!groups.has(groupKey)) {
+        const cfg = configs.get(key) || {};
+        groups.set(groupKey, {
+          ...cfg, courseKey:key, id:groupKey, code:key, name:category === 'course' ? key : (product.name || fallbackName || key),
+          category, categoryLabel:{course:'Khóa học',indicator:'Chỉ báo',vip:'Nhóm VIP'}[category] || 'Sản phẩm khác',
+          courseGroup:product.name || fallbackName || '', batchName:'',
+          price:Number(product.price) || 0, studentsCount:0, totalRevenue:0, salesConfig:{}, leaderRevenue:{},
+          trainers:(cfg.trainerIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.trainerRates?.[id] ?? cfg.rateTrainer ?? 15)})),
+          leaders:(cfg.leaderIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.leaderRates?.[id] ?? cfg.rateLeader ?? 5)})),
+          rateSale:Number(cfg.rateSale ?? 15), rateTrainer:Number(cfg.rateTrainer ?? 15),
+          rateLeader:Number(cfg.rateLeader ?? 5), rateCompany:Number(cfg.rateCompany ?? 65)
         });
       }
-      const group = groups.get(key);
+      return groups.get(groupKey);
+    };
+    for (const key of state.courseKeys || []) if (String(key).trim()) ensureGroup(String(key).trim());
+    for (const order of state.orders) {
+      if (!order) continue;
+      const periodEvents = OrderPayments.events(order).filter(event => currentGlobalMonth === 'ALL' || String(event.occurredAt || '').slice(0,7) === currentGlobalMonth);
+      const amount = periodEvents.reduce((sum,event) => sum + event.netAmount, 0);
+      if (!amount) continue;
+      const product = products.get(String(order.productId)) || {};
+      const category = String(product.kind || order.productKind || 'OTHER').toLowerCase();
+      const customerCourse = customers.get(String(order.customerId))?.customFields?.[state.courseField?.id];
+      const selectedCourse = Array.isArray(customerCourse) ? (customerCourse.length === 1 ? customerCourse[0] : '') : customerCourse;
+      const key = String((category === 'course' && (order.courseKey || selectedCourse || product.courseKey)) || order.productId || order.productName || order.id);
+      const group = ensureGroup(key, product, category, order.productName);
       group.totalRevenue += amount;
-      group.studentsCount += 1;
+      const studentKey = String(order.customerId || order.id);
+      const groupStudents = studentSets.get(group.id) || new Set();
+      groupStudents.add(studentKey);
+      studentSets.set(group.id, groupStudents);
+      group.studentsCount = groupStudents.size;
       if (order.saleId) {
-        const saleConfig = group.salesConfig[String(order.saleId)] ||= { students: 0, revenue: 0, rateSale: group.saleRates?.[String(order.saleId)]??group.rateSale };
+        const savedMetric = state.brokerageMetrics.find(m => String(m.memberId) === String(order.saleId) && m.period === currentGlobalMonth);
+        const personalRate = savedMetric?.productRate ?? members.get(String(order.saleId))?.productRate ?? APEX_DATA.find(p => String(p.id) === String(order.saleId))?.productRate ?? 15;
+        const saleConfig = group.salesConfig[String(order.saleId)] ||= {students:0,revenue:0,rateSale:group.saleRates?.[String(order.saleId)] ?? configs.get(key)?.rateSale ?? personalRate};
         saleConfig.students += 1;
         saleConfig.revenue += amount;
+        const seller = members.get(String(order.saleId));
+        if (seller?.role === 'SALE' || seller?.roleLevel === 'LV3') {
+          const leaderId = order.leaderId || seller.leaderId || seller.parentId || order.managerId || seller.managerId;
+          if (leaderId && String(leaderId) !== String(order.saleId)) group.leaderRevenue[String(leaderId)] = (group.leaderRevenue[String(leaderId)] || 0) + amount;
+        }
       }
       const saleKey = String(order.saleId || '');
       if (!revenueBySale.has(saleKey)) revenueBySale.set(saleKey, {courseRev:0,indicatorRev:0,vipRev:0,otherRev:0});
@@ -8155,6 +7807,9 @@ window.printOrderInvoice = printOrderInvoice;
       ACCOUNTING_CRM_STATE.courseConfigs = Array.isArray(msg.courseConfigs) ? msg.courseConfigs : [];
       ACCOUNTING_CRM_STATE.brokerageMetrics = Array.isArray(msg.brokerageMetrics) ? msg.brokerageMetrics : [];
       ACCOUNTING_CRM_STATE.members = msg.members || [];
+      ACCOUNTING_CRM_STATE.customers = msg.customers || [];
+      ACCOUNTING_CRM_STATE.courseField = msg.courseField || null;
+      ACCOUNTING_CRM_STATE.courseKeys = msg.courseKeys || [];
       ACCOUNTING_CRM_STATE.products = msg.products || [];
       ACCOUNTING_CRM_STATE.expenses = Array.isArray(msg.expenses) ? msg.expenses : [];
       syncAccountingDataFromCRM(msg);
@@ -8167,7 +7822,7 @@ window.printOrderInvoice = printOrderInvoice;
       }
     } else if (msg.type === 'ACCOUNTING_COURSE_CONFIG_RESULT') {
       const view=window.__PENDING_COURSE_CONFIG;window.__PENDING_COURSE_CONFIG=null;
-      if(msg.ok){if(view==='detail')closeCoursePersonnelDetailModal();else closeTrainingConfigModal();if(typeof showToast==='function')showToast('Máy chủ đã xác nhận lưu cấu hình hoa hồng.','success','Đã lưu');}
+      if(msg.ok){if(view==='detail')closeCoursePersonnelDetailModal();else closeTrainingConfigModal();renderTrainingConfigTable();if(typeof showToast==='function')showToast('Máy chủ đã xác nhận lưu cấu hình hoa hồng.','success','Đã lưu');}
       else if(typeof showToast==='function')showToast(msg.error||'Chưa lưu được cấu hình. Giữ cửa sổ để thử lại.','warning','Chưa lưu');
     } else if (msg.type === 'ACCOUNTING_EXPENSE_RESULT') {
       const pending=window.__PENDING_EXPENSE;window.__PENDING_EXPENSE=null;
