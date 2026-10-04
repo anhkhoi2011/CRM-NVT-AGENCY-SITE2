@@ -2661,10 +2661,14 @@
   // createOrder(source:'accounting-iframe') với mục Kiểm tra đơn & Xuất VAT để
   // CCCD, địa chỉ, cọc/còn lại, bill, ghi chú và MST/công ty khớp hai phía.
   const orderSalesInScope=()=>{
-    const role=data.user?.role,sales=(data.members||[]).filter(m=>m.role==='SALE'&&m.active!==false);
+    const role=String(data.user?.actualRole||data.user?.role||'').toUpperCase(),currentId=String(data.user?.id||''),members=(data.members||[]).filter(m=>m&&m.active!==false&&m.active!==0&&m.active!=='0'),sales=members.filter(m=>m.role==='SALE');
     if(role==='SALE'){const own=String(data.user.saleId||data.user.id||'');return sales.filter(m=>String(m.id)===own);}
     if(role==='LEADER'){const lead=String(data.user.leaderId||data.user.id||'');return sales.filter(m=>String(m.leaderId||'')===lead);}
-    if(role==='MANAGER'){const ids=new Set((data.managerHierarchy?.members||[]).map(m=>String(m.id)));return sales.filter(m=>ids.has(String(m.id)));}
+    if(role==='MANAGER'){
+      const leaderIds=new Set(members.filter(m=>m.role==='LEADER'&&String(m.managerId||'')===currentId).map(m=>String(m.id)));
+      const hierarchyIds=new Set((data.managerHierarchy?.members||[]).filter(m=>m?.role==='SALE'&&(String(m.managerId||'')===currentId||leaderIds.has(String(m.leaderId||'')))).map(m=>String(m.id)));
+      return sales.filter(m=>String(m.managerId||'')===currentId||leaderIds.has(String(m.leaderId||''))||hierarchyIds.has(String(m.id)));
+    }
     return sales;
   };
   const phoneKey=v=>String(v||'').replace(/\D/g,'').replace(/^84/,'0');

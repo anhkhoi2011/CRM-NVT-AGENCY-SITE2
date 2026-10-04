@@ -89,6 +89,23 @@ test('Reconciliation action is hidden in Orders and shown only in accounting con
  ctx.openReceiptOrderDetail(item.id,false,true);assert.match(markup,/receiptReconcile/);assert.match(markup,/Kế toán kiểm tra & Đối soát đủ/);
 });
 
+test('Create-order Sale selector uses actual role and all in-scope Sale members',()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
+ const makeNode=(id)=>({value:'',checked:false,hidden:false,required:false,dataset:{},classList:{add(){},toggle(){}},focus(){},before(){},selectedOptions:[{dataset:{price:5000000},textContent:'Product'}]});
+ const members=[{id:'manager',name:'Manager',role:'MANAGER',active:true},{id:'leader',name:'Leader',role:'LEADER',managerId:'manager',active:true},{id:'sale-1',name:'Sale 1',role:'SALE',leaderId:'leader',managerId:'manager',active:true},{id:'sale-2',name:'Sale 2',role:'SALE',leaderId:'leader',managerId:'manager',active:true},{id:'sale-off',name:'Sale ngoài tuyến',role:'SALE',leaderId:'other',managerId:'other',active:true}];
+ const renderFor=({role,actualRole,id='manager',leaderId=''})=>{
+   const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,makeNode(id));return nodes.get(id);};let markup='';
+   const modal={querySelector:node,querySelectorAll:()=>[]};
+   const ctx=vm.createContext({OrderPayments:payments,data:{products:[{id:'product',name:'Product',price:5000000}],customers:[],members,managerHierarchy:{members},user:{id,role,actualRole,leaderId}},orderSalesInScope:undefined,q:node,esc:String,money:String,opt:()=>'',phoneKey:String,compressBill:async()=> 'data:image/jpeg;base64,AA==',editor:(title,body)=>{markup=body;return modal;},document:{createElement:()=>({})},ensureAccountingOrderStyles(){},showOrderSuccess(){},api:{createOrder:async()=>({order:{}})},Date,Math,alert:assert.fail});
+   vm.runInContext(source.slice(source.indexOf('  const orderSalesInScope='),source.indexOf('  function openReceiptPaymentForm(')),ctx);
+   vm.runInContext(source.slice(source.indexOf('  function openAccountingOrderForm('),source.indexOf('  function ensureAccountingOrderStyles()')),ctx);
+   ctx.openAccountingOrderForm('');
+   return {markup,node};
+ };
+ const manager=renderFor({role:'LEADER',actualRole:'MANAGER'});assert.match(manager.markup,/Sale 1/);assert.match(manager.markup,/Sale 2/);assert.doesNotMatch(manager.markup,/Sale ngoài tuyến/);assert.doesNotMatch(manager.markup,/id="aoSale" disabled/);
+ const sale=renderFor({role:'SALE',actualRole:'SALE',id:'sale-1'});assert.match(sale.markup,/Sale 1/);assert.doesNotMatch(sale.markup,/Sale 2/);assert.match(sale.markup,/id="aoSale" disabled/);
+});
+
 test('Inclusive VAT keeps every entered dong and allocates receipts consistently',()=>{for(const total of [1,6,16,1000000,5500000,5500006]){const a=payments.amounts({total});assert.equal(a.total,total);assert.equal(a.subtotal+a.vatAmount,total);assert.equal(a.vatAmount,Math.round(total/11));}assert.equal(payments.amounts({subtotal:5000000}).total,5500000);assert.throws(()=>payments.amounts({total:1.5}));});
 test('Inclusive rounding is accepted by server for sale orders',()=>{const o={...order(),...payments.amounts({total:5500006})};o.balanceDue=o.total-o.amountPaid;crm.authorize(sale,'orders',null,o,data);crm.validate('orders',o,o.id);});
 test('QR and saved transfer content use customer full name and phone',async()=>{const f=form();f.node('#aoName').value='Nguyễn Văn An';f.node('#aoTotal').value='1000000';f.node('#aoTotal').oninput();await f.save();assert.match(f.node('#aoInvoice').innerHTML,new RegExp('des='+encodeURIComponent('Nguyễn Văn An 0901234567')));f.node('#aoConfirmed').checked=true;await f.node('#aoBillFile').onchange({target:{files:[{name:'bill.jpg'}]}});await f.save();assert.equal(f.created[0].total,1000000);assert.equal(f.created[0].subtotal,909091);assert.equal(f.created[0].amountPaid,1000000);assert.equal(f.created[0].paymentReference,'Nguyễn Văn An 0901234567');});
