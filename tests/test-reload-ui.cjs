@@ -74,7 +74,7 @@ test('F5: bấm thử lại liên tiếp chỉ có một request khôi phục đ
 test('HTML runtime có version vẫn phải kiểm tra lại cache khi deploy',()=>{
  const server=fs.readFileSync(ROOT+'/webhook-server.cjs','utf8');
  assert.match(server,/'Cache-Control':extension==='\.html' \? 'no-cache'/);
- assert.match(html,/crm-runtime\.html\?v=20261003-bill-types-6/);
+ assert.match(html,/crm-runtime\.html\?v=[\w-]+/);
 });
 test('Actions re-render immediately after save instead of waiting for the 15s poll',()=>{
  const src=require('node:fs').readFileSync('reference-crm.js','utf8');
@@ -85,4 +85,15 @@ test('Actions re-render immediately after save instead of waiting for the 15s po
  assert.doesNotMatch(body,/try \{ const result=await action\(\); if\(done\)done\(result\); refresh\(true\)/);
  assert.match(src,/finally\{workflowBusy=false;\}\s*if\(done\)refresh\(true\);/);
  assert.match(src,/if\(saved\)refresh\(true\);/);
+});
+
+// The shell and its nested order API must invalidate the same release together.
+test('Order selector, runtime frame and create-order API use the same release',()=>{
+ const html=fs.readFileSync('index.html','utf8'),runtime=fs.readFileSync('crm-runtime.html','utf8');
+ const shellVersion=html.match(/src="reference-crm\.js\?v=([^"&]+)/)[1];
+ const frameVersion=html.match(/src="crm-runtime\.html\?v=([^"&]+)/)[1];
+ const apiVersion=runtime.match(/src="crm-runtime-api\.js\?v=([^"&]+)/)[1];
+ assert.equal(frameVersion,shellVersion,'The runtime iframe must be refreshed with the order selector');
+ assert.equal(apiVersion,shellVersion,'The nested API must match the shell release');
+ assert.ok(fs.readFileSync('webhook-server.cjs','utf8').includes("const BUILD_VERSION = '"+shellVersion+"';"),'Hosting health identifies this order release');
 });
