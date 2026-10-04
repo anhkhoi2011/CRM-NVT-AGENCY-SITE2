@@ -8042,7 +8042,7 @@ window.printOrderInvoice = printOrderInvoice;
 
   function syncAccountingSelects(members, products) {
     if (Array.isArray(members)) {
-      const activeSales = members.filter(m => m && m.active !== false && (m.role === 'SALE' || m.roleLevel === 'LV3'));
+      const activeSales = members.filter(m => m && m.active !== false && (['MANAGER','LEADER','SALE'].includes(m.role) || ['LV1','LV2','LV3'].includes(m.roleLevel)));
       {
         const saleOptions = activeSales.map(m => `<option value="${m.id}">${m.name || m.accountId || m.id}</option>`).join('');
         const saleSelect = document.getElementById('newOrderSaleSelect');

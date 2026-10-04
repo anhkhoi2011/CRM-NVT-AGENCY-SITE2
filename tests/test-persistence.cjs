@@ -1839,3 +1839,37 @@ test('Retry after server update clears old rejection and preserves pending bill 
 
 test('Editing expense keeps original author/date and updates report month',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`state.expenses=[{id:'exp',date:'2026-09-01',month:'2026-09',title:'Old',amount:1000,createdBy:'original-user',createdAt:'2026-09-01T01:00:00Z'}];currentAccount={id:'accountant',role:'ACCOUNTING',scope:'ALL'};`,c);await api.saveExpense({id:'exp',date:'2026-10-03',title:'Updated',amount:2000});const result=vm.runInContext('state.expenses[0]',c);assert.equal(result.createdBy,'original-user');assert.equal(result.createdAt,'2026-09-01T01:00:00Z');assert.equal(result.month,'2026-10');});
 test('Image edits never truncate a valid image larger than one megabyte',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`state.orders=[{id:'o',status:'DEPOSIT',total:5500000,amountPaid:500000,balanceDue:5000000,receiptsVersion:1,paymentReceipts:[{id:'r',amount:500000,kind:'DEPOSIT',at:'2026-10-03T10:00:00Z',billImage:'data:image/png;base64,AA=='}]}];`,c);const imageData='data:image/png;base64,'+'A'.repeat(1100000);const result=await api.updateOrderAccounting('o',{action:'SAVE_RECEIPT_IMAGES',receiptId:'r',images:[{id:'big',imageData,note:'Original image'}]});assert.equal(result.order.paymentReceipts[0].images[0].imageData,imageData);assert.equal(result.order.paymentReceipts[0].imageRevisions[0].images[0].imageData,'data:image/png;base64,AA==');});
+
+for(const actorRole of ['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'])for(const ownerRole of ['MANAGER','LEADER','SALE'])test(actorRole+' creates order for '+ownerRole+' and SQL roundtrip preserves attribution',async()=>{
+ const f=fixture(),c=referenceBridge();
+ const members=[{id:'manager-owner',name:'Manager owner',role:'MANAGER',active:true,teamId:''},{id:'leader-owner',name:'Leader owner',role:'LEADER',active:true,managerId:'manager-owner',teamId:'T2'},{id:'sale-owner',name:'Sale owner',role:'SALE',active:true,leaderId:'leader-owner',teamId:'T2'}, {id:'inactive',name:'Inactive',role:'SALE',active:false}];
+ await f.api.write(admin,'seed-owners',members.map(m=>change('members',m)));
+ const actor={id:'creator',role:actorRole,actualRole:actorRole,scope:actorRole==='SALE'?'OWN':'ALL',teamId:'other',leaderId:'other'},owner=members.find(m=>m.role===ownerRole);
+ const snapshot=await f.api.read(actor);
+ assert.equal(snapshot.state.orderAssignees.length,3);
+ assert.ok(snapshot.state.orderAssignees.every(m=>!Object.hasOwn(m,'email')&&!Object.hasOwn(m,'phone')));
+ c.seed={actor,members,directory:snapshot.state.orderAssignees};
+ vm.runInContext("currentAccount=seed.actor;state.members=[];state.orderAssignees=seed.directory;state.products=[{id:'p1',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];",c);
+ const result=await c.window.crmApi.createOrder({source:'accounting-iframe',customerName:'Test',phone:'0901234567',saleId:owner.id,productId:'p1',total:5500000,amountPaid:500000,billImage:'data:image/png;base64,AA=='});
+ assert.equal(result.order.saleId,owner.id);assert.equal(result.customer.saleId,owner.id);assert.equal(result.order.managerId,'manager-owner');
+ assert.equal(result.order.leaderId,ownerRole==='MANAGER'?null:'leader-owner');
+ await f.api.write(actor,'create-assignee-order',[change('customers',structuredClone(result.customer)),change('orders',structuredClone(result.order))]);
+ const read=(await f.api.read(admin)).state,restored=read.orders.find(o=>o.id===result.id);
+ assert.equal(restored.saleId,owner.id);assert.equal(restored.total,5500000);assert.equal(restored.amountPaid,500000);assert.equal(restored.paymentReceipts[0].images.length,1);
+ assert.equal(f.db.orders.find(o=>o.id===result.id).sale_id,owner.id);
+ assert.equal(JSON.parse(f.db.orders.find(o=>o.id===result.id).items_json).managerId,'manager-owner');
+ assert.equal(require('./order-payments.js').events(restored).reduce((sum,e)=>sum+e.amount,0),500000);
+ if(actorRole==='SALE'){
+  const ownRead=await f.api.read(actor);assert.equal(ownRead.state.orders.length,0);
+  await assert.rejects(()=>f.api.write(actor,'foreign-edit',[change('orders',{...restored,saleNote:'forged edit'},f.api.revision(restored))]),/phạm vi/);
+ }
+});
+test('Order-created customer requires accompanying bill order; hidden duplicate phone is rejected atomically',async()=>{
+ const f=fixture(),owner={id:'owner',name:'Owner',role:'MANAGER',active:true,teamId:''};await f.api.write(admin,'owner',[change('members',owner)]);
+ const actor={id:'creator',role:'SALE'},cust={id:'created',name:'Test',phone:'0901234567',saleId:owner.id,leaderId:null,managerId:owner.id,teamId:'',createdVia:'ORDER',createdBy:actor.id};
+ await assert.rejects(()=>f.api.write(actor,'no-order',[change('customers',cust)]),/cùng đơn/);assert.equal(f.db.customers.length,0);
+ await f.api.write(admin,'existing',[change('customers',{...cust,id:'existing',createdVia:undefined})]);
+ const o={...order,id:'new-order',customerId:cust.id,saleId:owner.id,leaderId:null,managerId:owner.id,teamId:'',createdBy:actor.id,discount:0,subtotal:5000000,vatRate:.1,vatAmount:500000,total:5500000,amountPaid:500000,balanceDue:5000000,status:'DEPOSIT',paymentReference:'Test',receiptsVersion:1,paymentReceipts:[{id:'r1',amount:500000,kind:'DEPOSIT',at:'2026-10-04T00:00:00Z',createdBy:actor.id,billImage:'data:image/png;base64,AA=='}]};
+ await assert.rejects(()=>f.api.write(actor,'duplicate',[change('customers',cust),change('orders',o)]),/Số điện thoại đã tồn tại/);
+ assert.equal(f.db.customers.length,1);assert.equal(f.db.orders.length,0);
+});

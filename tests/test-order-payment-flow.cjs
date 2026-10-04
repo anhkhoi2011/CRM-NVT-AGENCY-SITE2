@@ -89,21 +89,25 @@ test('Reconciliation action is hidden in Orders and shown only in accounting con
  ctx.openReceiptOrderDetail(item.id,false,true);assert.match(markup,/receiptReconcile/);assert.match(markup,/Kế toán kiểm tra & Đối soát đủ/);
 });
 
-test('Create-order Sale selector uses actual role and all in-scope Sale members',()=>{
+test('All order-creating roles see Manager, Leader and every active Sale',()=>{
  const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
  const makeNode=(id)=>({value:'',checked:false,hidden:false,required:false,dataset:{},classList:{add(){},toggle(){}},focus(){},before(){},selectedOptions:[{dataset:{price:5000000},textContent:'Product'}]});
  const members=[{id:'manager',name:'Manager',role:'MANAGER',active:true},{id:'leader',name:'Leader',role:'LEADER',managerId:'manager',active:true},{id:'sale-1',name:'Sale 1',role:'SALE',leaderId:'leader',managerId:'manager',active:true},{id:'sale-2',name:'Sale 2',role:'SALE',leaderId:'leader',managerId:'manager',active:true},{id:'sale-off',name:'Sale ngoài tuyến',role:'SALE',leaderId:'other',managerId:'other',active:true}];
  const renderFor=({role,actualRole,id='manager',leaderId=''})=>{
    const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,makeNode(id));return nodes.get(id);};let markup='';
    const modal={querySelector:node,querySelectorAll:()=>[]};
-   const ctx=vm.createContext({OrderPayments:payments,data:{products:[{id:'product',name:'Product',price:5000000}],customers:[],members,managerHierarchy:{members},user:{id,role,actualRole,leaderId}},orderSalesInScope:undefined,q:node,esc:String,money:String,opt:()=>'',phoneKey:String,compressBill:async()=> 'data:image/jpeg;base64,AA==',editor:(title,body)=>{markup=body;return modal;},document:{createElement:()=>({})},ensureAccountingOrderStyles(){},showOrderSuccess(){},api:{createOrder:async()=>({order:{}})},Date,Math,alert:assert.fail});
+   const ctx=vm.createContext({OrderPayments:payments,data:{products:[{id:'product',name:'Product',price:5000000}],customers:[],members:members.filter(m=>m.id===id),orderAssignees:members,managerHierarchy:{members},user:{id,role,actualRole,leaderId}},orderSalesInScope:undefined,q:node,esc:String,money:String,opt:()=>'',phoneKey:String,compressBill:async()=> 'data:image/jpeg;base64,AA==',editor:(title,body)=>{markup=body;return modal;},document:{createElement:()=>({})},ensureAccountingOrderStyles(){},showOrderSuccess(){},api:{createOrder:async()=>({order:{}})},Date,Math,alert:assert.fail});
    vm.runInContext(source.slice(source.indexOf('  const orderSalesInScope='),source.indexOf('  function openReceiptPaymentForm(')),ctx);
    vm.runInContext(source.slice(source.indexOf('  function openAccountingOrderForm('),source.indexOf('  function ensureAccountingOrderStyles()')),ctx);
    ctx.openAccountingOrderForm('');
    return {markup,node};
  };
- const manager=renderFor({role:'LEADER',actualRole:'MANAGER'});assert.match(manager.markup,/Sale 1/);assert.match(manager.markup,/Sale 2/);assert.doesNotMatch(manager.markup,/Sale ngoài tuyến/);assert.doesNotMatch(manager.markup,/id="aoSale" disabled/);
- const sale=renderFor({role:'SALE',actualRole:'SALE',id:'sale-1'});assert.match(sale.markup,/Sale 1/);assert.doesNotMatch(sale.markup,/Sale 2/);assert.match(sale.markup,/id="aoSale" disabled/);
+ for(const role of ['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE']){
+   const result=renderFor({role,actualRole:role,id:'sale-1'});
+   for(const member of members)assert.ok(result.markup.includes('value="'+member.id+'"'),role+' sees '+member.id);
+   assert.match(result.markup,/Manager/);assert.match(result.markup,/Leader/);assert.doesNotMatch(result.markup,/id="aoSale" disabled/);
+ }
+
 });
 
 test('Accepting data does not redirect Sale to the customer overview',()=>{

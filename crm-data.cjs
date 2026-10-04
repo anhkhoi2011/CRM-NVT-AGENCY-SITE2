@@ -353,6 +353,9 @@ function snapshot(user,data){
    }
   }
  }finally{snapshotMemo=previousMemo;}
+ // Only public assignment fields; does not grant access to other teams' records.
+ state.orderAssignees=['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'].includes(user.role)
+  ? [...data.members.values()].filter(m=>m.active!==false&&m.active!==0&&m.active!=='0'&&['MANAGER','LEADER','SALE'].includes(m.role)).map(m=>({id:m.id,name:m.name,role:m.role,teamId:m.teamId||'',leaderId:m.leaderId||null,managerId:m.managerId||null,active:true})) : [];
  state.accounts=state.members;
  state.registeredAccounts=state.members.filter(r=>r.role==='UNASSIGNED');
  state.members=state.members.filter(r=>['SALE','LEADER','MANAGER'].includes(r.role));
@@ -372,13 +375,21 @@ function orderLockedForStaff(order){
  return Number.isFinite(created)&&Date.now()-created>=3*24*60*60*1000;
 }
 
+function validOrderAssignee(row,data){
+ const member=data.members.get(row?.saleId);
+ if(!member||member.active===false||member.active===0||member.active==='0'||!['MANAGER','LEADER','SALE'].includes(member.role))return false;
+ const leader=member.role==='LEADER'?member:data.members.get(member.leaderId);
+ const managerId=member.role==='MANAGER'?member.id:member.managerId||(leader?.role==='LEADER'?leader.managerId:leader?.role==='MANAGER'?leader.id:null)||null;
+ const leaderId=member.role==='LEADER'?member.id:member.leaderId||null;
+ return (row.leaderId||null)===leaderId&&(row.managerId||null)===managerId&&(row.teamId||'')===(member.teamId||(leader?.role==='LEADER'?leader.teamId:'')||'');
+}
 // Sales record receipts for their own orders; reconciliation remains an accounting action.
 function authorizeReceiptOrder(user,old,next,data){
  if(!next)error(403,'Không được xóa đơn qua luồng thanh toán');
  const customer=data.customers.get(next.customerId),sale=data.members.get(next.saleId);
  const owns=row=>user.role==='ACCOUNTING'||(user.role==='SALE'?row?.saleId===user.id:user.role==='LEADER'?customerScope(user,row):managerOwns(user,row,data));
- if(!customer||!sale||sale.role!=='SALE'||!owns(customer)||!owns(next)||(old&&!owns(old)))error(403,'Đơn ngoài phạm vi');
- if(!old&&(next.saleId!==customer.saleId||next.leaderId!==customer.leaderId||next.teamId!==customer.teamId))error(403,'Đơn không khớp người phụ trách khách');
+ if(!customer||!sale||!['MANAGER','LEADER','SALE'].includes(sale.role)|| (old ? (!owns(customer)||!owns(next)||!owns(old)) : (!(next.createdBy===user.id&&validOrderAssignee(next,data))&&(!owns(customer)||!owns(next)))))error(403,'Đơn ngoài phạm vi');
+ if(!old&&(next.saleId!==customer.saleId||next.leaderId!==customer.leaderId||next.teamId!==customer.teamId||(next.managerId||null)!==(customer.managerId||null)))error(403,'Đơn không khớp người phụ trách khách');
  if(!data.products.get(next.productId))error(400,'Sản phẩm không tồn tại');
  if(old&&(old.paymentReconciled||old.vatIssued||['REFUNDED','CANCELLED','COURSE_GRANTED'].includes(old.status)))error(403,'Đơn đã khóa sau đối soát hoặc kết thúc');
  if(old&&sameExcept(old,next,['paymentReceipts','receiptsVersion','updatedAt']))return;
@@ -389,6 +400,12 @@ function authorizeReceiptOrder(user,old,next,data){
  if(next.status!==(next.amountPaid===next.total?'PAID':'DEPOSIT'))error(400,'Trạng thái không khớp số tiền đã thu');
 }
 function authorize(user,key,old,next,data){
+ if(key==='customers'&&!old&&next?.createdVia==='ORDER'&&['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'].includes(user.role)){
+  if(next.createdBy!==user.id||!validOrderAssignee(next,data))error(403,'Người phụ trách khách không hợp lệ');
+  return;
+ }
+
+ if(key==='orders'&&!old&&next?.createdBy&&(!validOrderAssignee(next,data)||next.createdBy!==user.id))error(403,'Người phụ trách đơn không hợp lệ');
  if(key==='orders'&&!old&&next?.receiptsVersion===1&&next.paymentReceipts.some(r=>r.legacy||r.createdBy!==user.id))error(403,'Bill mới không hợp lệ');
  if(key==='orders'&&old?.receiptsVersion===1&&next&&next.receiptsVersion!==1)error(403,'Không được xóa lịch sử thanh toán');
  if(key==='orders'&&old&&next&&next.receiptsVersion===1){
@@ -974,6 +991,12 @@ async function writeLocked(user,requestId,changes,options={}){
    if(key==='saleDistributionByLeader'&&value&&user.role==='MANAGER')change.value={...old,...value};
    history.push({key,id,before:old??null,after:change.value});
    if(key==='customers'){if(change.value)prospective.customers.set(id,change.value);else prospective.customers.delete(id);}
+  }
+  for(const {key,id,value} of changes){
+   if(key!=='customers'||data.customers.has(id)||value?.createdVia!=='ORDER')continue;
+   if(!changes.some(c=>c.key==='orders'&&c.value?.customerId===id&&!data.orders.has(c.id)&&c.value?.receiptsVersion===1&&c.value?.createdBy===user.id))error(403,'Khách tạo từ đơn phải được lưu cùng đơn và bill');
+   const phoneKey=v=>String(v||'').replace(/\D/g,'').replace(/^84/,'0');
+   if([...data.customers.values()].some(c=>phoneKey(c.phone)&&phoneKey(c.phone)===phoneKey(value.phone)))error(409,'Số điện thoại đã tồn tại. Tải lại hoặc nhờ quản lý kiểm tra khách trước khi tạo đơn.');
   }
   const resulting=new Map(data.customers);
   for(const change of changes.filter(x=>x.key==='customers')){if(change.value)resulting.set(change.id,change.value);else resulting.delete(change.id);}
