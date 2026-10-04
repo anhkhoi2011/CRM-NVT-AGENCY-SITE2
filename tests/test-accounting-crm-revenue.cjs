@@ -38,7 +38,7 @@ test('Only paid CRM orders count, grouped by category, employee and paid month',
  ctx.currentGlobalMonth='ALL'; ctx.rebuildAccountingRevenueFromCRM();
  assert.equal(ctx.COURSES_DATA.reduce((sum,c)=>sum+c.totalRevenue,0),280);
  ctx.ACCOUNTING_CRM_STATE.orders=[]; ctx.rebuildAccountingRevenueFromCRM();
- assert.equal(ctx.COURSES_DATA.length,0); assert.equal(ctx.APEX_DATA[0].courseRev,0);
+ assert.equal(ctx.COURSES_DATA.length,3); assert.ok(ctx.COURSES_DATA.every(g=>g.totalRevenue===0)); assert.equal(ctx.APEX_DATA[0].courseRev,0);
 });
 test('Lot and bonus values come only from CRM metrics for the selected period', () => {
  const ctx=model();
@@ -80,7 +80,7 @@ test('Accounting recognizes deposit and later bills in their actual months witho
  ctx.currentGlobalMonth='2026-09';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA[0].totalRevenue,454545);assert.equal(ctx.APEX_DATA[0].courseRev,454545);
  ctx.currentGlobalMonth='2026-10';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA[0].totalRevenue,4545455);
  ctx.currentGlobalMonth='ALL';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA[0].totalRevenue,5000000);
- ctx.currentGlobalMonth='2026-11';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA.length,0);
+ ctx.currentGlobalMonth='2026-11';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA.length,1);assert.equal(ctx.COURSES_DATA[0].totalRevenue,0);
 });
 
 test('Accounting display preserves CRM VAT and receipt balances regardless of invoice request',()=>{
@@ -104,9 +104,12 @@ test('Embedded expense save waits for server acknowledgement and preserves draft
 });
 
 test('Commission saves target selected historical month instead of today',()=>{const start=html.indexOf('  function accountingSavePeriod()'),end=html.indexOf('  // Lưu chỉ số',start);const ctx=vm.createContext({currentGlobalMonth:'2026-08',Date});vm.runInContext(html.slice(start,end),ctx);assert.equal(ctx.accountingSavePeriod(),'2026-08');});
-test('Course settings send persistent IDs and restore individual rates without changing collected revenue',()=>{
- const ctx=model();ctx.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE',price:5000000}];ctx.ACCOUNTING_CRM_STATE.orders=[{id:'o',productId:'p',saleId:'sale-1',subtotal:5000000,total:5500000,vatAmount:500000,amountPaid:5500000,status:'PAID',paidAt:'2026-10-03'}];ctx.ACCOUNTING_CRM_STATE.courseConfigs=[{courseKey:'p',trainerIds:['trainer'],leaderIds:['leader'],trainerRates:{trainer:12},leaderRates:{leader:4},saleRates:{'sale-1':18}}];ctx.rebuildAccountingRevenueFromCRM();const group=ctx.COURSES_DATA[0];assert.equal(group.trainers[0].rate,12);assert.equal(group.leaders[0].rate,4);assert.equal(group.salesConfig['sale-1'].rateSale,18);assert.equal(group.totalRevenue,5000000);
- let message;ctx.postAccountingMessage=(type,body)=>message={type,body};ctx.alert=assert.fail;const start=html.indexOf('  function persistCourseConfigs('),end=html.indexOf('  function saveTrainingConfig()',start);vm.runInContext(html.slice(start,end),ctx);ctx.persistCourseConfigs([group],'detail');assert.equal(message.type,'ACCOUNTING_COURSE_CONFIG_SAVE');assert.equal(message.body.payload[0].courseKey,'p');assert.equal(message.body.payload[0].saleRates['sale-1'],18);assert.equal(message.body.payload[0].totalRevenue,undefined);
+test('Product-cohort settings restore rates without changing actual collected revenue',()=>{
+ const ctx=model();ctx.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE',price:5000000}];
+ ctx.ACCOUNTING_CRM_STATE.courseField={id:'batch'};ctx.ACCOUNTING_CRM_STATE.customers=[{id:'c',customFields:{batch:'K03'}}];
+ ctx.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',saleId:'sale-1',subtotal:5000000,total:5500000,vatAmount:500000,amountPaid:5500000,status:'PAID',paidAt:'2026-10-03'}];
+ ctx.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p',courseKey:'K03',trainerIds:['trainer'],leaderIds:['leader'],trainerRates:{trainer:12},leaderRates:{leader:4},saleRates:{'sale-1':18}}];
+ ctx.rebuildAccountingRevenueFromCRM();const group=ctx.COURSES_DATA.find(g=>g.cohortKey==='K03');assert.equal(group.trainers[0].rate,12);assert.equal(group.leaders[0].rate,4);assert.equal(group.salesConfig['sale-1'].rateSale,18);assert.equal(group.totalRevenue,5000000);
 });
 
 function commissions(ctx) {
@@ -120,12 +123,13 @@ test('Only the selling Sale direct leader receives commission, even with legacy 
  c.ACCOUNTING_CRM_STATE.members=[{id:'sale-1',role:'SALE',leaderId:'l1',managerId:'m'},{id:'sale-2',role:'SALE',leaderId:'l2',managerId:'m'}];
  c.APEX_DATA=[{id:'l1',roleLevel:'LV2'},{id:'l2',roleLevel:'LV2'},{id:'l3',roleLevel:'LV2'},{id:'m',roleLevel:'LV1'}];
  c.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE',price:5000000}];
- c.ACCOUNTING_CRM_STATE.courseConfigs=[{courseKey:'p',leaderIds:['l1','l2','l3','m'],rateLeader:5,trainerIds:['l3'],trainerRates:{l3:15}}];
- c.ACCOUNTING_CRM_STATE.orders=[{id:'o',productId:'p',saleId:'sale-1',status:'DEPOSIT',subtotal:5000000,total:5500000,vatAmount:500000,receiptsVersion:1,paymentReceipts:[{id:'r1',kind:'DEPOSIT',amount:550000,at:'2026-10-01'}]}];
+ c.ACCOUNTING_CRM_STATE.courseField={id:'batch'};c.ACCOUNTING_CRM_STATE.customers=[{id:'c',customFields:{batch:'K03'}}];
+ c.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p',courseKey:'K03',leaderIds:['l1','l2','l3','m'],rateLeader:5,trainerIds:['l3'],trainerRates:{l3:15}}];
+ c.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',saleId:'sale-1',status:'DEPOSIT',subtotal:5000000,total:5500000,vatAmount:500000,receiptsVersion:1,paymentReceipts:[{id:'r1',kind:'DEPOSIT',amount:550000,at:'2026-10-01'}]}];
  c.rebuildAccountingRevenueFromCRM();
  assert.equal(c.calculateLeaderCourseCommission(c.APEX_DATA[0],c.APEX_DATA),25000);
  for(const p of c.APEX_DATA.slice(1))assert.equal(c.calculateLeaderCourseCommission(p,c.APEX_DATA),0);
- const g=c.COURSES_DATA[0],s=c.courseCommissionSummary(g);
+ const g=c.COURSES_DATA.find(g=>g.cohortKey==='K03'),s=c.courseCommissionSummary(g);
  assert.equal(s.revenue,500000);assert.equal(s.sale,75000);assert.equal(s.leader,25000);assert.equal(s.trainer,75000);assert.equal(s.company,325000);
  const before=JSON.stringify(g);
  c.currentDetailCourseDraft=g;c.currentDetailCourseId=g.id;c.document={getElementById:()=>null};c.formatMoney=String;
@@ -133,18 +137,25 @@ test('Only the selling Sale direct leader receives commission, even with legacy 
  vm.runInContext(html.slice(a,b),c);c.updateCdmSummary();assert.equal(JSON.stringify(g),before,'summary must never replace receipts with students times list price');
  c.ACCOUNTING_CRM_STATE.orders=[];c.rebuildAccountingRevenueFromCRM();assert.equal(c.calculateLeaderCourseCommission(c.APEX_DATA[0],c.APEX_DATA),0);
 });
-test('Course selector uses customer course column; products in one course share a trainer configuration',()=>{
+test('Same cohort has separate trainers for each product; all catalogue products remain available without orders',()=>{
  const c=commissions(model());
- c.ACCOUNTING_CRM_STATE.courseKeys=['K01','K02','K03'];c.ACCOUNTING_CRM_STATE.courseField={id:'course'};
- c.ACCOUNTING_CRM_STATE.customers=[{id:'c1',customFields:{course:'K03'}},{id:'c2',customFields:{course:'K03'}}];
- c.ACCOUNTING_CRM_STATE.products=[{id:'p1',kind:'COURSE',courseKey:'K01'},{id:'p2',kind:'COURSE'}];
- c.ACCOUNTING_CRM_STATE.courseConfigs=[{courseKey:'K03',trainerIds:['t'],trainerRates:{t:10},rateLeader:0,rateSale:0}];
+ c.ACCOUNTING_CRM_STATE.courseKeys=['K01','K02','K03'];c.ACCOUNTING_CRM_STATE.courseField={id:'batch'};
+ c.ACCOUNTING_CRM_STATE.customers=[{id:'c1',customFields:{batch:'K03',course:['BMĐTHH']}},{id:'c2',customFields:{batch:'K03'}}];
+ c.ACCOUNTING_CRM_STATE.products=[{id:'p1',name:'Product 1',kind:'COURSE',courseKeys:['K01','K03']},{id:'p2',name:'Product 2',kind:'COURSE'},{id:'vip',name:'VIP',kind:'VIP'},{id:'ind',name:'Indicator',kind:'INDICATOR'}];
+ c.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p1',courseKey:'K03',trainerIds:['t1'],trainerRates:{t1:10},rateLeader:0,rateSale:0},{productId:'p2',courseKey:'K03',trainerIds:['t2'],trainerRates:{t2:20},rateLeader:0,rateSale:0}];
  c.ACCOUNTING_CRM_STATE.orders=[{id:'o1',customerId:'c1',productId:'p1',saleId:'sale-1',status:'PAID',subtotal:1000000,paidAt:'2026-10-01'},{id:'o2',customerId:'c2',productId:'p2',saleId:'sale-1',status:'PAID',subtotal:2000000,paidAt:'2026-10-01'}];
- c.rebuildAccountingRevenueFromCRM();assert.equal(c.COURSES_DATA.length,3);
- const group=c.COURSES_DATA.find(g=>g.courseKey==='K03');assert.equal(group.totalRevenue,3000000);assert.equal(group.studentsCount,2);
- const summary=c.courseCommissionSummary(group);assert.equal(summary.trainer,300000);assert.equal(summary.sale,0);assert.equal(summary.leader,0);assert.equal(summary.company,2700000);
- assert.equal(c.COURSES_DATA.find(g=>g.courseKey==='K01').totalRevenue,0);
- c.currentGlobalMonth='2026-11';c.rebuildAccountingRevenueFromCRM();assert.equal(c.COURSES_DATA.length,3);assert.ok(c.COURSES_DATA.every(g=>g.totalRevenue===0));
+ c.rebuildAccountingRevenueFromCRM();assert.equal(new Set(c.COURSES_DATA.map(g=>g.productId)).size,4);
+ const first=c.COURSES_DATA.find(g=>g.productId==='p1'&&g.cohortKey==='K03'),second=c.COURSES_DATA.find(g=>g.productId==='p2'&&g.cohortKey==='K03');
+ assert.equal(first.name,'Product 1');assert.equal(first.totalRevenue,1000000);assert.equal(first.trainers[0].id,'t1');assert.equal(c.courseCommissionSummary(first).trainer,100000);
+ assert.equal(second.totalRevenue,2000000);assert.equal(second.trainers[0].id,'t2');assert.equal(c.courseCommissionSummary(second).trainer,400000);
+ assert.equal(c.COURSES_DATA.reduce((sum,g)=>sum+g.totalRevenue,0),3000000);
+ c.currentGlobalMonth='2026-11';c.rebuildAccountingRevenueFromCRM();assert.equal(new Set(c.COURSES_DATA.map(g=>g.productId)).size,4);assert.ok(c.COURSES_DATA.every(g=>g.totalRevenue===0));
+});
+test('Customers without a cohort never inherit a product cohort or legacy unscoped trainer',()=>{
+ const c=commissions(model());c.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE',courseKey:'K03'}];c.ACCOUNTING_CRM_STATE.courseField={id:'batch'};
+ c.ACCOUNTING_CRM_STATE.courseConfigs=[{courseKey:'p',trainerIds:['legacy'],rateTrainer:15},{productId:'p',courseKey:'K03',trainerIds:['t'],rateTrainer:15}];
+ c.ACCOUNTING_CRM_STATE.customers=[{id:'c',customFields:{course:['BMĐTHH']}}];c.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',courseKey:'K03',saleId:'sale-1',status:'PAID',subtotal:1000000,paidAt:'2026-10-01'}];
+ c.rebuildAccountingRevenueFromCRM();assert.equal(c.COURSES_DATA.reduce((sum,g)=>sum+c.courseCommissionSummary(g).trainer,0),0);assert.equal(c.COURSES_DATA.reduce((sum,g)=>sum+g.totalRevenue,0),1000000);
 });
 test('A direct Manager sale does not earn a second leader commission; sale owner snapshot takes precedence',()=>{
  const c=commissions(model());c.APEX_DATA=[{id:'m',roleLevel:'LV1'},{id:'old',roleLevel:'LV2'},{id:'new',roleLevel:'LV2'}];
@@ -172,4 +183,31 @@ test('Course trainer edits stay in a draft until SQL acknowledgement; closing di
  vm.runInContext(source,ctx);ctx.openCoursePersonnelDetailModal('course:K03');ctx.updateTrainerRateInCourse('trainer',0);
  assert.equal(original.trainers[0].rate,15);ctx.closeCoursePersonnelDetailModal();ctx.openCoursePersonnelDetailModal('course:K03');ctx.updateTrainerRateInCourse('trainer',12);ctx.saveCoursePersonnelDetail();
  assert.equal(sent[0][0].trainers[0].rate,12);assert.equal(original.trainers[0].rate,15);ctx.closeCoursePersonnelDetailModal();assert.equal(vm.runInContext('currentDetailCourseDraft.trainers[0].rate',ctx),12);
+});
+
+test('Course field lookup selects Khóa cohort column instead of default Khoá học interests',()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
+ const ctx=vm.createContext({data:{fields:[{id:'course',label:'Khoá học',options:[{value:'BMĐTHH'}]},{id:'custom-batch',label:'KHÓA',options:[{value:'K03'},{value:'K01'},'K02']}],customers:[{customFields:{'custom-batch':'K04',course:['Coaching VIP']}}]}});
+ vm.runInContext(source.slice(source.indexOf('  function courseField(){'),source.indexOf('  function productModal(')),ctx);
+ assert.equal(ctx.courseField().id,'custom-batch');assert.deepEqual(Array.from(ctx.courseKeys()),['K01','K02','K03','K04']);ctx.data.fields.pop();assert.equal(ctx.courseField(),null);assert.equal(ctx.courseKeys().length,0);
+});
+test('One product can pay different trainers for K01 and K03 without cross-credit',()=>{
+ const c=commissions(model());c.ACCOUNTING_CRM_STATE.products=[{id:'p',name:'Course product',kind:'COURSE',courseKeys:['K01','K03']}];c.ACCOUNTING_CRM_STATE.courseField={id:'batch'};
+ c.ACCOUNTING_CRM_STATE.customers=[{id:'a',customFields:{batch:'K01'}},{id:'b',customFields:{batch:'K03'}}];
+ c.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p',courseKey:'K01',trainerIds:['t1'],trainerRates:{t1:10}},{productId:'p',courseKey:'K03',trainerIds:['t3'],trainerRates:{t3:20}}];
+ c.ACCOUNTING_CRM_STATE.orders=[{id:'oa',productId:'p',customerId:'a',saleId:'sale-1',status:'PAID',subtotal:1000000,paidAt:'2026-10-01'},{id:'ob',productId:'p',customerId:'b',saleId:'sale-1',status:'PAID',subtotal:2000000,paidAt:'2026-10-01'}];c.rebuildAccountingRevenueFromCRM();
+ const start=html.indexOf('  function calculateTrainerCommission('),end=html.indexOf('  function courseLeaderCommission(',start);vm.runInContext(html.slice(start,end),c);
+ assert.equal(c.calculateTrainerCommission('t1').totalTrainerComm,100000);assert.equal(c.calculateTrainerCommission('t3').totalTrainerComm,400000);
+ c.ACCOUNTING_CRM_STATE.customers[1].customFields.batch='K01';c.rebuildAccountingRevenueFromCRM();assert.equal(c.calculateTrainerCommission('t1').totalTrainerComm,300000);assert.equal(c.calculateTrainerCommission('t3').totalTrainerComm,0);
+});
+
+test('Training table renders all products and requires cohort selection before opening a course trainer',()=>{
+ const c=model();c.ACCOUNTING_CRM_STATE.products=[{id:'p1',name:'Course One',kind:'COURSE',courseKeys:['K01','K03']},{id:'p2',name:'Course Two',kind:'COURSE'},{id:'vip',name:'VIP',kind:'VIP'},{id:'ind',name:'Indicator',kind:'INDICATOR'}];c.ACCOUNTING_CRM_STATE.courseKeys=['K01','K02','K03'];c.rebuildAccountingRevenueFromCRM();
+ function element(){return {children:[],style:{},value:'',nodes:{},setAttribute(){},add(option){this.children.push(option);},appendChild(child){this.children.push(child);},replaceChildren(){this.children=[];},querySelector(key){return this.nodes[key]||=(element());}};}
+ const body=element();let opened='';c.document={getElementById:()=>body,createElement:element};c.Option=function(label,value){return {label,value};};c.currentTrainingModalCategory='ALL';c.formatMoney=String;c.openCoursePersonnelDetailModal=id=>opened=id;
+ vm.runInContext(html.slice(html.indexOf('  const trainingProductSelections'),html.indexOf('  function onCourseRatesChange(')),c);c.renderTrainingConfigTable();assert.equal(body.children.length,4);
+ const first=body.children[0],second=body.children[1];assert.match(first.innerHTML,/Course One/);assert.match(second.innerHTML,/Course Two/);
+ const select=first.querySelector('.training-cohort-cell').children[0];assert.deepEqual(select.children.map(o=>o.label),['— Chọn khóa —','K01','K03']);assert.equal(first.querySelector('button').disabled,true);
+ select.value=select.children[2].value;select.onchange();assert.equal(first.querySelector('button').disabled,false);first.querySelector('button').onclick();assert.equal(opened,select.value);assert.equal(second.querySelector('button').disabled,true);
+ assert.equal(body.children[2].querySelector('.training-cohort-cell').children.length,0);assert.equal(body.children[2].querySelector('button').disabled,false);
 });

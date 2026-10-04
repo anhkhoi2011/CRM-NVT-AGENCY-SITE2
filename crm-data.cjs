@@ -516,7 +516,9 @@ function validate(key,value,id){
  if(key==='products'&&(!Number.isFinite(value.price)||value.price<0||!['SALE','RENTAL'].includes(value.type)))error(400,'Sản phẩm không hợp lệ');
  if(key==='products'&&Object.hasOwn(value,'kind')&&!['COURSE','INDICATOR','VIP','OTHER'].includes(value.kind))error(400,'Loại sản phẩm không hợp lệ');
  if(key==='products'&&Object.hasOwn(value,'courseKey')&&(typeof value.courseKey!=='string'||value.courseKey.length>120))error(400,'Khoá học của sản phẩm không hợp lệ');
+ if(key==='products'&&Object.hasOwn(value,'courseKeys')&&(!Array.isArray(value.courseKeys)||value.courseKeys.length>200||value.courseKeys.some(key=>typeof key!=='string'||!key.trim()||key.length>120)))error(400,'Danh sách khóa của sản phẩm không hợp lệ');
  if(key==='courseConfigs'){
+  if(Object.hasOwn(value,'productId')&&(typeof value.productId!=='string'||!value.productId.trim()||value.productId.length>120))error(400,'Sản phẩm cấu hình đào tạo không hợp lệ');
   if(typeof value.courseKey!=='string'||!value.courseKey.trim()||value.courseKey.length>120)error(400,'Khoá học không hợp lệ');
   for(const field of ['trainerIds','leaderIds'])if(!Array.isArray(value[field]??[])||(value[field]??[]).length>50||(value[field]??[]).some(item=>typeof item!=='string'||item.length>80))error(400,'Danh sách nhân sự khóa học không hợp lệ');
   for(const field of ['rateSale','rateLeader','rateTrainer','rateCompany'])if(!Number.isFinite(Number(value[field]??0))||Number(value[field]??0)<0||Number(value[field]??0)>100)error(400,'Tỷ lệ chia khóa học không hợp lệ');

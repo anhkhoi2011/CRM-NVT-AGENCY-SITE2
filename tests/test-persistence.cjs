@@ -1887,3 +1887,23 @@ test('Course trainer configuration survives SQL roundtrip for Admin and Accounti
  f.fail();await assert.rejects(f.api.write(accounting,'course-trainer-failure',[change('courseConfigs',{...saved,trainerIds:[]},r.versions['courseConfigs/'+saved.id])]),/failure/);
  assert.equal((await f.api.read(admin)).state.courseConfigs[0].trainerIds[0],'trainer2');assert.ok(f.events.includes('rollback'));
 });
+
+test('Product supports multiple cohort selections and SQL reload retains every selection',async()=>{
+ const c=referenceBridge();const api=c.window.crmApi;
+ const result=await api.saveProduct(null,{name:'Multi cohort course',sku:'MULTI',kind:'COURSE',type:'SALE',category:'Khóa học',price:1000000,vatRate:10,courseKeys:['K01','K03','K01']});
+ const product=JSON.parse(vm.runInContext('JSON.stringify(state.products.find(p=>p.sku==="MULTI"))',c));assert.deepEqual(product.courseKeys,['K01','K03']);assert.equal(product.courseKey,'');
+ const f=fixture();await f.api.write(admin,'multi-cohort-product',[change('products',product)]);assert.deepEqual(Array.from((await f.api.read(admin)).state.products.find(p=>p.id===product.id).courseKeys),['K01','K03']);
+ await assert.rejects(()=>api.saveProduct(null,{name:'Bad',kind:'COURSE',type:'SALE',category:'Khóa học',price:1,courseKeys:['K01',{}]}),/khóa/i);
+});
+test('Course trainer configurations persist separately by product plus cohort for Admin and Accounting',async()=>{
+ const c=referenceBridge();const api=c.window.crmApi;vm.runInContext('state.products=[{id:"p1",name:"One",kind:"COURSE"},{id:"p2",name:"Two",kind:"COURSE"}]',c);
+ await api.saveCourseConfig({productId:'p1',courseKey:'K03',trainerIds:['t1'],trainerRates:{t1:10}});
+ await api.saveCourseConfig({productId:'p2',courseKey:'K03',trainerIds:['t2'],trainerRates:{t2:20}});
+ await api.saveCourseConfig({productId:'p1',courseKey:'K01',trainerIds:['t3'],trainerRates:{t3:15}});
+ let rows=JSON.parse(vm.runInContext('JSON.stringify(state.courseConfigs)',c));assert.equal(rows.length,3);
+ const f=fixture();await f.api.write(admin,'product-cohort-configs',rows.map(row=>change('courseConfigs',row)));
+ const actor={id:'accountant',role:'ACCOUNTING'};let restored=await f.api.read(actor);assert.equal(restored.state.courseConfigs.length,3);
+ const chosen=restored.state.courseConfigs.find(x=>x.productId==='p1'&&x.courseKey==='K03');await f.api.write(actor,'edit-one-cohort',[change('courseConfigs',{...chosen,trainerIds:['replacement'],trainerRates:{replacement:12}},restored.versions['courseConfigs/'+chosen.id])]);
+ restored=await f.api.read(admin);assert.equal(restored.state.courseConfigs.find(x=>x.productId==='p1'&&x.courseKey==='K03').trainerIds[0],'replacement');assert.equal(restored.state.courseConfigs.find(x=>x.productId==='p2'&&x.courseKey==='K03').trainerIds[0],'t2');assert.equal(restored.state.courseConfigs.find(x=>x.productId==='p1'&&x.courseKey==='K01').trainerIds[0],'t3');
+ await assert.rejects(()=>api.saveCourseConfig({productId:'missing',courseKey:'K03'}),/Sản phẩm/);
+});

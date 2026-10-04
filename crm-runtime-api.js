@@ -120,16 +120,18 @@
         const ids=list=>[...new Set((Array.isArray(list)?list:[]).map(value=>String(value||'').trim()).filter(Boolean))].slice(0,50);
         const rate=(value,fallback)=>{const number=value===''||value==null?fallback:Number(value);if(!Number.isFinite(number)||number<0||number>100)throw Error('Tỷ lệ chia phải từ 0 đến 100%.');return number;};
         state.courseConfigs||=[];
-        const existing=state.courseConfigs.find(row=>row.courseKey===courseKey);
+        const productId=String(input?.productId||'').trim();
+        if(productId&&!state.products.some(product=>String(product.id)===productId))throw Error('Sản phẩm không còn tồn tại.');
+        const existing=state.courseConfigs.find(row=>row.courseKey===courseKey&&String(row.productId||'')===productId);
         const startDate=String(input.startDate||'').slice(0,10);
         if(startDate&&!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(startDate))throw Error('Ngày khai giảng không hợp lệ.');
-        const item={id:existing?.id||makeRecordId('CCFG'),courseKey,trainerIds:ids(input.trainerIds),leaderIds:ids(input.leaderIds),rateSale:rate(input.rateSale,15),rateLeader:rate(input.rateLeader,5),rateTrainer:rate(input.rateTrainer,15),rateCompany:rate(input.rateCompany,65),startDate,updatedAt:stamp()};
+        const item={id:existing?.id||makeRecordId('CCFG'),courseKey,...(productId?{productId}:{}),trainerIds:ids(input.trainerIds),leaderIds:ids(input.leaderIds),rateSale:rate(input.rateSale,15),rateLeader:rate(input.rateLeader,5),rateTrainer:rate(input.rateTrainer,15),rateCompany:rate(input.rateCompany,65),startDate,updatedAt:stamp()};
         for(const field of ['trainerRates','leaderRates','saleRates']){const source=input[field]??existing?.[field]??{};if(!source||typeof source!=='object'||Array.isArray(source)||Object.keys(source).length>500)throw Error('Danh sách tỷ lệ hoa hồng không hợp lệ.');item[field]=Object.fromEntries(Object.entries(source).map(([id,value])=>[String(id),rate(value,0)]));}
         if(item.rateSale+item.rateLeader+item.rateTrainer+item.rateCompany>100.0001)throw Error('Tổng tỷ lệ chia không được vượt 100%.');
         if(existing)Object.assign(existing,item);else state.courseConfigs.push(item);
         audit('SAVE_COURSE_CONFIG',item.id,courseKey);
         return {id:item.id,courseKey};
-      },'course-config:'+String(input?.courseKey||''));
+      },'course-config:'+JSON.stringify([input?.productId||'',input?.courseKey||'']));
     },
     async saveExpense(input){
       requireRole(['ADMIN','ACCOUNTING']);
@@ -429,9 +431,11 @@
         if(imageData&&(!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(imageData)||imageData.length>2_800_000))throw Error('\u1ea2nh s\u1ea3n ph\u1ea9m kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c qu\u00e1 l\u1edbn.');
         const kind=['COURSE','INDICATOR','VIP','OTHER'].includes(input.kind)?input.kind:(existing?.kind||(input.type==='RENTAL'?'INDICATOR':'OTHER'));
         const kindCategory={COURSE:'Khóa học',INDICATOR:'Chỉ báo',VIP:'Nhóm VIP'}[kind];
-        const courseKey=kind==='COURSE'?String(input.courseKey??existing?.courseKey??'').trim():'';
-        if(courseKey.length>120)throw Error('Khoá học không hợp lệ.');
-        const values={name:String(input.name||'').trim(),sku:String(input.sku||'').trim(),category:String(input.category||kindCategory||'').trim(),kind,courseKey,price:Number(input.price),type:input.type,rentalMonths:input.type==='RENTAL'?Number(input.rentalMonths):null,vatRate:vatPercent/100,active:input.active!==false,imageData};
+        const requestedCourseKeys=input.courseKeys??(input.courseKey!==undefined?[input.courseKey]:(existing?.courseKeys??(existing?.courseKey?[existing.courseKey]:[])));
+        if(!Array.isArray(requestedCourseKeys)||requestedCourseKeys.length>200||requestedCourseKeys.some(key=>typeof key!=='string'||key.length>120))throw Error('Danh sách khóa không hợp lệ.');
+        const courseKeys=kind==='COURSE'?[...new Set(requestedCourseKeys.map(key=>key.trim()).filter(Boolean))]:[];
+        const courseKey=courseKeys.length===1?courseKeys[0]:'';
+        const values={name:String(input.name||'').trim(),sku:String(input.sku||'').trim(),category:String(input.category||kindCategory||'').trim(),kind,courseKey,courseKeys,price:Number(input.price),type:input.type,rentalMonths:input.type==='RENTAL'?Number(input.rentalMonths):null,vatRate:vatPercent/100,active:input.active!==false,imageData};
         if(!Number.isFinite(vatPercent)||vatPercent<0||vatPercent>100)throw Error('VAT phải từ 0 đến 100%.');
         if(!values.name||values.name.length>200||!values.category||values.category.length>100||values.sku.length>60||input.price===''||!Number.isFinite(values.price)||values.price<0)throw Error('Kiểm tra tên, danh mục và đơn giá sản phẩm.');
         if(!['SALE','RENTAL'].includes(values.type)||values.type==='RENTAL'&&![1,3,6,12].includes(values.rentalMonths))throw Error('Sản phẩm thuê phải chọn gói 1, 3, 6 hoặc 12 tháng.');

@@ -2334,7 +2334,7 @@ body.accounting-modal-open { overflow: hidden; }
     <div class="modal-header" style="background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
       <div>
         <h3 style="color:#0f172a; margin:0; font-size:15px; font-weight:700;">Cấu Hình Khóa Học & Đào Tạo</h3>
-        <span style="font-size:12px; color:#64748b;">Chọn khóa từ cột Khóa của khách hàng và cấu hình người đào tạo</span>
+        <span style="font-size:12px; color:#64748b;">Chọn sản phẩm → chọn khóa của khách hàng → chọn người đào tạo</span>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <button class="modal-close" onclick="closeTrainingConfigModal()">✕</button>
@@ -2342,10 +2342,6 @@ body.accounting-modal-open { overflow: hidden; }
     </div>
 
     <div class="modal-body" style="padding:16px;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-        <label for="trainingCourseSelect" style="font-weight:700;white-space:nowrap;">Chọn khóa</label>
-        <select id="trainingCourseSelect" style="min-width:220px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;" onchange="if(this.value)openCoursePersonnelDetailModal(this.value)"></select>
-      </div>
       <!-- Filter/Category Tabs -->
       <div style="display:flex; gap:8px; margin-bottom:12px;">
         <button type="button" class="filter-btn active" id="tabCourseFilterALL" onclick="filterTrainingModalCategory('ALL')">Tất cả</button>
@@ -2361,7 +2357,8 @@ body.accounting-modal-open { overflow: hidden; }
             <tr>
               <th style="width:36px;">STT</th>
               <th>Tên Khóa Học / Sản Phẩm</th>
-              <th style="width:100px;">Loại</th>
+              <th style="width:100px;">Nhóm sản phẩm</th>
+              <th style="width:150px;">Khóa</th>
               <th style="text-align:right;">Thực thu trước VAT</th>
               <th style="background:#f5f3ff; color:#6d28d9; width:160px;">Người Đào Tạo</th>
               <th style="text-align:center; width:120px; background:#f5f3ff;">Thao Tác</th>
@@ -4595,7 +4592,7 @@ function renderMindmapTree() {
   function openCoursePersonnelDetailModal(crsId) {
     currentDetailCourseId = crsId;
     const crs = COURSES_DATA.find(c => c.id === crsId);
-    if (!crs) return;
+    if (!crs || (crs.category === 'course' && !crs.cohortKey)) return;
 
     currentDetailCourseDraft = structuredClone(crs);
     openCourseDraft();
@@ -4618,7 +4615,7 @@ function renderMindmapTree() {
     const titleEl = document.getElementById('cdmCourseTitle');
     if (titleEl) titleEl.textContent = `Đào tạo: ${crs.name}`;
     const subEl = document.getElementById('cdmCourseSubtitle');
-    if (subEl) subEl.textContent = `Khóa: ${crs.courseKey || crs.code || crs.id}`;
+    if (subEl) subEl.textContent = crs.category === 'course' ? `Khóa: ${crs.cohortKey || crs.courseKey}` : `Mã sản phẩm: ${crs.code || crs.productId}`;
 
     // Populate Add Trainer & Add Leader select dropdowns
     populateCdmSelects();
@@ -4861,78 +4858,53 @@ function renderMindmapTree() {
     alert(`✓ Đã tạo thành công lớp mới: ${grp} - ${batch}!`);
   }
 
+  const trainingProductSelections = new Map();
   function renderTrainingConfigTable() {
     const tbody = document.getElementById('trainingConfigTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '';
-    const selector = document.getElementById('trainingCourseSelect');
-    if (selector) {
-      selector.replaceChildren(new Option('— Chọn khóa —', ''));
-      COURSES_DATA.filter(c => c.category === 'course').forEach(c => selector.add(new Option(c.name, c.id)));
+    tbody.replaceChildren();
+    const productGroups = new Map();
+    for (const group of COURSES_DATA) {
+      if (!productGroups.has(group.productId)) productGroups.set(group.productId, []);
+      productGroups.get(group.productId).push(group);
     }
-
-    const list = (currentTrainingModalCategory === 'ALL')
-      ? COURSES_DATA
-      : COURSES_DATA.filter(c => c.category === currentTrainingModalCategory);
-
-    list.forEach((crs, idx) => {
-      // Đảm bảo cấu trúc mảng leaders & trainers tồn tại
-      if (!crs.leaders) {
-        crs.leaders = crs.leaderId ? [{ id: crs.leaderId, name: APEX_DATA.find(p=>p.id===crs.leaderId)?.name || crs.leaderId, rate: crs.rateLeader || 5 }] : [];
-      }
-      if (!crs.trainers) {
-        crs.trainers = crs.trainerId ? [{ id: crs.trainerId, name: APEX_DATA.find(p=>p.id===crs.trainerId)?.name || crs.trainerId, rate: crs.rateTrainer || 15 }] : [];
-      }
-
-      // Người đào tạo tóm tắt
-      let trainerName = '-- Chưa gán --';
-      if (crs.trainers && crs.trainers.length > 0) {
-        trainerName = crs.trainers.map(t => t.name).join(', ');
-      } else if (crs.trainerId) {
-        trainerName = APEX_DATA.find(p=>p.id===crs.trainerId)?.name || crs.trainerId;
-      }
-
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td style="color:#64748b; font-weight:700; text-align:center;">${idx + 1}</td>
-        <td>
-          <div style="font-weight:800; color:#0f172a; font-size:12.5px;">
-            ${crs.name}
-            ${crs.batchName ? `<span style="background:#e0e7ff; color:#4338ca; font-size:10px; font-weight:800; padding:1px 6px; border-radius:4px; margin-left:4px;">${crs.batchName}</span>` : ''}
-          </div>
-          <div style="font-size:10px; color:#64748b; font-family:'JetBrains Mono';">
-            ${crs.courseGroup || 'Đào tạo'}${crs.startDate ? ' • Khai giảng: ' + crs.startDate : ''} • ${crs.studentsCount || 0} học viên
-          </div>
-        </td>
-        <td>
-          <span style="font-size:10.5px; font-weight:800; padding:2px 6px; border-radius:4px; ${crs.category === 'course' ? 'background:#f5f3ff; color:#6d28d9;' : (crs.category === 'indicator' ? 'background:#e0f2fe; color:#0284c7;' : 'background:#fef3c7; color:#b45309;')}">
-            ${crs.categoryLabel}
-          </span>
-        </td>
-        <td style="text-align:right; white-space:nowrap;">
-          <div style="display:inline-flex; align-items:center; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:3px 8px; box-shadow:inset 0 1px 2px rgba(0,0,0,0.03);">
-            <input type="text"
-                   id="inputRev_${crs.id}"
-                   value="${Number(crs.totalRevenue || 0).toLocaleString('vi-VN')}"
-                   readonly title="Tiền thu được tổng hợp từ bill đã lưu" oninput="handleCourseRevenueInput(this, '${crs.id}')"
-                   style="width:105px; text-align:right; font-family:'JetBrains Mono', monospace; font-weight:800; font-size:12.5px; border:none; outline:none; background:transparent; color:#0f172a;"
-                   placeholder="0">
-            <span style="font-size:11.5px; font-weight:700; color:#64748b; margin-left:4px;">đ</span>
-          </div>
-        </td>
-        <td style="background:#faf5ff;">
-          <div style="font-weight:700; font-size:11.5px; color:#6d28d9;">${trainerName}</div>
-        </td>
-        <td style="text-align:center; background:#f8fafc;">
-          <button type="button" onclick="openCoursePersonnelDetailModal('${crs.id}')"
-                  class="tool-btn"
-                  style="font-size:11.5px; padding:5px 12px; background:linear-gradient(135deg, #7c3aed, #6d28d9); color:#fff; border:none; border-radius:6px; font-weight:800; cursor:pointer; box-shadow:0 1px 3px rgba(109,40,217,0.3); display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
-            Chi Tiết
-          </button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
+    const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    let index = 0;
+    for (const [productId, groups] of productGroups) {
+      const product = groups[0];
+      if (currentTrainingModalCategory !== 'ALL' && product.category !== currentTrainingModalCategory) continue;
+      const row = document.createElement('tr');
+      const isCourse = product.category === 'course';
+      const total = groups.reduce((sum, group) => sum + group.totalRevenue, 0);
+      row.innerHTML =         '<td>' + (++index) + '</td><td><strong>' + escape(product.name) + '</strong><div style="font-size:11px;color:#64748b;margin-top:4px">' + escape(product.code) + '</div></td>' +
+        '<td>' + escape(product.categoryLabel) + '</td><td class="training-cohort-cell"></td>' +
+        '<td style="text-align:right"><strong class="training-revenue"></strong><div class="training-revenue-note" style="font-size:11px;color:#64748b"></div></td>' +
+        '<td class="training-trainers" style="color:#6d28d9"></td><td><button type="button" class="tool-btn primary">Chọn người đào tạo</button></td>';
+      const cell = row.querySelector('.training-cohort-cell');
+      const button = row.querySelector('button');
+      let select;
+      if (isCourse) {
+        select = document.createElement('select');
+        select.setAttribute('aria-label', 'Khóa của ' + product.name);
+        select.style.cssText = 'min-width:125px;max-width:180px;padding:7px;border:1px solid #cbd5e1;border-radius:6px;background:#fffbeb';
+        select.add(new Option('— Chọn khóa —', ''));
+        groups.filter(g => g.cohortKey).sort((a,b) => a.cohortKey.localeCompare(b.cohortKey,'vi',{numeric:true})).forEach(g => select.add(new Option(g.cohortKey,g.id)));
+        select.value = trainingProductSelections.get(productId) || '';
+        cell.appendChild(select);
+      } else cell.textContent = '—';
+      const update = () => {
+        const chosen = isCourse ? groups.find(g => g.id === select.value) : product;
+        row.querySelector('.training-revenue').textContent = formatMoney(chosen ? chosen.totalRevenue : total);
+        row.querySelector('.training-revenue-note').textContent = isCourse ? (chosen ? 'Thực thu của khóa ' + chosen.cohortKey : 'Tổng sản phẩm • chọn khóa để cấu hình') : '';
+        row.querySelector('.training-trainers').textContent = chosen ? (chosen.trainers.map(t => t.name).join(', ') || 'Chưa chọn') : 'Chọn khóa trước';
+        button.disabled = !chosen;
+        button.onclick = chosen ? () => openCoursePersonnelDetailModal(chosen.id) : null;
+        if (isCourse) trainingProductSelections.set(productId, select.value);
+      };
+      if (select) select.onchange = update;
+      update();
+      tbody.appendChild(row);
+    }
   }
 
   function onCourseRatesChange(crsId) {
@@ -4989,7 +4961,7 @@ function renderMindmapTree() {
 
   function persistCourseConfigs(courses,view){
     if(window.__PENDING_COURSE_CONFIG)return;
-    const payload=courses.map(course=>({courseKey:course.courseKey||course.id,trainerIds:(course.trainers||[]).map(p=>p.id),leaderIds:(course.leaders||[]).map(p=>p.id),trainerRates:Object.fromEntries((course.trainers||[]).map(p=>[p.id,Number(p.rate)||0])),leaderRates:Object.fromEntries((course.leaders||[]).map(p=>[p.id,Number(p.rate)||0])),saleRates:{...(course.saleRates||{}),...Object.fromEntries(Object.entries(course.salesConfig||{}).map(([id,cfg])=>[id,Number(cfg.rateSale)||0]))},rateSale:course.rateSale,rateLeader:course.rateLeader,rateTrainer:course.rateTrainer,rateCompany:course.rateCompany,startDate:course.startDate||''}));
+    const payload=courses.map(course=>({productId:course.productId,courseKey:course.courseKey||course.id,trainerIds:(course.trainers||[]).map(p=>p.id),leaderIds:(course.leaders||[]).map(p=>p.id),trainerRates:Object.fromEntries((course.trainers||[]).map(p=>[p.id,Number(p.rate)||0])),leaderRates:Object.fromEntries((course.leaders||[]).map(p=>[p.id,Number(p.rate)||0])),saleRates:{...(course.saleRates||{}),...Object.fromEntries(Object.entries(course.salesConfig||{}).map(([id,cfg])=>[id,Number(cfg.rateSale)||0]))},rateSale:course.rateSale,rateLeader:course.rateLeader,rateTrainer:course.rateTrainer,rateCompany:course.rateCompany,startDate:course.startDate||''}));
     if(!payload.length){alert('Chưa có sản phẩm để lưu cấu hình.');return;}
     window.__PENDING_COURSE_CONFIG=view;
     postAccountingMessage('ACCOUNTING_COURSE_CONFIG_SAVE',{payload});
@@ -7515,41 +7487,56 @@ window.printOrderInvoice = printOrderInvoice;
   function rebuildAccountingRevenueFromCRM() {
     const state = ACCOUNTING_CRM_STATE;
     const products = new Map(state.products.map(p => [String(p.id), p]));
-    const configs = new Map(state.courseConfigs.map(c => [String(c.courseKey), c]));
+    const configKey = (productId, cohort) => JSON.stringify([String(productId || ''), String(cohort || '')]);
+    const configs = new Map(state.courseConfigs.map(c => [configKey(c.productId, c.courseKey), c]));
     const groups = new Map();
     const revenueBySale = new Map();
     const studentSets = new Map();
     const customers = new Map((state.customers || []).map(c => [String(c.id), c]));
     const members = new Map((state.members || []).map(m => [String(m.id), m]));
-    const ensureGroup = (key, product = {}, category = 'course', fallbackName = '') => {
-      const groupKey = category + ':' + key;
+    const ensureGroup = (product, cohort = '') => {
+      const productId = String(product.id);
+      const category = String(product.kind || 'OTHER').toLowerCase();
+      const key = category === 'course' ? cohort : productId;
+      const groupKey = configKey(productId, key);
       if (!groups.has(groupKey)) {
-        const cfg = configs.get(key) || {};
+        const exact = configs.get(groupKey);
+        const legacy = configs.get(configKey('', productId)) || {};
+        // Old product-only training has no cohort: retain its rates but never award its trainers across all cohorts.
+        const cfg = exact || (category === 'course' ? {...legacy, trainerIds:[]} : legacy);
         groups.set(groupKey, {
-          ...cfg, courseKey:key, id:groupKey, code:key, name:category === 'course' ? key : (product.name || fallbackName || key),
+          ...cfg, productId, courseKey:key, cohortKey:category === 'course' ? cohort : '', id:groupKey,
+          code:product.sku || '', name:product.name || productId,
           category, categoryLabel:{course:'Khóa học',indicator:'Chỉ báo',vip:'Nhóm VIP'}[category] || 'Sản phẩm khác',
-          courseGroup:product.name || fallbackName || '', batchName:'',
+          courseGroup:product.name || '', batchName:cohort,
           price:Number(product.price) || 0, studentsCount:0, totalRevenue:0, salesConfig:{}, leaderRevenue:{},
           trainers:(cfg.trainerIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.trainerRates?.[id] ?? cfg.rateTrainer ?? 15)})),
           leaders:(cfg.leaderIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.leaderRates?.[id] ?? cfg.rateLeader ?? 5)})),
-          rateSale:Number(cfg.rateSale ?? 15), rateTrainer:Number(cfg.rateTrainer ?? 15),
+          rateSale:Number(cfg.rateSale ?? 15), hasSaleRate:cfg.rateSale != null, rateTrainer:Number(cfg.rateTrainer ?? 15),
           rateLeader:Number(cfg.rateLeader ?? 5), rateCompany:Number(cfg.rateCompany ?? 65)
         });
       }
       return groups.get(groupKey);
     };
-    for (const key of state.courseKeys || []) if (String(key).trim()) ensureGroup(String(key).trim());
+    for (const product of state.products) {
+      ensureGroup(product);
+      if (String(product.kind).toUpperCase() === 'COURSE') {
+        const cohorts = new Set([...(product.courseKeys?.length ? product.courseKeys : (state.courseKeys || [])), ...state.courseConfigs.filter(c => String(c.productId) === String(product.id)).map(c => c.courseKey)]);
+        for (const cohort of cohorts) if (String(cohort).trim()) ensureGroup(product, String(cohort).trim());
+      }
+    }
     for (const order of state.orders) {
       if (!order) continue;
       const periodEvents = OrderPayments.events(order).filter(event => currentGlobalMonth === 'ALL' || String(event.occurredAt || '').slice(0,7) === currentGlobalMonth);
       const amount = periodEvents.reduce((sum,event) => sum + event.netAmount, 0);
       if (!amount) continue;
-      const product = products.get(String(order.productId)) || {};
-      const category = String(product.kind || order.productKind || 'OTHER').toLowerCase();
+      const product = products.get(String(order.productId)) || {id:order.productId || order.id, name:order.productName || 'Sản phẩm đã ngừng sử dụng', kind:order.productKind || 'OTHER'};
+      const category = String(product.kind || 'OTHER').toLowerCase();
       const customerCourse = customers.get(String(order.customerId))?.customFields?.[state.courseField?.id];
       const selectedCourse = Array.isArray(customerCourse) ? (customerCourse.length === 1 ? customerCourse[0] : '') : customerCourse;
-      const key = String((category === 'course' && (order.courseKey || selectedCourse || product.courseKey)) || order.productId || order.productName || order.id);
-      const group = ensureGroup(key, product, category, order.productName);
+      // Only the customer's actual cohort identifies training; product configuration is not a customer assignment.
+      const cohort = category === 'course' ? String(selectedCourse || '').trim() : '';
+      const group = ensureGroup(product, cohort);
       group.totalRevenue += amount;
       const studentKey = String(order.customerId || order.id);
       const groupStudents = studentSets.get(group.id) || new Set();
@@ -7559,7 +7546,7 @@ window.printOrderInvoice = printOrderInvoice;
       if (order.saleId) {
         const savedMetric = state.brokerageMetrics.find(m => String(m.memberId) === String(order.saleId) && m.period === currentGlobalMonth);
         const personalRate = savedMetric?.productRate ?? members.get(String(order.saleId))?.productRate ?? APEX_DATA.find(p => String(p.id) === String(order.saleId))?.productRate ?? 15;
-        const saleConfig = group.salesConfig[String(order.saleId)] ||= {students:0,revenue:0,rateSale:group.saleRates?.[String(order.saleId)] ?? configs.get(key)?.rateSale ?? personalRate};
+        const saleConfig = group.salesConfig[String(order.saleId)] ||= {students:0,revenue:0,rateSale:group.saleRates?.[String(order.saleId)] ?? (group.hasSaleRate ? group.rateSale : personalRate)};
         saleConfig.students += 1;
         saleConfig.revenue += amount;
         const seller = members.get(String(order.saleId));

@@ -1315,12 +1315,14 @@
   // Cột "Khoá" của Khách hàng tổng / Chăm sóc khách: giá trị K03, K05... là lớp của báo cáo.
   function courseField(){
     const fields=(data.fields||[]).filter(field=>field.active!==false);
-    const key=field=>String(`${field.id} ${field.label}`).normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/gi,'d').toLowerCase();
-    return fields.find(field=>field.id==='course')||fields.find(field=>/\bkhoa\b|course/.test(key(field)))||null;
+    const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().trim();
+    return fields.find(field=>normalize(field.label)==='khoa')
+      ||fields.find(field=>['cohort','coursebatch','course_batch','batch','khoa'].includes(normalize(field.id)))
+      ||null;
   }
   function courseKeys(){
     const field=courseField();if(!field)return [];
-    const values=new Set((field.options||[]).map(option=>String(option.value||'').trim()).filter(Boolean));
+    const values=new Set((field.options||[]).map(option=>String(typeof option==='string'?option:(option.value||'')).trim()).filter(Boolean));
     for(const customer of data.customers||[]){const value=customer.customFields?.[field.id];for(const item of Array.isArray(value)?value:[value])if(String(item||'').trim())values.add(String(item).trim());}
     return [...values].sort((a,b)=>a.localeCompare(b,'vi',{numeric:true}));
   }
@@ -1329,7 +1331,7 @@
     ensureProductImageStyles();
     const p=data.products.find(p=>p.id===id)||{name:'',sku:'',category:'Khóa học',price:0,type:'SALE',kind:'COURSE',courseKey:'',vatRate:0.1,active:true};
     const kind=id?productKind(p):'COURSE',keys=courseKeys();
-    if(p.courseKey&&!keys.includes(p.courseKey))keys.push(p.courseKey);
+    const selectedCourseKeys=(Array.isArray(p.courseKeys)?p.courseKeys:(p.courseKey?[p.courseKey]:[])).filter(key=>keys.includes(key));
     q('#referenceProductModal')?.remove();
     const modal=document.createElement('div');modal.id='referenceProductModal';modal.className='modal-overlay open';
     modal.innerHTML=`<form id="referenceProductForm" class="modal-card" role="dialog" aria-modal="true" aria-labelledby="referenceProductTitle" style="max-height:92dvh;overflow-y:auto;width:min(600px,calc(100vw - 24px))">
@@ -1339,7 +1341,7 @@
       <div class="form-group"><label for="refProductSku">Mã SKU</label><input id="refProductSku" name="sku" maxlength="60" value="${esc(p.sku)}"></div>
       <div class="form-group"><label for="refProductKind">Nhóm sản phẩm *</label><select id="refProductKind" name="kind" required aria-describedby="refProductKindHelp">${PRODUCT_KINDS.map(([value,label])=>opt(value,label,kind)).join('')}</select><small id="refProductKindHelp">Quyết định mục doanh thu trong Báo cáo doanh thu.</small></div>
       <div class="form-group"><label for="refProductType">Hình thức *</label><select id="refProductType" name="type">${opt('SALE','Bán',p.type)+opt('RENTAL','Cho thuê',p.type)}</select></div>
-      <div class="form-group" id="refProductCourseGroup"><label for="refProductCourseKey">Khoá (cột Khoá) *</label><select id="refProductCourseKey" name="courseKey" aria-describedby="refProductCourseHelp">${opt('','Chọn Khoá',p.courseKey||'')+keys.map(key=>opt(key,key,p.courseKey||'')).join('')}</select><small id="refProductCourseHelp">${keys.length?'Lấy từ cột Khoá của Khách hàng tổng.':'Chưa có giá trị trong cột Khoá. Thêm lựa chọn ở Quản lý cột.'}</small></div>
+      <div class="form-group" id="refProductCourseGroup" style="grid-column:1/-1"><label>Khóa áp dụng</label><div style="display:flex;flex-wrap:wrap;gap:10px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;max-height:150px;overflow:auto">${keys.map(key=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="courseKeys" value="${esc(key)}" ${selectedCourseKeys.includes(key)?'checked':''}>${esc(key)}</label>`).join('')||'<span>Chưa có lựa chọn trong cột Khóa của Khách hàng tổng.</span>'}</div><small>Chọn nhiều khóa. Người đào tạo được cấu hình riêng theo từng sản phẩm và khóa tại mục Kế toán & Hoa hồng.</small></div>
       <div class="form-group"><label for="refProductMonths">Gói thuê</label><select id="refProductMonths" name="rentalMonths">${opt('','Chọn gói')+[1,3,6,12].map(n=>opt(String(n),n+' tháng',String(p.rentalMonths))).join('')}</select></div>
       <div class="form-group"><label for="refProductCategory">Danh mục *</label><input id="refProductCategory" name="category" list="refProductCategories" required maxlength="100" value="${esc(p.category)}"><datalist id="refProductCategories">${(data.productCategories||[]).map(c=>opt(c,c)).join('')}</datalist></div>
       <div class="form-group"><label for="refProductPrice">Đơn giá chưa VAT *</label><input id="refProductPrice" name="price" type="number" required min="0" step="1" value="${esc(p.price)}"></div>
@@ -1355,7 +1357,7 @@
     const sync=()=>{
       const kindValue=q('#refProductKind').value,course=kindValue==='COURSE',category=q('#refProductCategory');
       q('#refProductMonths').disabled=q('#refProductType').value!=='RENTAL';q('#refProductMonths').required=!q('#refProductMonths').disabled;
-      q('#refProductCourseGroup').hidden=!course;q('#refProductCourseKey').disabled=!course;q('#refProductCourseKey').required=course&&keys.length>0;
+      q('#refProductCourseGroup').hidden=!course;q('#refProductCourseGroup').querySelectorAll('input').forEach(input=>input.disabled=!course);
       // Danh mục đi theo nhóm khi người dùng chưa tự đặt tên khác.
       if(kindValue!==lastKind&&(!category.value.trim()||category.value===kindCategory[lastKind]))category.value=kindCategory[kindValue]||'';
       lastKind=kindValue;
@@ -1370,7 +1372,7 @@
     removeImageButton.onclick=()=>{selectedImageData='';removeImage=true;imageInput.value='';renderImagePreview('');};
     q('#referenceProductForm').onsubmit=async event=>{
       event.preventDefault();if(working)return;working=true;
-      const form=event.currentTarget,input=Object.fromEntries(new FormData(form));input.active=input.active==='true';input.kind=q('#refProductKind').value;input.courseKey=input.kind==='COURSE'?String(q('#refProductCourseKey').value||''):'';
+      const form=event.currentTarget,input=Object.fromEntries(new FormData(form));input.active=input.active==='true';input.kind=q('#refProductKind').value;input.courseKeys=input.kind==='COURSE'?Array.from(form.querySelectorAll('input[name="courseKeys"]:checked'),node=>node.value):[];
       input.imageData=selectedImageData||(removeImage?'':String(p.imageData||''));
       const controls=Array.from(form.elements);controls.forEach(n=>n.disabled=true);text('refProductError','');
       let saved=false;
@@ -1387,6 +1389,14 @@
     table(body,data.products.map(p=>[p.name,p.sku,PRODUCT_KINDS.find(([kind])=>kind===productKind(p))?.[1]||'Khác',p.type==='RENTAL'?p.rentalMonths+' tháng':'Vĩnh viễn',money(p.price),(Number(p.vatRate??.1)*100).toFixed(2).replace(/\.00$/,'')+'% ('+money(Math.round(p.price*Number(p.vatRate??.1)))+')',p.active===false?'Tạm dừng':p.type==='RENTAL'?'Đang cho thuê':'Đang bán','']));
     Array.from(body.rows).forEach((row,i)=>{const p=data.products[i],button=row.querySelector('button');if(button){button.removeAttribute('onclick');button.onclick=()=>productModal(p.id);button.disabled=data.user.role!=='ADMIN';}const chip=row.cells[6]?.querySelector('.chip');if(chip)chip.className='chip '+(p.active===false?'chip-warm':'chip-green');});
     Array.from(body.rows).forEach((row,i)=>{const p=data.products[i],productCell=row.cells[0],nameHost=productCell?.querySelector('.cell-main')||productCell,heading=nameHost?.querySelector('b')||nameHost?.querySelector('strong')||nameHost;if(!p||!heading||heading.querySelector('.reference-product-thumb'))return;const label=document.createElement('span');label.textContent=p.name||'';const thumb=document.createElement(p.imageData?'img':'span');thumb.className='reference-product-thumb';if(p.imageData){thumb.src=p.imageData;thumb.alt='';}else thumb.textContent=String(p.name||'?').trim().slice(0,1).toUpperCase()||'?';const entry=document.createElement('div');entry.className='reference-product-name';entry.append(thumb,label);if(heading===nameHost)nameHost.replaceChildren(entry);else heading.replaceWith(entry);});
+    Array.from(body.rows).forEach((row,i)=>{
+      const product=data.products[i];if(productKind(product)!=='COURSE')return;
+      const keys=Array.isArray(product.courseKeys)?product.courseKeys:(product.courseKey?[product.courseKey]:[]);
+      const host=document.createElement('div');host.style.cssText='margin-top:7px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:#64748b';
+      const label=document.createElement('span');label.textContent=keys.length?'Khóa: '+keys.join(', '):'Chưa chọn khóa';host.appendChild(label);
+      if(data.user.role==='ADMIN'){const button=document.createElement('button');button.type='button';button.className='btn-action btn-secondary';button.textContent='Chọn khóa';button.style.cssText='padding:3px 7px;font-size:11px';button.onclick=()=>productModal(product.id);host.appendChild(button);}
+      row.cells[0].appendChild(host);
+    });
     const buttons=qa('#tab-products .headline-row button');buttons.forEach(n=>n.removeAttribute('onclick'));
     buttons[1].onclick=()=>productModal();buttons[1].disabled=data.user.role!=='ADMIN';
     buttons[0].onclick=()=>{q('#referencePriceModal')?.remove();const modal=document.createElement('div');modal.id='referencePriceModal';modal.className='modal-overlay open';modal.innerHTML=`<div class="modal-card" role="dialog" aria-modal="true" aria-label="Biểu giá" style="max-height:92dvh;overflow:auto;width:min(800px,calc(100vw - 24px))"><div class="modal-header"><h3>Biểu giá sản phẩm</h3><button class="modal-close-btn" aria-label="Đóng">×</button></div><div class="modal-body table-responsive"><table class="modern-table"><thead><tr><th>Sản phẩm</th><th>Gói</th><th>Chưa VAT</th><th>Gồm VAT</th></tr></thead><tbody>${data.products.filter(p=>p.active!==false).map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+(p.type==='RENTAL'?p.rentalMonths+' tháng':'Vĩnh viễn')+'</td><td>'+money(p.price)+'</td><td>'+money(Number(p.price)+Math.round(p.price*Number(p.vatRate??.1)))+'</td></tr>').join('')}</tbody></table></div></div>`;document.body.appendChild(modal);modal.querySelector('button').onclick=()=>{modal.remove();refresh(true);};};
@@ -2323,7 +2333,7 @@
 
     let iframe = host.querySelector('#accountingIframe');
     if (!iframe) {
-      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261004-course-commissions-15" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
+      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261004-product-cohorts-16" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
       iframe = host.querySelector('#accountingIframe');
       iframe?.addEventListener('load',()=>{host.classList.add('is-ready');syncMembersToAccountingMindmap();},{once:true});
     } else {
