@@ -341,7 +341,26 @@ function publicValue(user,key,r,data){
  }
  return r;
 }
-function snapshot(user,data){
+function compactAssetValue(key, value) {
+ if (!value || typeof value !== 'object') return value;
+ if (key === 'processes') {
+  const images = Array.isArray(value.imageData) ? value.imageData : (value.imageData ? [value.imageData] : []);
+  const next = {...value}; delete next.imageData; next.hasImage = images.length > 0; next.imageCount = images.length; return next;
+ }
+ if (key === 'feedbacks') { const next = {...value}; next.hasImage = Boolean(next.imageData); delete next.imageData; return next; }
+ if (key === 'orders') {
+  const next = {...value}; const receipts = Array.isArray(next.paymentReceipts) ? next.paymentReceipts : [];
+  next.paymentReceipts = receipts.map(receipt => {
+   const images = Array.isArray(receipt.images) ? receipt.images : (receipt.billImage ? [{imageData: receipt.billImage}] : []);
+   const compact = {...receipt}; delete compact.billImage; delete compact.imageData; delete compact.images; compact.hasBill = images.length > 0; compact.billCount = images.length; return compact;
+  });
+  next.hasBill = Boolean(next.billImage) || next.paymentReceipts.some(receipt => receipt.hasBill); delete next.billImage; return next;
+ }
+ return value;
+}
+function historyTime(row) { return String(row?.at || row?.createdAt || row?.updatedAt || '').replace('T',' '); }
+function newestRows(values, limit) { return values.slice().sort((a,b) => historyTime(b).localeCompare(historyTime(a)) || String(b?.id||'').localeCompare(String(a?.id||''))).slice(0, limit); }
+function snapshot(user,data,options={compact:false}){
  const state={},versions={};
  // data.revisions chỉ có trên bản dữ liệu dùng chung (chỉ đọc) của sharedData():
  // bản ghi không đổi giữ nguyên object nên khỏi băm SHA-256 lại ở mỗi lượt đồng bộ.
@@ -353,7 +372,7 @@ function snapshot(user,data){
    if(list)state[key]=[];
    for(const [id,r]of data[key]){
     if(!readable(user,key,r,data))continue;
-    const value=publicValue(user,key,r,data);
+    const value=options.compact===true?compactAssetValue(key, publicValue(user,key,r,data)):publicValue(user,key,r,data);
     if(list)state[key].push(value);else state[key]=value;
     let hash=revisions&&value&&typeof value==='object'?revisions.get(value):undefined;
     if(hash===undefined){hash=revision(value);if(revisions&&value&&typeof value==='object')revisions.set(value,hash);}
@@ -362,6 +381,7 @@ function snapshot(user,data){
   }
  }finally{snapshotMemo=previousMemo;}
  // Only public assignment fields; does not grant access to other teams' records.
+ if(options.compact===true){if(Array.isArray(state.audit))state.audit=newestRows(state.audit,100);if(Array.isArray(state.customerFieldHistory))state.customerFieldHistory=newestRows(state.customerFieldHistory,200);}
  state.orderAssignees=['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'].includes(user.role)
   ? [...data.members.values()].filter(m=>m.active!==false&&m.active!==0&&m.active!=='0'&&['MANAGER','LEADER','SALE'].includes(m.role)).map(m=>({id:m.id,name:m.name,role:m.role,teamId:m.teamId||'',leaderId:m.leaderId||null,managerId:m.managerId||null,active:true})) : [];
  state.accounts=state.members;
@@ -850,7 +870,7 @@ function sharedData(){
 }
 async function read(user, options={}){
  await prepare();
- if(options.passive===true)return snapshot(user,await sharedData());
+ if(options.passive===true)return snapshot(user,await sharedData(),{compact:options.full!==true});
  try{return await readActive(user);}finally{invalidateSnapshotCache();}
 }
 async function readActive(user){const c=await pool.getConnection();try{await c.beginTransaction();await c.query('SELECT id FROM crm_write_lock WHERE id=1 FOR UPDATE');const data=await allData(c,{mirrorAttendance:true});await expireOffers(c,data);const assigned=await distributeAutomatic(c,data);await warnRentalExpiry(c,data);const result=snapshot(user,assigned?await allData(c):data);await c.commit();return result;}catch(e){await c.rollback().catch(()=>{});throw e;}finally{c.release();}}
@@ -1049,4 +1069,23 @@ async function writeLocked(user,requestId,changes,options={}){
 }
 // Mọi lượt ghi qua CRM làm mới bộ đệm snapshot dùng chung (kể cả khi lỗi giữa chừng).
 async function write(user,requestId,changes,options={}){try{return await writeLocked(user,requestId,changes,options);}finally{invalidateSnapshotCache();}}
-module.exports={mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};
+function assetFromData(user, data, type, id, childId = null) {
+ const key = type === 'process' ? 'processes' : type === 'feedback' ? 'feedbacks' : 'orders';
+ const source=data.state||data; const row = source[key]?.get ? source[key].get(id) : (source[key]||[]).find(item => String(item.id)===String(id));
+ if (!row) error(404,'Khong tim thay du lieu anh.');
+ if (type === 'process') { const images=Array.isArray(row.imageData)?row.imageData:(row.imageData?[row.imageData]:[]); return {id:row.id,images}; }
+ if (type === 'feedback') return {id:row.id,imageData:row.imageData||''};
+ const receipt=(row.paymentReceipts||[]).find(item=>String(item.id)===String(childId));
+ if(!receipt)error(404,'Khong tim thay bill.');
+ const images=Array.isArray(receipt.images)?receipt.images:(receipt.billImage?[{id:`${receipt.id}-image`,imageData:receipt.billImage,note:receipt.note||''}]:[]);
+ return {orderId:row.id,receiptId:receipt.id,images};
+}
+async function readAsset(user, type, id, childId = null) {
+ const data = await read(user, {passive:true, full:true});
+ return assetFromData(user, new Map(Object.entries(data.state)), type, id, childId);
+}
+async function readAuditPage(user, page=1, limit=50) {
+ const result = await read(user,{passive:true,full:true}); const all=result.state.audit||[]; const safePage=Math.max(1,Number(page)||1), safeLimit=Math.min(200,Math.max(1,Number(limit)||50));
+ return {items:all.slice((safePage-1)*safeLimit,safePage*safeLimit),page:safePage,limit:safeLimit,total:all.length,hasMore:all.length>safePage*safeLimit};
+}
+module.exports={mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};

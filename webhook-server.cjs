@@ -43,7 +43,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261005-level-field-22';
+const BUILD_VERSION = '20261005-state-lazy-23';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -404,7 +404,7 @@ function expireDemoOffers() {
 }
 function demoPayload(user) {
   expireDemoOffers();
-  return {...crmData.snapshot(user,demoData()),user,storage:{mode:'demo',durable:false}};
+  return {...crmData.snapshot(user,demoData(),{compact:true}),user,storage:{mode:'demo',durable:false}};
 }
 async function handleDemoApi(request, response, pathname) {
   if (pathname === '/api/db/health') return dbJson(request, response, 200, { configured: false, demo: true });
@@ -444,6 +444,18 @@ async function handleDemoApi(request, response, pathname) {
   const user = demoUserFromToken(request);
   if (!user) return dbJson(request, response, 401, { error: 'Đăng nhập demo trước' });
   demoTouchSession(request);
+  const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/);
+  if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch)){
+    try{
+      const type=processMatch?'process':feedbackMatch?'feedback':'order',id=decodeURIComponent((processMatch||feedbackMatch||receiptMatch)[1]),childId=receiptMatch?decodeURIComponent(receiptMatch[2]):null;
+      return dbJson(request,response,200,crmData.assetFromData(user,demoData(),type,id,childId));
+    }catch(error){return dbJson(request,response,error.status||404,{error:error.message});}
+  }
+  if(pathname==='/api/audit'&&request.method==='GET'){
+    const query=new URL(request.url,`http://${request.headers.host||'localhost'}`).searchParams;
+    const all=demoState.audit.slice().sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')));const page=Math.max(1,Number(query.get('page'))||1),limit=Math.min(200,Math.max(1,Number(query.get('limit'))||50));
+    return dbJson(request,response,200,{items:all.slice((page-1)*limit,page*limit),page,limit,total:all.length,hasMore:all.length>page*limit});
+  }
   if(pathname==='/api/user-activity'&&request.method==='POST'){const body=await readDbBody(request),detail=activityLabel(body.view),token=demoToken(request),old=demoSessionActivity.get(token)?.activity;demoTouchSession(request,detail);if(old!==detail)demoRecordActivity(user,request,'OPEN_SCREEN',detail);return dbJson(request,response,200,{ok:true,activity:detail});}
   if(pathname==='/api/admin/user-activity'&&request.method==='GET'){if(user.role!=='ADMIN')return dbJson(request,response,403,{error:'Chỉ Admin được xem User log'});return dbJson(request,response,200,demoAdminUserActivity());}
   if(pathname==='/api/customers/manual'&&request.method==='POST'){
@@ -616,6 +628,14 @@ async function handleDbApi(request, response, pathname) {
     }
     // Máy khác vừa ghi gì chưa: chỉ đọc id lớn nhất của crm_changes để các vai trò đồng bộ sau vài giây
     // mà không phải tải lại toàn bộ snapshot (SSE tắt trên shared hosting).
+    const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/);
+    if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch)){
+      try{const type=processMatch?'process':feedbackMatch?'feedback':'order',id=decodeURIComponent((processMatch||feedbackMatch||receiptMatch)[1]),childId=receiptMatch?decodeURIComponent(receiptMatch[2]):null;return dbJson(request,response,200,await crmData.readAsset(user,type,id,childId));}
+      catch(error){return dbJson(request,response,error.status||404,{error:error.message});}
+    }
+    if(pathname==='/api/audit'&&request.method==='GET'){
+      const query=new URL(request.url,`http://${request.headers.host||'localhost'}`).searchParams;return dbJson(request,response,200,await crmData.readAuditPage(user,query.get('page'),query.get('limit')));
+    }
     if(pathname==='/api/state/version'&&request.method==='GET'){
       const rows=await dbQuery('SELECT MAX(id) AS version FROM crm_changes');
       return dbJson(request,response,200,{version:String(rows[0]?.version||0)});
@@ -1615,7 +1635,7 @@ const server = http.createServer(async (request, response) => {
       await dbQuery('UPDATE customer_appointments SET status = ?, note = COALESCE(?, note) WHERE id = ?', [status, body.note || null, id]);
       return sendJson(response, 200, { ok: true }, corsHeaders(request));
     }
-    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version') return await handleDbApi(request, response, pathname);
+    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
       return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
     }
