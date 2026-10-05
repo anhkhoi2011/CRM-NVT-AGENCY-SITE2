@@ -666,6 +666,10 @@
  font-size: 12px;
  white-space: nowrap;
  }
+ .order-copy-field { display:block; width:100%; padding:5px 6px; border:1px solid transparent; border-radius:6px; background:transparent; color:#334155; font:600 11px 'JetBrains Mono',monospace; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:copy; }
+ #vatOrdersTable td:nth-child(6) .order-copy-field { min-width:190px; max-width:280px; white-space:normal; overflow-wrap:anywhere; font-family:inherit; }
+ .order-copy-field:hover { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
+ .order-copy-field.is-copied { border-color:#86efac; background:#f0fdf4; color:#15803d; }
  .crm-table th {
  background: #f1f5f9;
  color: #475569;
@@ -1791,6 +1795,8 @@ body.accounting-modal-open { overflow: hidden; }
                 <th style="width:115px; text-align:center;">NGÀY GIỜ</th>
                 <th style="width:105px;">PHÂN LOẠI</th>
                 <th style="width:130px;">KHÁCH HÀNG</th>
+                <th style="width:125px;">CCCD</th>
+                <th style="min-width:190px;">ĐỊA CHỈ</th>
                 <th style="width:110px;">SĐT KH</th>
                 <th>SẢN PHẨM / DỊCH VỤ</th>
                 <th style="width:110px;">GÓI / THỜI HẠN</th>
@@ -1808,7 +1814,7 @@ body.accounting-modal-open { overflow: hidden; }
             </tbody>
             <tfoot>
               <tr style="background:#f8fafc; font-weight:900;">
-                <td colspan="8" style="text-align:right;">TỔNG CỘNG ĐỐI SOÁT:</td>
+                <td colspan="10" style="text-align:right;">TỔNG CỘNG ĐỐI SOÁT:</td>
                 <td id="footOrderTotalRev" style="text-align:right; font-family:'JetBrains Mono'; color:#0f172a;">0 đ</td>
                 <td id="footOrderTotalVat" style="text-align:right; font-family:'JetBrains Mono'; color:#64748b;">0 đ</td>
                 <td id="footOrderTotalCollected" style="text-align:right; font-family:'JetBrains Mono'; color:#059669;">0 đ</td>
@@ -5675,6 +5681,31 @@ function renderPaymentNotificationBanner() {
   });
 }
 
+function escapeOrderContact(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+function copyOrderField(button) {
+  const value = String(button?.dataset.copyValue || '').trim();
+  if (!value) return;
+  const finish = () => {
+    const original = button.dataset.copyOriginal || button.textContent;
+    button.dataset.copyOriginal = original;
+    button.textContent = '\u0110\u00e3 copy';
+    button.classList.add('is-copied');
+    clearTimeout(button._copyTimer);
+    button._copyTimer = setTimeout(() => { button.textContent = original; button.classList.remove('is-copied'); }, 1200);
+  };
+  const fallback = () => {
+    const input = document.createElement('textarea');
+    input.value = value; input.setAttribute('readonly', '');
+    input.style.position = 'fixed'; input.style.opacity = '0';
+    document.body.appendChild(input); input.select();
+    try { if (!document.execCommand('copy')) throw Error('Copy failed'); finish(); } catch { showToast('Kh\u00f4ng th\u1ec3 sao ch\u00e9p. Vui l\u00f2ng th\u1eed l\u1ea1i.', 'warning'); } finally { input.remove(); button.focus(); }
+  };
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value).then(finish).catch(fallback);
+  else fallback();
+}
+
 function renderVatOrdersTable() {
   const tbody = document.getElementById('vatOrdersTableBody');
   if (!tbody) return;
@@ -5717,7 +5748,7 @@ function renderVatOrdersTable() {
   if (badgeCount) badgeCount.textContent = `${filtered.length} đơn`;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; padding:30px; color:#94a3b8; font-weight:700;">Không tìm thấy đơn hàng nào phù hợp với bộ lọc</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center; padding:30px; color:#94a3b8; font-weight:700;">Không tìm thấy đơn hàng nào phù hợp với bộ lọc</td></tr>`;
     return;
   }
 
@@ -5788,9 +5819,11 @@ function renderVatOrdersTable() {
     else if(isPaid&&order.paymentReconciled)vatBtnHtml=`<button type="button" class="btn-action btn-primary" onclick="event.stopPropagation(); issueVatInvoice('${order.id}')">Ghi nhận VAT</button>`;
     else vatBtnHtml='<button type="button" class="btn-action btn-secondary" disabled title="Cần đủ tiền và Kế toán đối soát trước">VAT chờ đối soát</button>';
 
-    // Hiển thị thông tin CCCD và Địa chỉ trực tiếp dưới tên khách
-    const cccdBadge = order.customerCccd ? `<div style="font-size:10.5px; color:#1e40af; font-family:'JetBrains Mono';">🪪 ${order.customerCccd}</div>` : `<div style="font-size:10px; color:#94a3b8; font-style:italic;">🪪 Chưa có CCCD</div>`;
-    const addrLine = order.customerAddress ? `<div style="font-size:10px; color:#475569; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${order.customerAddress}">📍 ${order.customerAddress}</div>` : '';
+    // Contact fields are separate columns with click-to-copy values.
+    const copyField = (value, label) => {
+      const text = String(value || '').trim();
+      return `<button type="button" class="order-copy-field" data-copy-value="${escapeOrderContact(text)}" onclick="event.stopPropagation(); copyOrderField(this)" title="B\u1ea5m \u0111\u1ec3 copy ${label}">${escapeOrderContact(text || '\u2014')}</button>`;
+    };
 
     // Thumbnail bill nhỏ clickable
     const billThumbHtml = ''; // Bỏ icon ảnh vỡ trước mã đơn theo yêu cầu
@@ -5823,12 +5856,10 @@ function renderVatOrdersTable() {
         <small style="color:#64748b; font-size:10px;">${timeDisplay}</small>
       </td>
       <td><span class="chip ${typeChipClass}">${order.typeLabel}</span></td>
-      <td>
-        <b style="color:#0f172a; font-size:13px;">${order.customerName}</b>
-        ${cccdBadge}
-        ${addrLine}
-      </td>
-      <td style="font-family:'JetBrains Mono'; color:#334155; font-weight:600;">${order.customerPhone}</td>
+      <td><b style="color:#0f172a; font-size:13px;">${order.customerName}</b></td>
+      <td>${copyField(order.customerCccd, 'CCCD')}</td>
+      <td>${copyField(order.customerAddress, '\u0111\u1ecba ch\u1ec9')}</td>
+      <td>${copyField(order.customerPhone, 's\u1ed1 \u0111i\u1ec7n tho\u1ea1i')}</td>
       <td>
         <b style="color:#1e293b;">${order.productName}</b>
         <div><small style="color:#94a3b8; font-family:'JetBrains Mono';">${order.productSku}</small></div>

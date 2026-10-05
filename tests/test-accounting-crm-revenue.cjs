@@ -14,6 +14,13 @@ function model() {
 test('Accounting inline scripts parse without syntax errors', () => {
  for (const match of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
 });
+test('VAT order table shows copyable CCCD, address and phone columns', () => {
+ assert.match(html, /<th style=\"width:125px;\">CCCD<\/th>/);
+ assert.match(html, /<th style="min-width:190px;">[^<]*<\/th>/);
+ assert.match(html, /class=\"order-copy-field\"/);
+ assert.match(html, /copyOrderField\(this\)/);
+ assert.match(html, /data-copy-value=\"\$\{escapeOrderContact\(text\)\}\"/);
+});
 test('Accounting starts empty with no sample financial datasets', () => {
  for (const name of ['APEX_DATA','COURSES_DATA','VAT_ORDERS_DATA','ADMIN_EXPENSES_DATA']) assert.ok(html.includes('let '+name+' = [];'), name);
  assert.doesNotMatch(html,/448\.500\.000|231\.500\.000|117\.000\.000|MONTHLY_REVENUE_COMMISSION|MONTH_FACTORS/);
@@ -227,4 +234,15 @@ test('Course revenue KPI switches between total, trainer and cohort views',()=>{
  ctx.setCourseRevenueViewMode('COHORT');assert.deepEqual(nodes.courseRevenueViewTarget.options.map(o=>o.label),['K01','K03']);assert.equal(nodes.statTotalCourseRev.textContent,'1000000');assert.match(nodes.statCourseDetail.innerHTML,/Trainer One/);
  ctx.setCourseRevenueViewTarget('K03');assert.equal(nodes.statTotalCourseRev.textContent,'2000000');assert.match(nodes.statCourseDetail.innerHTML,/Trainer Two/);
  ctx.setCourseRevenueViewMode('TOTAL');assert.equal(nodes.courseRevenueViewTarget.hidden,true);assert.equal(nodes.statTotalCourseRev.textContent,'3000000');
+});
+
+test('Contact copy preserves leading zeroes and escapes saved customer values', async () => {
+ const copied=[];
+ const ctx=vm.createContext({navigator:{clipboard:{writeText:async value=>copied.push(value)}},clearTimeout(){},setTimeout(){return 1;}});
+ vm.runInContext(html.slice(html.indexOf('function escapeOrderContact('),html.indexOf('function renderVatOrdersTable(')),ctx);
+ const button={dataset:{copyValue:'001234567890'},textContent:'001234567890',classList:{add(){},remove(){}}};
+ await ctx.copyOrderField(button);
+ assert.deepEqual(copied,['001234567890']);
+ assert.equal(button.textContent,'\u0110\u00e3 copy');
+ assert.equal(ctx.escapeOrderContact('A "B" <C>'),'A &quot;B&quot; &lt;C&gt;');
 });
