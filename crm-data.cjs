@@ -90,8 +90,14 @@ async function seedDefaults(){
  try{
   await c.beginTransaction();await c.query('SELECT id FROM crm_write_lock WHERE id=1 FOR UPDATE');
   const [existing]=await c.query("SELECT setting_key,setting_value FROM system_settings");
+  // customerLevel is mandatory. Repair legacy databases where the collection exists but this record is missing.
+  const defaults=require('./crm-defaults.json');
+  const requiredLevel=defaults.customFieldDefinitions?.find(field=>field.id==='customerLevel');
+  if(requiredLevel){
+   const [rows]=await c.execute("SELECT deleted FROM crm_documents WHERE collection='customFieldDefinitions' AND id='customerLevel' LIMIT 1");
+   if(!rows.length||Number(rows[0].deleted)===1)await c.execute("INSERT INTO crm_documents(collection,id,body,deleted) VALUES ('customFieldDefinitions','customerLevel',?,0) ON DUPLICATE KEY UPDATE body=VALUES(body),deleted=0",[JSON.stringify(requiredLevel)]);
+  }
   if(!existing.some(r=>r.setting_key==='crm_defaults_v1')){
-   const defaults=require('./crm-defaults.json');
    const [existingCollections]=await c.execute('SELECT DISTINCT collection FROM crm_documents');
    const presentCollections=new Set(existingCollections.map(row=>String(row.collection)));
    for(const [key,value] of Object.entries(defaults)){

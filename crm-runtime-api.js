@@ -471,7 +471,7 @@
       return persist(()=>{
         const field=state.customFieldDefinitions.find(f=>f.id===fieldId&&f.active!==false);
         if(!field)throw Error('Cột không còn hoạt động.');
-        if(['SELECT','MULTI_SELECT'].includes(field.type)&&[].concat(value).some(v=>v!==''&&!field.options.some(o=>o.value===v)))throw Error('Lựa chọn không hợp lệ.');
+        if(['SELECT','MULTI_SELECT'].includes(field.type)&&[].concat(value).some(v=>v!==''&&!field.options.some(o=>o.value===v||field.id==='customerLevel'&&o.label===v)))throw Error('Lựa chọn không hợp lệ.');
         const result=setCustomerCustomFields(customerId,{[fieldId]:value});
         if(result.error)throw Error(result.error);return result;
       },'customer-field:'+customerId+':'+fieldId);

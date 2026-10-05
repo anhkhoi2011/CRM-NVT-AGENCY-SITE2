@@ -22,6 +22,7 @@ function fixture(){
   }
   if(sql.startsWith('SELECT * FROM crm_documents WHERE collection IN'))return [structuredClone(db.docs.filter(row=>v.includes(row.collection)))];
   if(sql.includes('FROM system_settings'))return [[{setting_key:'crm_defaults_v1',setting_value:'true'}]];
+  if(sql.includes("SELECT deleted FROM crm_documents WHERE collection='customFieldDefinitions'"))return [[{deleted:0}]];
   if(sql.includes('FROM users'))return [structuredClone(db.users)];
   if(sql.includes('FROM staff_attendance'))return [structuredClone(db.staffAttendance)];
   for(const key of ['customers','orders','products'])if(sql===`SELECT * FROM ${key}`)return [structuredClone(db[key])];
@@ -750,6 +751,17 @@ test('Reference care reorder persists for Admin and denies non-admin',async()=>{
  assert.deepEqual(vm.runInContext('state.careGroups.map(group=>group.id)',c),['b','a']);
  vm.runInContext(`currentAccount={id:'sale',role:'SALE'}`,c);
  await assert.rejects(()=>c.window.crmApi.reorderCare(['a','b']),/không có quyền/);
+});
+test('Required customerLevel field is present and saves through the runtime path',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext("state.customers=[{id:'level-customer',name:'Customer',phone:'0900000013',customFields:{},status:'NEW'}]",c);
+ const field=vm.runInContext("state.customFieldDefinitions.find(item=>item.id==='customerLevel')",c);
+ assert.ok(field);assert.equal(field.type,'SELECT');assert.ok(field.options.some(option=>option.value==='L5'));
+ const result=await api.updateField('level-customer','customerLevel','L5');
+ assert.equal(result.updated,true);assert.equal(vm.runInContext("state.customers[0].customFields.customerLevel",c),'L5');
+ const legacy=await api.updateField('level-customer','customerLevel','L4.1: Hẹn nạp vốn');
+ assert.equal(legacy.updated,true);assert.equal(vm.runInContext("state.customers[0].customFields.customerLevel",c),'L4.1');
+ assert.ok(vm.runInContext("state.customerFieldHistory.some(item=>item.customerId==='level-customer'&&item.fieldId==='customerLevel'&&item.to==='L5')",c));
 });
 test('Reference fields preserve option keys, record edits, protect Level and care references',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
@@ -1916,6 +1928,12 @@ test('Admin backfill edits one daily record and validates input',async()=>{
  assert.equal(vm.runInContext('state.attendance[0].editedById',c),'admin');assert.equal(vm.runInContext('state.attendance[0].status',c),'ONTIME');
  for(const input of [{date:'2026-02-30',time:'09:00'},{date:'2099-01-01',time:'09:00'},{date:'2026-01-02',time:'25:00'}])await assert.rejects(c.window.crmApi.saveAttendance({accountId:'staff',note:'Reason',...input}));
  vm.runInContext("currentAccount.role='SALE'",c);await assert.rejects(c.window.crmApi.saveAttendance({accountId:'staff',date:'2026-01-02',time:'09:00',note:'Reason'}));
+});
+test('SQL startup repairs a missing required customerLevel definition',()=>{
+ const source=fs.readFileSync('crm-data.cjs','utf8');
+ assert.match(source,/collection='customFieldDefinitions'.*id='customerLevel'/s);
+ assert.match(source,/requiredLevel\s*=\s*defaults\.customFieldDefinitions\?\.find\(field=>field\.id==='customerLevel'\)/);
+ assert.match(fs.readFileSync('crm-defaults.json','utf8'),/\"id\": \"customerLevel\"/);
 });
 test('Admin attendance SQL roundtrip keeps correction over legacy Telegram',async()=>{
  const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',active:1});

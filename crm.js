@@ -407,7 +407,8 @@ function sanitizeCustomFieldValue(value, field) {
   }
   if (field.type === 'SELECT') {
     const candidate = cleanText(String(value ?? ''), '', 160).trim();
-    return field.options.some(option => option.value === candidate) ? candidate : '';
+    const option = field.options.find(item => item.value === candidate || item.label === candidate);
+    return option?.value || '';
   }
   if (field.type === 'DATE') return cleanDate(value);
   if (field.type === 'NUMBER') {

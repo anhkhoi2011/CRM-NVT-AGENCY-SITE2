@@ -43,7 +43,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261004-attendance-admin-21';
+const BUILD_VERSION = '20261005-level-field-22';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -260,6 +260,16 @@ const demoState = {
 
 // Chỉ phục hồi RAM demo từ tệp local được chỉ định khi khởi động; production không đọc tệp này.
 if(DEMO_MODE&&process.env.DEMO_STATE_FILE){Object.assign(demoState,JSON.parse(fs.readFileSync(process.env.DEMO_STATE_FILE,'utf8').replace(/^\uFEFF/,'')));}
+// Repair older demo snapshots so the required Level column is always available.
+if (DEMO_MODE) {
+  const defaultFields = require('./crm-defaults.json').customFieldDefinitions || [];
+  const defaultLevel = defaultFields.find(field => field.id === 'customerLevel');
+  if (defaultLevel && !demoState.customFieldDefinitions.some(field => field.id === 'customerLevel')) demoState.customFieldDefinitions.unshift(structuredClone(defaultLevel));
+  for (const customer of demoState.customers) {
+    customer.customFields ||= {};
+    if (!Object.hasOwn(customer.customFields, 'customerLevel')) customer.customFields.customerLevel = 'L0';
+  }
+}
 // Ensure all demo roles remain available when restoring an older RAM snapshot.
 if (DEMO_MODE) {
   for (const account of demoUsers) {

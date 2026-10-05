@@ -543,7 +543,7 @@
   const formField=(label,html)=>`<div class="form-group" style="margin-bottom:14px"><label for="${html.match(/id="([^"]+)"/)?.[1]||''}" style="display:block">${esc(label)}</label>${html}</div>`;
   const validColor=color=>/^#[a-f0-9]{6}$/i.test(color)?color:'#64748b';
   function fieldControl(cell,field,customer) {
-    let value=customerDraftValues.has('field:'+customer.id+':'+field.id)?customerDraftValues.get('field:'+customer.id+':'+field.id):(customer.customFields?.[field.id]??'');const editable=api?.sessionIdentity()?.id===data.user.id&&['ADMIN','MANAGER','LEADER','SALE'].includes(data.user.actualRole||data.user.role);
+    let value=customerDraftValues.has('field:'+customer.id+':'+field.id)?customerDraftValues.get('field:'+customer.id+':'+field.id):(customer.customFields?.[field.id]??'');if(field.id==='customerLevel'){const legacy=field.options?.find(option=>option.label===value);if(legacy)value=legacy.value;}const editable=api?.sessionIdentity()?.id===data.user.id&&['ADMIN','MANAGER','LEADER','SALE'].includes(data.user.actualRole||data.user.role);
     const control=document.createElement(field.type==='SELECT'?'select':field.type==='NOTE'?'textarea':field.type==='MULTI_SELECT'?'button':'input');
     control.className='chip';control.style.cssText='width:210px;max-width:210px;padding:5px 8px;border-radius:6px;font:inherit;font-size:11px;font-weight:700;border:1px solid var(--border);';
     const applyOptionColor=next=>{const color=validColor(field.options?.find(o=>o.value===next)?.color);control.style.color=color;control.style.backgroundColor=color+'18';};
@@ -2363,7 +2363,7 @@
 
     let iframe = host.querySelector('#accountingIframe');
     if (!iframe) {
-      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261004-attendance-admin-21" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
+      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261005-level-field-22" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
       iframe = host.querySelector('#accountingIframe');
       iframe?.addEventListener('load',()=>{host.classList.add('is-ready');syncMembersToAccountingMindmap();},{once:true});
     } else {
