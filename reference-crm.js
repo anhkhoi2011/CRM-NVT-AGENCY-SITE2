@@ -409,7 +409,9 @@
       if(!Array.isArray(records)||records.some(r=>!r.payload||r.payload.accountId!==customerDraftOwner||!['field','leader','sale'].includes(r.payload.kind)))throw Error('Bản nháp không hợp lệ.');
       const noteRecords=JSON.parse(draftStore.get(noteDraftStorageKey())||'[]');
       if(!Array.isArray(noteRecords)||noteRecords.some(r=>!r.payload||r.payload.accountId!==customerDraftOwner||r.payload.kind!=='field'))throw Error('Bản nháp ghi chú không hợp lệ.');
-      const combined=[...records,...noteRecords];
+      // The debounce draft is newer than an already queued value for the same
+      // cell. Restore it last by key before the queue deduplicates records.
+      const combined=Array.from(new Map([...records,...noteRecords].map(record=>[record.key,record])).values());
       for(const {payload} of combined)customerDraftValues.set(selectionKey(payload),payload.value);
       customerSaveQueue.restore(combined,payload=>selectionAction(payload,true));
       if(noteRecords.length)draftStore.remove(noteDraftStorageKey());

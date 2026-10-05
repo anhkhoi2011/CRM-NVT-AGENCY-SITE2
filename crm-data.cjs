@@ -874,6 +874,8 @@ async function read(user, options={}){
  try{return await readActive(user);}finally{invalidateSnapshotCache();}
 }
 async function readActive(user){const c=await pool.getConnection();try{await c.beginTransaction();await c.query('SELECT id FROM crm_write_lock WHERE id=1 FOR UPDATE');const data=await allData(c,{mirrorAttendance:true});await expireOffers(c,data);const assigned=await distributeAutomatic(c,data);await warnRentalExpiry(c,data);const result=snapshot(user,assigned?await allData(c):data);await c.commit();return result;}catch(e){await c.rollback().catch(()=>{});throw e;}finally{c.release();}}
+// Keep the legacy fastNote path for small customer-note writes, but make its
+// multi-table update atomic so a partial SQL failure cannot lose the note.
 function noteOnlyCustomerChange(oldValue, nextValue) {
  if (!oldValue || !nextValue || typeof oldValue !== 'object' || typeof nextValue !== 'object') return false;
  const allowed = new Set(['note','updatedAt']);
@@ -901,6 +903,7 @@ async function writeFastCustomerNotes(user, requestId, changes, enabled = false)
  const ids = [...new Set(customerChanges.map(change => String(change.id)))];
  const c = await pool.getConnection();
  try {
+  await c.beginTransaction();
   const [done] = await c.query('SELECT actor_id FROM crm_changes WHERE request_id=? LIMIT 1', [requestId]);
   if (done.length) { if (String(done[0].actor_id) !== String(user.id)) error(409, 'Mã yêu cầu đã tồn tại.'); await c.rollback().catch(() => {}); return {...await read(user,{passive:true}),ok:true,replayed:true}; }
   const [rows] = await c.query('SELECT * FROM customers WHERE id IN (' + ids.map(() => '?').join(',') + ')', ids);
@@ -1002,8 +1005,14 @@ async function writeLocked(user,requestId,changes,options={}){
    seen.add(`${key}/${id}`);
    const old=data[key].get(id);
    if(key==='customers'&&old&&value&&Array.isArray(change.fields)&&change.fields.length<=200){
+    // Field edits must always be merged with the current SQL row. A browser can
+    // send an enriched or compact customer snapshot that is missing an older
+    // note while its row revision is still current; replacing the whole row in
+    // that case silently deletes the note. Merge only the fields the client
+    // actually edited, then keep the normal revision check for real conflicts.
     const current=revision(publicValue(user,key,old,data));
-    if(current!==base){change.value=value=mergeCustomerFields(old,value,change.fields);change.base=base=current;}
+    change.value=value=mergeCustomerFields(old,value,change.fields);
+    if(current!==base)change.base=base=current;
    }
    if(key==='customers'&&user.role==='SALE'&&old&&pendingOffer(data,user,old.id)&&value){
      change.value={...old,saleId:user.id,saleAcceptedAt:value.saleAcceptedAt||new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19),updatedAt:value.updatedAt||new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19),status:value.status||old.status,note:value.note!==undefined?value.note:old.note};

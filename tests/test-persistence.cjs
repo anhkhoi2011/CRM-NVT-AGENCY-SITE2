@@ -1553,6 +1553,26 @@ test('SQL nhận điểm danh Telegram thì runtime báo ngay cho giao diện CR
  assert.equal(await c.syncServerState(),true);assert.equal(events.length,1);
 });
 
+test('Customer note field edits merge with the SQL row and survive a next-day reread',async()=>{
+ const f=fixture();
+ await f.api.write(admin,'seed-note-customer',[change('customers',{...customer,customFields:{customerLevel:'L3',careNote:'Ghi chú ngày 1'}})]);
+ let first=await f.api.read(sale);
+ const firstCustomer=first.state.customers[0];
+ // Simulate a stale/compact browser snapshot that lost the note locally while
+ // still carrying the current row revision and an explicit edited-field list.
+ const edited={...firstCustomer,customFields:{customerLevel:'L4'}};
+ await f.api.write(sale,'edit-note-day-1',[{key:'customers',id:'c1',base:first.versions['customers/c1'],value:edited,fields:['customFields.customerLevel']}]);
+ let reread=await f.api.read(sale,{passive:true});
+ assert.equal(reread.state.customers[0].customFields.customerLevel,'L4');
+ assert.equal(reread.state.customers[0].customFields.careNote,'Ghi chú ngày 1');
+ // A second update on the following calendar day must retain the note again.
+ const nextDay={...reread.state.customers[0],updatedAt:'2026-10-06 09:00:00',customFields:{...reread.state.customers[0].customFields,customerLevel:'L5'}};
+ await f.api.write(sale,'edit-note-day-2',[{key:'customers',id:'c1',base:reread.versions['customers/c1'],value:nextDay,fields:['customFields.customerLevel','updatedAt']}]);
+ const afterNextDay=await f.api.read(sale,{passive:true});
+ assert.equal(afterNextDay.state.customers[0].customFields.careNote,'Ghi chú ngày 1');
+ assert.equal(JSON.parse(f.db.customers[0].custom_fields_json).__crmFields.careNote,'Ghi chú ngày 1');
+});
+
 test('Customer field edits preserve raw SQL source metadata after UI enrichment',()=>{
  const c=frontend();
  vm.runInContext(`applyServerSnapshot({state:{...initialState(),websites:[{id:'w',name:'Landing',domain:'example.test'}],customers:[{id:'c',websiteId:'w',saleId:'sale',customFields:{}}]},versions:{'customers/c':'v1'}});state.customers[0].customFields={level:'L3',note:'Ghi chú đã lưu'};`,c);
@@ -1753,6 +1773,17 @@ test('Pending SQL write survives a closed tab via localStorage and is cleared fr
  await vm.runInContext("recoverPendingWrite({id:'sale'})",c);
  assert.equal(calls[0].requestId,'SAVE-local');
  assert.equal(disk.getItem('nvt-crm-pending-write-v1:sale'),null);assert.equal(tab.getItem('nvt-crm-pending-write-v1:sale'),null);
+});
+
+test('A newer debounced customer note draft wins over an older queued value on restore',()=>{
+ const source=fs.readFileSync('reference-crm.js','utf8');
+ const start=source.indexOf('const combined=Array.from(new Map(');
+ const end=source.indexOf(');',start);
+ assert.ok(start>=0&&end>start);
+ const merge=new Function('records','noteRecords',source.slice(start,end+2)+';return combined;');
+ const older={key:'field:c1:careNote',payload:{value:'Ghi chú cũ'}};
+ const newer={key:'field:c1:careNote',payload:{value:'Ghi chú mới'}};
+ assert.equal(merge([older],[newer])[0].payload.value,'Ghi chú mới');
 });
 
 test('Customer cell drafts are mirrored to localStorage and reconnecting retries pending saves',()=>{

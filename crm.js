@@ -1129,6 +1129,11 @@ function applyServerSnapshot(payload, keepEdits=null, rebase=false) {
         // Gộp 3 chiều: chỉ áp các trường mình đã sửa lên bản mới nhất, giữ trường người khác vừa đổi.
         if(before&&latest&&value)value=rebaseRecord(before,value,latest);
       }
+      // Preserve only our edits made while the request was in flight, not
+      // the old row: the acknowledgement may include another user's note.
+      if(!rebase&&collection==='customers'&&keepEdits.get(key)&&remoteRecords.get(key)&&value){
+        value=rebaseRecord(keepEdits.get(key),value,remoteRecords.get(key));
+      }
       if(SERVER_OBJECTS.includes(collection)){remote[collection]=value;continue;}
       remote[collection]=(remote[collection]||[]).filter(r=>r.id!==id);
       if(value)remote[collection].push(value);
@@ -2836,7 +2841,7 @@ function deleteTeamMember(id) {
     else { customer.saleId = null; customer.leaderId = null; customer.teamId = null; }
     customer.updatedAt = stamp();
     customer.note = `${member.name} đã rời đội ngũ; khách được thu hồi về Khách mới`;
-    state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}`, customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
+    state.notes.unshift({ id: makeRecordId('NOTE'), customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
     recordAssignmentChange(customer, previous, customer.note, 'SYSTEM');
   });
   member.active = false;
@@ -3612,7 +3617,7 @@ function quickMultiSelectModal(customerId, fieldId) {
 async function addCustomerNote(id) {
   const customer = customerById(id), text = $('#customerNote')?.value.trim();
   if (!canViewCustomer(customer) || !canUpdateCustomer(customer) || !text) { toast('Vui lòng nhập ghi chú hợp lệ'); return; }
-  state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}`, customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: text.slice(0, 2000), at: stamp() });
+  state.notes.unshift({ id: makeRecordId('NOTE'), customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: text.slice(0, 2000), at: stamp() });
   customer.note = text.slice(0, 2000);
   customer.updatedAt = stamp();
   audit('ADD_CUSTOMER_NOTE', customer.id, customer.note);
@@ -4170,7 +4175,7 @@ async function changeOrderStatus(id, status) {
   if (status === 'DEPOSIT') { order.depositAt = stamp(); order.amountPaid = Number(order.depositAmount); order.balanceDue = Math.max(0, Number(order.total) - order.amountPaid); order.paymentReconciled = false; }
   if (status === 'PAID') { order.paidAt = stamp(); order.amountPaid = Number(order.total); order.balanceDue = 0; if (order.rentalMonths) order.rentalEndsAt = orderRentalEndsAt(order.paidAt, order.rentalMonths); order.refundedAt = null; order.refund = 0; order.paymentReconciled = false; order.refundReconciled = null; }
   if (status === 'REFUNDED') { order.refundedAt = stamp(); order.refund = Number(order.amountPaid || order.total); order.amountPaid = 0; order.balanceDue = 0; order.refundReconciled = false; }
-  if (status === 'PAID') { const customer = customerById(order.customerId); if (customer) { customer.status = 'PAID'; customer.updatedAt = stamp(); customer.note = `\u0110\u00e3 thanh to\u00e1n \u0111\u01a1n ${order.code}`; state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}`, customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() }); } }
+  if (status === 'PAID') { const customer = customerById(order.customerId); if (customer) { customer.status = 'PAID'; customer.updatedAt = stamp(); customer.note = `\u0110\u00e3 thanh to\u00e1n \u0111\u01a1n ${order.code}`; state.notes.unshift({ id: makeRecordId('NOTE'), customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() }); } }
   audit(status === 'DEPOSIT' ? 'DEPOSIT_CONFIRMED' : status === 'PAID' ? 'PAYMENT_CONFIRMED' : 'ORDER_REFUNDED', order.id, `${order.code} \u00b7 ${money(status === 'DEPOSIT' ? order.depositAmount : status === 'REFUNDED' ? order.refund : order.total)}`);
   if (!await persistOrder(order)) { toast('Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt \u0111\u01a1n h\u00e0ng l\u00ean MySQL'); return; }
   saveState(); closeDrawer(); render(); toast(status === 'DEPOSIT' ? '\u0110\u00e3 ghi nh\u1eadn ti\u1ec1n c\u1ecdc' : status === 'PAID' ? '\u0110\u00e3 ghi nh\u1eadn thanh to\u00e1n' : '\u0110\u00e3 ghi nh\u1eadn ho\u00e0n ti\u1ec1n');
@@ -4317,7 +4322,7 @@ function ingestCustomer(record, context = {}) {
     customFields
   };
   state.customers.unshift(customer);
-  state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}`, customerId: customer.id, authorId: currentAccount?.id || 'SYSTEM', author: currentAccount?.name || 'Hệ thống nhận data', role: currentAccount?.role || 'SYSTEM', text: customer.note, at: stamp() });
+  state.notes.unshift({ id: makeRecordId('NOTE'), customerId: customer.id, authorId: currentAccount?.id || 'SYSTEM', author: currentAccount?.name || 'Hệ thống nhận data', role: currentAccount?.role || 'SYSTEM', text: customer.note, at: stamp() });
   state.customFieldDefinitions.forEach(field => {
     const value = customer.customFields[field.id];
     const empty = value === '' || value === false || (Array.isArray(value) && !value.length);
@@ -4922,7 +4927,7 @@ function completeTask(id) {
   if (customer && canViewCustomer(customer)) {
     customer.updatedAt = stamp();
     customer.note = `Đã hoàn tất: ${task.type}`;
-    state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}`, customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
+    state.notes.unshift({ id: makeRecordId('NOTE'), customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
   }
   audit('COMPLETE_TASK', task.id, `${task.type} · ${task.customerName}`);
   saveState();
@@ -4993,7 +4998,7 @@ function reassignCustomer(id, targetId) {
   }
   customer.updatedAt = stamp();
   customer.note = `Chuyển phụ trách cho ${target.name}`;
-  state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}`, customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
+  state.notes.unshift({ id: makeRecordId('NOTE'), customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
   recordAssignmentChange(customer, previous, customer.note);
   audit('REASSIGN_CUSTOMER', customer.id, `${target.name} · ${target.teamId}`);
   saveState(); closeDrawer(); render(); toast(`Đã chuyển khách cho ${target.name}`);
@@ -5019,7 +5024,7 @@ function revokeCustomer(id) {
   }
   customer.updatedAt = stamp();
   customer.note = currentAccount.role === 'ADMIN' ? 'Admin thu hồi về Khách mới chung' : `Leader thu hồi về Khách mới Team ${currentAccount.teamId}`;
-  state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}`, customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
+  state.notes.unshift({ id: makeRecordId('NOTE'), customerId: customer.id, authorId: currentAccount.id, author: currentAccount.name, role: currentAccount.role, text: customer.note, at: stamp() });
   recordAssignmentChange(customer, previous, customer.note);
   audit('REVOKE_CUSTOMER', customer.id, customer.note);
   saveState(); closeDrawer(); render(); toast('Đã thu hồi khách về Khách mới');
