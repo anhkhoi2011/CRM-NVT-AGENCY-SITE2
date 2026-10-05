@@ -19,7 +19,7 @@ async function provisionSystemAccounts(pool) {
     const [done] = await c.execute('SELECT setting_key FROM system_settings WHERE setting_key=?', [MIGRATION_KEY]);
     if (done.length) return { applied: false };
     // Thêm vai trò vào cuối ENUM để giữ thứ tự các vai trò cũ; DDL nằm ngoài transaction.
-    await c.query("ALTER TABLE users MODIFY role ENUM('ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER') NOT NULL DEFAULT 'UNASSIGNED', MODIFY phone VARCHAR(20) NULL");
+    await c.query("ALTER TABLE users MODIFY role ENUM('ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER','HRM') NOT NULL DEFAULT 'UNASSIGNED', MODIFY phone VARCHAR(20) NULL");
     await c.beginTransaction();
     for (const account of accounts) {
       // Ghép bằng email; riêng Admin nhận lại tài khoản seed cũ nếu chưa có email đích.

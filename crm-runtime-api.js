@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 // Cầu nối cùng origin: dùng lại nghiệp vụ, phiên đăng nhập và hàng đợi lưu của CRM.
 // Frame chỉ hiển thị lúc đăng nhập; tuyệt đối không đưa DOM/CSS runtime vào trang mẫu.
 (() => {
@@ -14,7 +14,7 @@
   async function persist(action, kind) {
     if (!serverStateLoaded && currentAccount && serverSyncToken) await syncServerState();
     if (!currentAccount || !serverStateLoaded) throw Error('Dữ liệu chưa sẵn sàng. Vui lòng chờ đồng bộ rồi thử lại.');
-    requireRole(['ADMIN','MANAGER','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED']);
+    requireRole(['ADMIN','MANAGER','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','HRM']);
     if(typeof serverConflict!=='undefined'&&serverConflict&&typeof resolveServerConflict==='function'&&!await resolveServerConflict())throw persistenceError();
     if (pendingResult) {
       if(pendingResult.kind!==kind) throw Error("Hãy lưu lại thao tác trước đó trước khi chuyển sang thao tác khác.");
@@ -92,6 +92,28 @@
   }
   window.crmApi = {
     openWorkflow,workflowRoot,workflowEvent,
+    async saveHrProfiles(inputs){
+      requireRole(['ADMIN','HRM']);
+      if(!Array.isArray(inputs)||!inputs.length||inputs.length>500)throw Error('Chọn từ 1 đến 500 hồ sơ mỗi lần.');
+      return persist(()=>{
+        const seen=new Set(),members=state.accounts||state.members;
+        const records=inputs.map(input=>{
+          const employeeId=String(input.employeeId||'');
+          if(seen.has(employeeId)||!members.some(member=>member.id===employeeId))throw Error('Nhân viên không tồn tại hoặc bị trùng trong file.');
+          seen.add(employeeId);
+          const previous=(state.hrProfiles||[]).find(row=>row.employeeId===employeeId)||{};
+          const driveFiles=structuredClone(input.driveFiles??previous.driveFiles??[]);
+          if(input.importDriveUrl&&!driveFiles.some(file=>file.url===input.importDriveUrl))driveFiles.push({id:makeRecordId('HRFILE'),label:'Tài liệu nhập từ CSV',url:input.importDriveUrl,note:''});
+          const record={...previous,id:employeeId,employeeId,fields:{...previous.fields,...input.fields},columns:{...previous.columns,...input.columns},driveFiles,updatedAt:stamp(),updatedBy:currentAccount.id};
+          HrProfiles.validate(record);
+          return record;
+        });
+        state.hrProfiles||=[];
+        for(const record of records){const index=state.hrProfiles.findIndex(row=>row.id===record.id);if(index<0)state.hrProfiles.push(record);else state.hrProfiles[index]=record;}
+        audit('SAVE_HR_PROFILES','HR',String(records.length)+' hồ sơ');
+        return {count:records.length};
+      },'hr-profiles');
+    },
     exportData(kind,start,end){requireRole(['ADMIN','LEADER','MARKETING','ACCOUNTING']);const methods={customers:exportCustomers,orders:exportOrders,revenue:exportRevenue,marketing:exportMarketing,team:exportTeam,reports:exportFullReport};if(!methods[kind])throw Error('Loại xuất không hợp lệ.');if(start&&end){customDateStart=start;customDateEnd=end;datePreset='CUSTOM';}methods[kind]();},
     async attendanceSettings(input){requireRole(['ADMIN']);return persist(()=>{const time=cleanClockTime(input.deadline,'');if(!time)throw Error('Giờ vào làm không hợp lệ.');state.settings.attendanceDeadline=time;state.settings.acceptTimeoutHours=24;return {ok:true};},'attendance-settings');},
     async saveAttendance(input){
@@ -113,17 +135,18 @@
     },
     async checkIn(){requireRole(['ADMIN','MANAGER','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED']);return persist(()=>{const changed=checkInToday({save:false,render:false});return {ok:true,alreadyCheckedIn:changed===false};},'check-in');},
     async saveBrokerageMetric(metric){
-      requireRole(['ADMIN','ACCOUNTING']);
+      requireRole(['ADMIN','ACCOUNTING','HRM']);
+      if(permissionRole()==='HRM'&&Object.keys(metric||{}).some(key=>!['memberId','period','basicLots','miniLots','microLots'].includes(key)))throw Error('HRM chỉ được nhập Basic, Mini, Micro lot.');
       return persist(()=>{
         const member=state.members.find(item=>item.id===metric.memberId&&['MANAGER','LEADER','SALE'].includes(item.role)&&item.active!==false);
         if(!member)throw Error('Nhân sự không còn hoạt động.');
         const period=String(metric.period||'');if(!/^\d{4}-\d{2}$/.test(period))throw Error('Kỳ báo cáo không hợp lệ.');
         const numberValue=(value,max=1e12)=>{const result=Number(value);if(!Number.isFinite(result)||result<0||result>max)throw Error('Dữ liệu lot hoặc tỷ lệ không hợp lệ.');return result;};
         const id='BRK-'+period+'-'+member.id;
-        const index=state.brokerageMetrics.findIndex(item=>item.id===id),previous=index>=0?state.brokerageMetrics[index]:{};
+        const index=state.brokerageMetrics.findIndex(item=>item.id===id),previous=index>=0?state.brokerageMetrics[index]:permissionRole()==='HRM'?{id,memberId:member.id,leaderId:member.role==='SALE'?(member.leaderId||member.managerId||member.id):member.id,teamId:member.teamId||'',memberRole:member.role,period,basicLots:0,miniLots:0,microLots:0,nanoLots:0,productRate:0,lotCommissionRate:0,indicatorCommissionRate:0,courseCommissionRate:0,bonus:0,vatRate:0}:{};
         // Trường không gửi lên (vd. Mindmap không có nano lot) giữ nguyên giá trị đã lưu.
         const keep=(field,max)=>numberValue(metric[field]??previous[field]??0,max);
-        const next={...previous,id,memberId:member.id,leaderId:member.role==='SALE'?member.leaderId:member.id,teamId:member.teamId||'',memberRole:member.role,period,basicLots:keep('basicLots'),miniLots:keep('miniLots'),microLots:keep('microLots'),nanoLots:keep('nanoLots'),productRate:keep('productRate',100),lotCommissionRate:keep('lotCommissionRate'),indicatorCommissionRate:keep('indicatorCommissionRate',1),courseCommissionRate:keep('courseCommissionRate',1),bonus:keep('bonus'),vatRate:keep('vatRate',1),updatedAt:stamp()};
+        const next=permissionRole()==='HRM'?{...previous,basicLots:keep('basicLots'),miniLots:keep('miniLots'),microLots:keep('microLots'),updatedAt:stamp()}:{...previous,id,memberId:member.id,leaderId:member.role==='SALE'?(member.leaderId||member.managerId||member.id):member.id,teamId:member.teamId||'',memberRole:member.role,period,basicLots:keep('basicLots'),miniLots:keep('miniLots'),microLots:keep('microLots'),nanoLots:keep('nanoLots'),productRate:keep('productRate',100),lotCommissionRate:keep('lotCommissionRate'),indicatorCommissionRate:keep('indicatorCommissionRate',1),courseCommissionRate:keep('courseCommissionRate',1),bonus:keep('bonus'),vatRate:keep('vatRate',1),updatedAt:stamp()};
         if(next.vatRate>1)throw Error('Thuế suất không hợp lệ.');
         if(index>=0)state.brokerageMetrics[index]=next;else state.brokerageMetrics.unshift(next);
         audit('SAVE_BROKERAGE_METRIC',id,member.name+' · '+period);return {ok:true};
@@ -287,7 +310,7 @@
       const autoLevelSources=new Set(['API','FORM','IMPORT','SYSTEM']);
       const levelChosenIds=new Set(state.customerFieldHistory.filter(h=>h.fieldId==='customerLevel'&&h.to!==''&&h.to!=null&&!autoLevelSources.has(h.source)).map(h=>h.customerId));
       const markLevel=list=>(list||[]).forEach(c=>{const level=String(c.customFields?.customerLevel??'');c.levelChosen=levelChosenIds.has(c.id)||(level!==''&&level!=='L0');});
-      const view=structuredClone({user:currentAccount,distributionRoundViews:distributionRoundViews(),distributionExtraTurnPeople:CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader).people,managerHierarchy,fonts:referenceFonts,assignedDataStats:currentAccount.role==='SALE'?assignedDataStatsForMe():null,pendingOffers:currentAccount.role==='SALE'?pendingOffersForMe().map(o=>({id:o.id,name:customerById(o.customerId)?.name||'',offeredAt:o.offeredAt,minutesLeft:offerMinutesLeft(o)})):[],customers,orders:visibleOrders,products:state.products,productCategories:state.productCategories,members:state.members,orderAssignees:state.orderAssignees||state.members,registeredAccounts:state.registeredAccounts,fields:state.customFieldDefinitions,careGroups:state.careGroups,imports:currentAccount.role==='ADMIN'?state.imports:[],resubmissions:state.resubmissions,assignmentHistory,websites:state.websites.map(w=>({...w,publicWebhookUrl:webhookUrlFor(w)})),webhookPending,webhookTransport:{...webhookTransport,label:(WEBHOOK_TRANSPORT_META[webhookTransport.mode]||WEBHOOK_TRANSPORT_META.idle)[0]},settings:state.settings,notifications:visibleNotifications(),audit:state.audit,attendance:state.attendance,brokerageMetrics:state.brokerageMetrics,feedbacks:state.feedbacks,processes:state.processes,expenses:['ADMIN','ACCOUNTING'].includes(permissionRole())?state.expenses:[],courseConfigs:state.courseConfigs||[],tasks:scopedTasks(),leaderDistribution:state.leaderDistribution,saleDistributionByLeader:state.saleDistributionByLeader,offers:state.dataOffers,financialEvents:financialEvents(visibleOrders),navigation:allowedViews(),today:dayIso(0)});
+      const view=structuredClone({user:currentAccount,distributionRoundViews:distributionRoundViews(),distributionExtraTurnPeople:CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader).people,managerHierarchy,fonts:referenceFonts,assignedDataStats:currentAccount.role==='SALE'?assignedDataStatsForMe():null,pendingOffers:currentAccount.role==='SALE'?pendingOffersForMe().map(o=>({id:o.id,name:customerById(o.customerId)?.name||'',offeredAt:o.offeredAt,minutesLeft:offerMinutesLeft(o)})):[],customers,orders:visibleOrders,products:state.products,productCategories:state.productCategories,members:state.members,hrRoster:['ADMIN','HRM'].includes(permissionRole())?(state.accounts||state.members):[],hrProfiles:['ADMIN','HRM'].includes(permissionRole())?(state.hrProfiles||[]):[],orderAssignees:state.orderAssignees||state.members,registeredAccounts:state.registeredAccounts,fields:state.customFieldDefinitions,careGroups:state.careGroups,imports:currentAccount.role==='ADMIN'?state.imports:[],resubmissions:state.resubmissions,assignmentHistory,websites:state.websites.map(w=>({...w,publicWebhookUrl:webhookUrlFor(w)})),webhookPending,webhookTransport:{...webhookTransport,label:(WEBHOOK_TRANSPORT_META[webhookTransport.mode]||WEBHOOK_TRANSPORT_META.idle)[0]},settings:state.settings,notifications:visibleNotifications(),audit:state.audit,attendance:state.attendance,brokerageMetrics:state.brokerageMetrics,feedbacks:state.feedbacks,processes:state.processes,expenses:['ADMIN','ACCOUNTING'].includes(permissionRole())?state.expenses:[],courseConfigs:state.courseConfigs||[],tasks:scopedTasks(),leaderDistribution:state.leaderDistribution,saleDistributionByLeader:state.saleDistributionByLeader,offers:state.dataOffers,financialEvents:financialEvents(visibleOrders),navigation:allowedViews(),today:dayIso(0)});
       markLevel(view.customers);markLevel(view.managerHierarchy?.customers);
       return view;
     },
@@ -403,7 +426,7 @@
           if(customer&&!customer.saleId)throw Error('Khách chưa có người phụ trách. Phân công khách trước khi tạo đơn.');
           const leader=sale.role==='LEADER'?sale:directory.find(member=>member.role==='LEADER'&&String(member.id)===String(sale.leaderId||''));
           const manager=sale.role==='MANAGER'?sale:directory.find(member=>member.role==='MANAGER'&&String(member.id)===String(sale.managerId||leader?.managerId||sale.leaderId||''));
-          const assignment={saleId:sale.id,leaderId:leader?.id||sale.leaderId||null,managerId:manager?.id||null,teamId:sale.teamId||leader?.teamId||''};
+          const assignment={saleId:sale.id,leaderId:sale.role==='LEADER'?sale.id:(sale.leaderId||null),managerId:sale.role==='MANAGER'?sale.id:(manager?.id||null),teamId:sale.teamId||leader?.teamId||manager?.teamId||''};
           const product = state.products.find(item => String(item.id) === String(payload.productId) && item.active !== false);
           if (!product) throw Error('S\u1ea3n ph\u1ea9m kh\u00f4ng c\u00f2n ho\u1ea1t \u0111\u1ed9ng trong danh m\u1ee5c CRM.');
           const images=OrderPayments.billImages(payload);
@@ -415,7 +438,7 @@
           }
           const qty=Math.max(1,Math.min(10,Math.floor(Number(payload.qty)||1))),subtotal=breakdown.subtotal; if(!Number.isFinite(subtotal)||subtotal<=0)throw Error('Doanh thu \u0111\u01a1n h\u00e0ng kh\u00f4ng h\u1ee3p l\u1ec7.');
           const {vatRate,vatAmount,total}=breakdown,amountPaid=Number(payload.amountPaid??payload.collected??0),status=amountPaid>=total?'PAID':amountPaid>0?'DEPOSIT':'PENDING',createdAt=stamp(),id=makeRecordId('ORD');
-          const order={id,code:`NVT-${id.slice(4)}`,customerId:customer.id,customerName:name,customerPhone:phone,createdBy:currentAccount.id,saleId:sale.id,saleName:sale.name,leaderId:customer.leaderId,managerId:customer.managerId,teamId:customer.teamId,source:customer.source||'Nh\u1eadp \u0111\u01a1n h\u00e0ng',sourceUrl:customer.sourceUrl||'',websiteId:customer.websiteId||null,productId:product.id,productName:product.name,sku:product.sku||'',courseCode:text(payload.courseCode,160),qty,unitPrice:Number(product.price||0),subtotal,vatRate,vatAmount,discount:0,total,paymentMode:amountPaid>=total?'FULL':'DEPOSIT',depositAmount:amountPaid,amountPaid,balanceDue:Math.max(0,total-amountPaid),paymentMethod:text(payload.paymentMethod,40)||'BANK_TRANSFER',bankReference:text(payload.bankReference,160),billing:{name:text(payload.billing?.name)||name,phone:text(payload.billing?.phone)||phone,email:text(payload.billing?.email||payload.email,254),cccd:text(payload.billing?.cccd||payload.cccd,20),address:text(payload.billing?.address||payload.address,240),taxId:text(payload.billing?.taxId||payload.taxCode,20)},requireVat:payload.requireVat===true,paymentReference:text(name.replace(/\s+/g,' ').trim()+' '+phone,200),taxCode:text(payload.taxCode,20),companyName:text(payload.companyName,200),saleNote:text(payload.saleNote,1000),billImage:images[0].imageData,rentalMonths:product.type==='RENTAL'?Number(product.rentalMonths)||null:null,rentalEndsAt:null,refund:0,status,createdAt,depositAt:amountPaid>0?createdAt:null,paidAt:status==='PAID'?createdAt:null,refundedAt:null,paymentReconciled:false,refundReconciled:null,vatIssued:false,vatIssuedAt:null,vatInvoiceNumber:''};
+          const order={id,code:`NVT-${id.slice(4)}`,customerId:customer.id,customerName:name,customerPhone:phone,createdBy:currentAccount.id,saleId:sale.id,saleName:sale.name,leaderId:assignment.leaderId,managerId:assignment.managerId,teamId:assignment.teamId,source:customer.source||'Nh\u1eadp \u0111\u01a1n h\u00e0ng',sourceUrl:customer.sourceUrl||'',websiteId:customer.websiteId||null,productId:product.id,productName:product.name,sku:product.sku||'',courseCode:text(payload.courseCode,160),qty,unitPrice:Number(product.price||0),subtotal,vatRate,vatAmount,discount:0,total,paymentMode:amountPaid>=total?'FULL':'DEPOSIT',depositAmount:amountPaid,amountPaid,balanceDue:Math.max(0,total-amountPaid),paymentMethod:text(payload.paymentMethod,40)||'BANK_TRANSFER',bankReference:text(payload.bankReference,160),billing:{name:text(payload.billing?.name)||name,phone:text(payload.billing?.phone)||phone,email:text(payload.billing?.email||payload.email,254),cccd:text(payload.billing?.cccd||payload.cccd,20),address:text(payload.billing?.address||payload.address,240),taxId:text(payload.billing?.taxId||payload.taxCode,20)},requireVat:payload.requireVat===true,paymentReference:text(name.replace(/\s+/g,' ').trim()+' '+phone,200),taxCode:text(payload.taxCode,20),companyName:text(payload.companyName,200),saleNote:text(payload.saleNote,1000),billImage:images[0].imageData,rentalMonths:product.type==='RENTAL'?Number(product.rentalMonths)||null:null,rentalEndsAt:null,refund:0,status,createdAt,depositAt:amountPaid>0?createdAt:null,paidAt:status==='PAID'?createdAt:null,refundedAt:null,paymentReconciled:false,refundReconciled:null,vatIssued:false,vatIssuedAt:null,vatInvoiceNumber:''};
           images.forEach(image=>{if(!image.note)image.note=OrderPayments.billLabel(status==='PAID'?'FULL':'DEPOSIT');});
           if(amountPaid>0){if(!order.billImage)throw Error('Đính kèm bill chuyển khoản.');order.receiptsVersion=1;order.paymentReceipts=[{id:makeRecordId('PAY'),amount:amountPaid,kind:status==='PAID'?'FULL':'DEPOSIT',at:createdAt,billImage:order.billImage,images,bankReference:order.bankReference,createdBy:currentAccount.id}];order.billImage='';}
           state.orders.unshift(order); audit('CREATE_ORDER',id,`${order.code} \u00b7 ${order.productName}`); return {id:order.id,code:order.code,order,customer};
@@ -625,12 +648,22 @@
           if(role!==member.role)throw Error('Không đổi quyền tài khoản quản trị tại form này.');
           Object.assign(member,{name,accountId,email,phone,initials:memberInitials(name)});audit('UPDATE_MEMBER',id,name);return {id};
         }
-        if(!['SALE','LEADER','MANAGER'].includes(role)||(role!=='MANAGER'&&!/^[A-Z0-9_-]{1,20}$/.test(teamId)))throw Error('Chọn chức vụ và Team hợp lệ.');
+        if(!['SALE','LEADER','MANAGER','HRM'].includes(role)||(role!=='MANAGER'&&role!=='HRM'&&!/^[A-Z0-9_-]{1,20}$/.test(teamId)))throw Error('Chọn chức vụ và Team hợp lệ.');
         if(role==='SALE'&&(!leader||leader.id===id||leader.role==='LEADER'&&leader.teamId!==teamId))throw Error('Sale phải thuộc đúng Team của Leader hoặc Manager.');
         // Leader có thể được nâng lên Manager mà không cần chuyển Sale.
         // Sale vẫn giữ nguyên leaderId/teamId; Manager chỉ nhận thêm phạm vi quản lý.
         if(member?.role==='LEADER'&&role!=='LEADER'&&role!=='MANAGER'&&state.members.some(m=>m.active!==false&&m.leaderId===id))throw Error('Chuyển Sale trực thuộc trước khi đổi Leader.');
         const managerId=role==='LEADER'?String(input.managerId||''):role==='SALE'&&leader?.role==='MANAGER'?leader.id:null;
+        if(role==='HRM'){
+          if(member&&state.members.some(item=>item.active!==false&&(item.leaderId===id||item.managerId===id)))throw Error('Chuyển nhân sự trực thuộc trước khi gán quyền HRM.');
+          const source=member||pending||{};
+          const next={...source,id:id||makeRecordId('HRM'),name,accountId,email,phone,role,teamId:'',leaderId:null,managerId:null,active:true,initials:memberInitials(name)};
+          if(member)Object.assign(member,next);else state.members.push(next);
+          state.registeredAccounts=state.registeredAccounts.filter(item=>item.id!==id);
+          STAFF=state.members.filter(item=>item.active!==false);
+          audit('ASSIGN_HRM_ACCOUNT',next.id,name);
+          return {id:next.id};
+        }
         if(managerId&&!state.members.some(m=>m.id===managerId&&m.role==='MANAGER'&&m.active!==false))throw Error('Manager không hoạt động.');
         if(member?.role==='MANAGER'&&role!=='MANAGER'&&state.members.some(m=>m.managerId===id))throw Error('Bỏ phân công các Leader trước khi đổi chức Manager.');
         if(role==='MANAGER'){

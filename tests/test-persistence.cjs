@@ -146,8 +146,8 @@ test('Chỉ Admin, Leader và Manager được đổi tên khách trong phạm v
   assert.equal((await mf.api.read(admin)).state.customers.find(item=>item.id==='c1').name,'Tên Manager cập nhật');
  });
  test('Toàn bộ collection phụ đọc lại được; xóa giữ before-image',async()=>{
- const f=fixture();const keys=f.api.LISTS.filter(k=>!['customers','orders','products','members'].includes(k));
- const changes=keys.map(key=>change(key,key==='courseConfigs'?{id:'row-'+key,courseKey:'K01',trainerIds:[],leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65}:key==='brokerageMetrics'?{id:'row-'+key,memberId:'sale',leaderId:'lead',teamId:'T',period:'2026-09',basicLots:0,microLots:0,nanoLots:0,lotCommissionRate:0,indicatorCommissionRate:0,courseCommissionRate:0,vatRate:.1}:{id:'row-'+key,value:'giữ lâu dài'}));
+ const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});const keys=f.api.LISTS.filter(k=>!['customers','orders','products','members'].includes(k));
+ const changes=keys.map(key=>change(key,key==='courseConfigs'?{id:'row-'+key,courseKey:'K01',trainerIds:[],leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65}:key==='brokerageMetrics'?{id:'row-'+key,memberId:'sale',leaderId:'lead',teamId:'T',period:'2026-09',basicLots:0,microLots:0,nanoLots:0,lotCommissionRate:0,indicatorCommissionRate:0,courseCommissionRate:0,vatRate:.1}:key==='hrProfiles'?{id:'sale',employeeId:'sale',fields:{cccd:'012345678901'},driveFiles:[]}: {id:'row-'+key,value:'giữ lâu dài'}));
  for(const key of f.api.OBJECTS)changes.push({key,id:'$',base:null,value:key==='productCategories'?['Dịch vụ']:{test:'giữ'}});
  await f.api.write(admin,'all',changes);let result=await f.api.read(admin);
  for(const key of keys)assert.equal(result.state[key].length,1,key);
@@ -1272,8 +1272,37 @@ test('SQL feedback and processes reach the UI snapshot after reload',async()=>{
 });
 test('Schema startup skips role ALTER when all roles already exist',async()=>{
  const queries=[],module={exports:{}};
- vm.runInNewContext(fs.readFileSync('crm-data.cjs','utf8')+';module.exports.checkRole=ensureRoleColumn;', {module,require:name=>name==='./db.js'?{pool:{query:async sql=>{queries.push(sql);return [[{role_type:"enum('ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER')"}]];}}}:require(name)});
+ vm.runInNewContext(fs.readFileSync('crm-data.cjs','utf8')+';module.exports.checkRole=ensureRoleColumn;', {module,require:name=>name==='./db.js'?{pool:{query:async sql=>{queries.push(sql);return [[{role_type:"enum('ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER','HRM')"}]];}}}:require(name)});
  await module.exports.checkRole();assert.equal(queries.length,1);
+});
+
+test('HRM đọc toàn bộ nhân sự, điểm danh, đơn hàng; hồ sơ và lot lưu SQL nhưng không sửa nghiệp vụ khác',async()=>{
+ const f=fixture(),hrm={id:'hrm',role:'HRM'},employee={id:'sale',name:'Sale HRM',role:'SALE',team_id:'T',leader_id:'lead',active:1};
+ f.db.users.push({id:'hrm',name:'HRM',role:'HRM',email:'hrm@example.test',active:1},employee);
+ f.db.docs.push({collection:'attendance',id:'att-sale',deleted:0,body:{id:'att-sale',accountId:'sale',date:'2026-10-05',at:'2026-10-05 09:00:00',ipValid:true}});
+ f.db.orders.push({id:'hr-order',code:'NVT-HR-1',customer_id:'c1',sale_id:'sale',leader_id:'lead',team_id:'T',total_amount:396,status:'DEPOSIT',items_json:JSON.stringify({subtotal:360,vatRate:.1,vatAmount:36,total:396,productId:'p1',productName:'Historical price',paymentReceipts:[],amountPaid:0}),note:'',created_at:'2026-10-05 10:00:00'});
+ f.api.invalidateSnapshotCache();
+ let snapshot=await f.api.read(hrm);
+ assert.ok(snapshot.state.accounts.some(member=>member.id==='sale'));
+ assert.ok(snapshot.state.attendance.some(record=>record.id==='att-sale'));
+ assert.ok(snapshot.state.orders.some(record=>record.id==='hr-order'));
+ assert.equal(snapshot.state.hrProfiles.length,0);
+
+ const profile={id:'sale',employeeId:'sale',fields:{cccd:'012345678901',address:'TP HCM'},driveFiles:[{id:'cv',label:'Hồ sơ',url:'https://drive.google.com/file/d/1',note:'Hồ sơ nhân viên'}]};
+ await f.api.write(hrm,'hr-profile-save',[change('hrProfiles',profile)]);
+ assert.deepEqual((await f.api.read(admin)).state.hrProfiles[0].fields,profile.fields);
+ assert.equal((await f.api.read(sale)).state.hrProfiles.length,0);
+
+ snapshot=await f.api.read(hrm);
+ const metric={...require('./hr-profiles.js').emptyMetric({id:'sale',role:'SALE',leaderId:'lead',teamId:'T'},'2026-09'),basicLots:2,miniLots:3,microLots:4};
+ await f.api.write(hrm,'hr-lot-save',[change('brokerageMetrics',metric)]);
+ const savedMetric=(await f.api.read(admin)).state.brokerageMetrics.find(row=>row.id===metric.id);
+ assert.equal(savedMetric.basicLots,2);assert.equal(savedMetric.miniLots,3);assert.equal(savedMetric.microLots,4);
+ await assert.rejects(f.api.write(hrm,'hr-lot-rate-denied',[change('brokerageMetrics',{...savedMetric,lotCommissionRate:999},(await f.api.read(hrm)).versions['brokerageMetrics/'+metric.id])]),e=>e.status===403);
+
+ snapshot=await f.api.read(hrm);
+ await assert.rejects(f.api.write(hrm,'hr-order-edit-denied',[change('orders',{...snapshot.state.orders.find(row=>row.id==='hr-order'),note:'tamper'},snapshot.versions['orders/hr-order'])]),e=>e.status===403);
+ await assert.rejects(f.api.write(hrm,'hr-attendance-edit-denied',[change('attendance',{...snapshot.state.attendance.find(row=>row.id==='att-sale'),note:'tamper'},snapshot.versions['attendance/att-sale'])]),e=>e.status===403);
 });
 
 test('Existing provision marker skips startup advisory lock and account mutations',async()=>{

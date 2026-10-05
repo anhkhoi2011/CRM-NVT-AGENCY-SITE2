@@ -1,10 +1,11 @@
 "use strict";
+const HrProfiles = require('./hr-profiles.js');
 const OrderPayments = require('./order-payments.js');
 // Kho dữ liệu nghiệp vụ: một giao dịch cho cả khách/đơn và lịch sử liên quan.
 const crypto = require('node:crypto');
 const distributionRounds = require('./distribution-rounds.js');
 const { pool } = require('./db.js');
-const LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs'];
+const LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles'];
 const OBJECTS = ['settings','leaderDistribution','saleDistributionByLeader','productCategories','careGroups'];
 const ADMIN_ONLY = new Set(['products','members','registrations','customFieldDefinitions','imports','traffic','websites','integrations','webhookPending','productCategories','leaderDistribution','careGroups','processes','expenses','courseConfigs']);
 const SCHEMA = [
@@ -21,8 +22,8 @@ function prepare() {
 async function ensureRoleColumn(){
  const [rows]=await pool.query("SELECT COLUMN_TYPE AS role_type FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='users' AND column_name='role'");
  const roles=String(rows[0]?.role_type||'');
- if(!['ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER'].every(role=>roles.includes("'"+role+"'")))
-  await pool.query("ALTER TABLE users MODIFY role ENUM('ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER') NOT NULL DEFAULT 'UNASSIGNED'");
+ if(!['ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER','HRM'].every(role=>roles.includes("'"+role+"'")))
+  await pool.query("ALTER TABLE users MODIFY role ENUM('ADMIN','LEADER','SALE','UNASSIGNED','MARKETING','ACCOUNTING','MANAGER','HRM') NOT NULL DEFAULT 'UNASSIGNED'");
 }
 async function ensureAccountCodeColumn(){
  const [rows]=await pool.query("SELECT COUNT(*) AS total FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='users' AND column_name='account_code'");
@@ -296,9 +297,12 @@ function pendingOffer(data,user,id){
  return (index.get(id)||[]).find(o=>offerPending(o,user,id));
 }
 function readable(user,key,r,data){
+ if(key==='hrProfiles')return ['ADMIN','HRM'].includes(user.role);
+ if(user.role==='HRM')return ['members','attendance','orders','products','brokerageMetrics','settings'].includes(key);
  if(key==='feedbacks'||key==='processes')return true;
  if(user.role==='MANAGER')return managerReadable(user,key,r,data);
  if(user.role==='ADMIN')return true;
+
  if(user.role==='MARKETING')return key==='attendance' ? r.accountId===user.id : ['customers','orders','products','customFieldDefinitions','productCategories','websites','traffic','careGroups'].includes(key) || (key==='notifications'&&(r.role==='ALL'||r.role==='MARKETING'||r.saleId===user.id));
  if(user.role==='UNASSIGNED')return key==='attendance' ? r.accountId===user.id : false;
  if(user.role==='ACCOUNTING')return key==='attendance' ? r.accountId===user.id : ['customers','orders','products','productCategories','customFieldDefinitions','brokerageMetrics','courseConfigs','expenses','settings'].includes(key) || (key==='members'&&['SALE','LEADER','MANAGER'].includes(r.role)) || (key==='notifications'&&(r.role==='ALL'||r.role==='ACCOUNTING'||r.saleId===user.id));
@@ -316,6 +320,9 @@ function readable(user,key,r,data){
  return !!r.customerId&&customerScope(user,data.customers.get(r.customerId));
 }
 function publicValue(user,key,r,data){
+ if(user.role==='HRM'&&key==='settings')return Object.fromEntries(Object.entries(r).filter(([k])=>['attendanceDeadline','fontFamily','customAccent'].includes(k)));
+ if(user.role==='HRM'&&key==='members')return Object.fromEntries(Object.entries(r).filter(([k])=>['id','accountId','name','role','teamId','leaderId','managerId','phone','email','active','initials','createdAt'].includes(k)));
+
  if(user.role==='MANAGER'&&data){
   const ids=managerLeaders(user,data).map(l=>l.id);
   if(key==='saleDistributionByLeader'){
@@ -386,7 +393,7 @@ function snapshot(user,data,options={compact:false}){
   ? [...data.members.values()].filter(m=>m.active!==false&&m.active!==0&&m.active!=='0'&&['MANAGER','LEADER','SALE'].includes(m.role)).map(m=>({id:m.id,name:m.name,role:m.role,teamId:m.teamId||'',leaderId:m.leaderId||null,managerId:m.managerId||null,active:true})) : [];
  state.accounts=state.members;
  state.registeredAccounts=state.members.filter(r=>r.role==='UNASSIGNED');
- state.members=state.members.filter(r=>['SALE','LEADER','MANAGER'].includes(r.role));
+ state.members=state.members.filter(r=>['SALE','LEADER','MANAGER'].includes(r.role)||(user.role==='HRM'&&r.role!=='UNASSIGNED'));
  const config=data.leaderDistribution.get('$')||{};
  const automation=user.role==='ADMIN'?{engine:'server-v1',enabled:config.enabled===true,mode:data.settings.get('$')?.assignmentMode||'MANUAL',eligibleLeaderCount:[...data.members.values()].filter(p=>p.role==='LEADER'&&p.active!==false&&p.teamId&&(config.enabledLeaderIds||[]).includes(p.id)).length}:undefined;
  return {state,versions,automation,storage:{mode:'mysql',durable:true}};
@@ -403,13 +410,17 @@ function orderLockedForStaff(order){
  return Number.isFinite(created)&&Date.now()-created>=3*24*60*60*1000;
 }
 
+function orderAssignmentForMember(member,data){
+ if(!member)return {saleId:null,leaderId:null,managerId:null,teamId:''};
+ const leader=member.role==='LEADER'?member:data.members.get(member.leaderId);
+ const manager=member.role==='MANAGER'?member:data.members.get(member.managerId||leader?.managerId||'');
+ return {saleId:member.id,leaderId:member.role==='LEADER'?member.id:member.leaderId||null,managerId:member.role==='MANAGER'?member.id:manager?.id||null,teamId:member.teamId||leader?.teamId||manager?.teamId||''};
+}
 function validOrderAssignee(row,data){
  const member=data.members.get(row?.saleId);
  if(!member||member.active===false||member.active===0||member.active==='0'||!['MANAGER','LEADER','SALE'].includes(member.role))return false;
- const leader=member.role==='LEADER'?member:data.members.get(member.leaderId);
- const managerId=member.role==='MANAGER'?member.id:member.managerId||(leader?.role==='LEADER'?leader.managerId:leader?.role==='MANAGER'?leader.id:null)||null;
- const leaderId=member.role==='LEADER'?member.id:member.leaderId||null;
- return (row.leaderId||null)===leaderId&&(row.managerId||null)===managerId&&(row.teamId||'')===(member.teamId||(leader?.role==='LEADER'?leader.teamId:'')||'');
+ const expected=orderAssignmentForMember(member,data);
+ return (row.saleId||null)===expected.saleId&&(row.leaderId||null)===expected.leaderId&&(row.managerId||null)===expected.managerId&&(row.teamId||'')===expected.teamId;
 }
 // Sales record receipts for their own orders; reconciliation remains an accounting action.
 function authorizeReceiptOrder(user,old,next,data){
@@ -417,7 +428,10 @@ function authorizeReceiptOrder(user,old,next,data){
  const customer=data.customers.get(next.customerId),sale=data.members.get(next.saleId);
  const owns=row=>user.role==='ACCOUNTING'||(user.role==='SALE'?row?.saleId===user.id:user.role==='LEADER'?customerScope(user,row):managerOwns(user,row,data));
  if(!customer||!sale||!['MANAGER','LEADER','SALE'].includes(sale.role)|| (old ? (!owns(customer)||!owns(next)||!owns(old)) : (!(next.createdBy===user.id&&validOrderAssignee(next,data))&&(!owns(customer)||!owns(next)))))error(403,'Đơn ngoài phạm vi');
- if(!old&&(next.saleId!==customer.saleId||next.leaderId!==customer.leaderId||next.teamId!==customer.teamId||(next.managerId||null)!==(customer.managerId||null)))error(403,'Đơn không khớp người phụ trách khách');
+ if(!old){
+  const expected=orderAssignmentForMember(sale,data);
+  if(next.saleId!==customer.saleId||next.leaderId!==expected.leaderId||next.teamId!==expected.teamId||(next.managerId||null)!==(expected.managerId||null))error(403,'\u0110\u01a1n kh\u00f4ng kh\u1edbp ng\u01b0\u1eddi ph\u1ee5 tr\u00e1ch kh\u00e1ch');
+ }
  if(!data.products.get(next.productId))error(400,'Sản phẩm không tồn tại');
  if(old&&(old.paymentReconciled||old.vatIssued||['REFUNDED','CANCELLED','COURSE_GRANTED'].includes(old.status)))error(403,'Đơn đã khóa sau đối soát hoặc kết thúc');
  if(old&&sameExcept(old,next,['paymentReceipts','receiptsVersion','updatedAt']))return;
@@ -428,6 +442,24 @@ function authorizeReceiptOrder(user,old,next,data){
  if(next.status!==(next.amountPaid===next.total?'PAID':'DEPOSIT'))error(400,'Trạng thái không khớp số tiền đã thu');
 }
 function authorize(user,key,old,next,data){
+ if(key==='hrProfiles'){
+  if(!['ADMIN','HRM'].includes(user.role)||!next)error(403,'Chỉ Admin/HRM được cập nhật hồ sơ nhân sự');
+  if(next.id!==next.employeeId||!data.members.has(next.employeeId))error(400,'Nhân viên hồ sơ không tồn tại');
+  if(old&&old.employeeId!==next.employeeId)error(403,'Không được chuyển hồ sơ sang nhân viên khác');
+  return;
+ }
+ if(user.role==='HRM'){
+  if(key==='brokerageMetrics'&&next){
+   const member=data.members.get(next.memberId);
+   if(!member||member.active===false||!['MANAGER','LEADER','SALE'].includes(member.role))error(400,'Nhân sự nhập lot không hợp lệ');
+   if(next.id!=='BRK-'+next.period+'-'+member.id)error(400,'Mã dữ liệu lot không hợp lệ');
+   const previous=old||HrProfiles.emptyMetric(member,next.period);
+   if(!sameExcept(previous,next,['basicLots','miniLots','microLots','updatedAt']))error(403,'HRM chỉ được cập nhật Basic, Mini, Micro lot');
+   return;
+  }
+  if(key==='audit'&&!old&&next?.actorId===user.id)return;
+  error(403,'HRM chỉ được sửa hồ sơ nhân sự và lot; đơn hàng, điểm danh chỉ xem');
+ }
  if(key==='customers'&&!old&&next?.createdVia==='ORDER'&&['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'].includes(user.role)){
   if(next.createdBy!==user.id||!validOrderAssignee(next,data))error(403,'Người phụ trách khách không hợp lệ');
   return;
@@ -537,8 +569,9 @@ function validate(key,value,id){
  }
  if(value===null)return;
  if(!value||typeof value!=='object'||(LISTS.includes(key)&&(Array.isArray(value)||value.id!==id)))error(400,'Bản ghi không hợp lệ');
+ if(key==='hrProfiles'){try{HrProfiles.validate(value);}catch(err){error(400,err.message);}}
  if(['members','customers','products'].includes(key)&&(typeof value.name!=='string'||!value.name.trim()||value.name.length>(key==='products'?200:160)))error(400,'Tên không hợp lệ');
- if(key==='members'&&!['ADMIN','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','MANAGER'].includes(value.role))error(400,'Chức vụ không hợp lệ');
+ if(key==='members'&&!['ADMIN','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','MANAGER','HRM'].includes(value.role))error(400,'Chức vụ không hợp lệ');
  if(key==='members'&&Object.hasOwn(value,'accountId')&&value.accountId&&!/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(String(value.accountId)))error(400,'ID tài khoản không hợp lệ');
  if(key==='customers'&&(!value.phone||value.phone.length>30))error(400,'Số điện thoại không hợp lệ');
  if(key==='products'&&(!Number.isFinite(value.price)||value.price<0||!['SALE','RENTAL'].includes(value.type)))error(400,'Sản phẩm không hợp lệ');
@@ -1082,6 +1115,7 @@ function assetFromData(user, data, type, id, childId = null) {
  const key = type === 'process' ? 'processes' : type === 'feedback' ? 'feedbacks' : 'orders';
  const source=data.state||data; const row = source[key]?.get ? source[key].get(id) : (source[key]||[]).find(item => String(item.id)===String(id));
  if (!row) error(404,'Khong tim thay du lieu anh.');
+ if(!data.state&&source[key] instanceof Map&&!readable(user,key,row,data))error(403,'Không có quyền xem ảnh này');
  if (type === 'process') { const images=Array.isArray(row.imageData)?row.imageData:(row.imageData?[row.imageData]:[]); return {id:row.id,images}; }
  if (type === 'feedback') return {id:row.id,imageData:row.imageData||''};
  const receipt=(row.paymentReceipts||[]).find(item=>String(item.id)===String(childId));
@@ -1091,7 +1125,7 @@ function assetFromData(user, data, type, id, childId = null) {
 }
 async function readAsset(user, type, id, childId = null) {
  const data = await read(user, {passive:true, full:true});
- return assetFromData(user, new Map(Object.entries(data.state)), type, id, childId);
+ return assetFromData(user, data, type, id, childId);
 }
 async function readAuditPage(user, page=1, limit=50) {
  const result = await read(user,{passive:true,full:true}); const all=result.state.audit||[]; const safePage=Math.max(1,Number(page)||1), safeLimit=Math.min(200,Math.max(1,Number(limit)||50));

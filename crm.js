@@ -244,10 +244,11 @@ CUSTOM_FIELD_SEED.forEach(field => field.options.forEach(option => {
 }));
 
 const NAVIGATION = {
+  HRM: [['Nhân sự', [['hrProfiles','Quản trị nhân sự','♧'],['team','Đội ngũ','♧'],['attendance','Điểm danh','✓'],['orders','Đơn hàng','▤'],['businessReport','Nhập lot','▦']]]],
   ADMIN: [
     ['Vận hành', [['dashboard', 'Tổng quan', '◫'], ['customers', 'Khách hàng tổng', '♙'], ['distribution', 'Data', '⇄'], ['websites', 'Websites', '◇']]],
     ['Kinh doanh', [['orders', 'Đơn hàng', '▤'], ['products', 'Sản phẩm', '□'], ['revenue', 'Doanh thu', '₫'], ['marketing', 'Dữ liệu', '⌁']]],
-    ['T\u1ed5 ch\u1ee9c', [['team', '\u0110\u1ed9i ng\u0169', '\u2667'], ['feedback', 'Kho Feedback', '\u25c9'], ['processes', 'Quy Tr\u00ecnh', '\u2637'], ['businessReport', 'B\u00e1o c\u00e1o kinh doanh', '\u25eb']]],
+    ['T\u1ed5 ch\u1ee9c', [['hrProfiles','Quản trị nhân sự','♧'],['team', '\u0110\u1ed9i ng\u0169', '\u2667'], ['feedback', 'Kho Feedback', '\u25c9'], ['processes', 'Quy Tr\u00ecnh', '\u2637'], ['businessReport', 'B\u00e1o c\u00e1o kinh doanh', '\u25eb']]],
     ['K\u1ebf to\u00e1n', [['accounting', 'K\u1ebf to\u00e1n', '\u20ab']]],
     ['Hệ thống', [['attendance', 'Điểm danh', '✓'], ['notifications', 'Thông báo', '●'], ['audit', 'User log', '◉'], ['settings', 'Cài đặt', '⚙']]]
   ],
@@ -277,8 +278,8 @@ const NAVIGATION = {
 
 // Đồng bộ menu kế toán và loại bỏ báo cáo kinh doanh độc lập khỏi mọi vai trò.
 (() => {
-  Object.values(NAVIGATION).forEach(groups => groups.forEach(group => {
-    group[1] = group[1].filter(item => item[0] !== 'businessReport');
+  Object.entries(NAVIGATION).forEach(([role,groups]) => groups.forEach(group => {
+    if(role!=='HRM')group[1] = group[1].filter(item => item[0] !== 'businessReport');
   }));
   const accounting = NAVIGATION.ADMIN?.find(group => group[1]?.some(item => item[0] === 'accounting'));
   if (accounting) accounting[1] = accounting[1].map(item => item[0] === 'accounting' ? [item[0], 'Hoa Hồng nhân viên', item[2]] : item);
@@ -321,6 +322,7 @@ function initialState() {
     careGroups: [],
     attendance: [],
     brokerageMetrics: [],
+    hrProfiles: [],
     dataOffers: [],
     orders: [],
     traffic: [],
@@ -1000,7 +1002,7 @@ function orderSource(source) {
 }
 
 // Chỉ giữ dữ liệu làm việc trong RAM. Server là nguồn dữ liệu duy nhất.
-const SERVER_LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs'];
+const SERVER_LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles'];
 const SERVER_OBJECTS = ['settings','leaderDistribution','saleDistributionByLeader','productCategories','careGroups'];
 let serverSyncToken = '', serverSyncTimer = null, serverSaveTimer = null;
 let serverAutomationStatus = null;
@@ -1384,6 +1386,7 @@ function effectivePermissionRole() {
   if (!currentAccount) return '';
   if (currentAccount.role === 'ADMIN' || currentAccount.actualRole === 'ADMIN') return 'ADMIN';
   if (currentAccount.actualRole === 'MANAGER') return 'MANAGER';
+  if (currentAccount.role === 'HRM' || currentAccount.actualRole === 'HRM') return 'HRM';
   // Manager được hydrate thành role Leader để dùng giao diện Team. Nếu một
   // snapshot cũ thiếu actualRole, nhận diện lại từ bản ghi nhân sự thật.
   const manager = STAFF.find(person => person.role === 'MANAGER' && (
@@ -1584,7 +1587,7 @@ function financialEvents(orders, periodCheck = null) {
   return orders.flatMap(orderFinancialEvents).filter(event => !periodCheck || periodCheck(event.occurredAt));
 }
 function orderEditState(order) {
-  if (['MARKETING', 'ACCOUNTING'].includes(currentAccount.role)) return { allowed: false, label: 'Chỉ có quyền xem' };
+  if (['MARKETING', 'ACCOUNTING', 'HRM'].includes(currentAccount.role)) return { allowed: false, label: 'Chỉ có quyền xem' };
   if (currentAccount.role === 'ADMIN') return { allowed: true, label: 'Admin toàn quyền' };
   const raw = String(order.createdAt || '').trim();
   const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');
@@ -3264,7 +3267,7 @@ function visibleNavigation() {
       : null;
   return groups.map(([name, items]) => [name, items.filter(item => !allowed || allowed.has(item[0]))]).filter(([, items]) => items.length);
 }
-function allowedViews() { if(effectivePermissionRole()==='ACCOUNTING')return ['accounting','profile'];return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
+function allowedViews() { if(effectivePermissionRole()==='HRM')return ['hrProfiles','team','attendance','orders','businessReport','profile']; if(effectivePermissionRole()==='ACCOUNTING')return ['accounting','profile'];return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
 function viewLabel(view) { return visibleNavigation().flatMap(([, items]) => items).find(item => item[0] === view)?.[1] || view; }
 
 function newCustomerCount() {
@@ -5741,7 +5744,7 @@ function hydrateSessionAccount(account) {
     const manager=state.members.find(m=>m.id===account.id);
     return {...account,role:'LEADER',actualRole:'MANAGER',scope:'TEAM',saleId:null,leaderId:leader?.id||null,teamId:leader?.teamId||'',name:manager?.name||account.name,accountId:manager?.accountId||account.accountId||'',email:manager?.email||account.email||'',phone:manager?.phone||account.phone||'',initials:memberInitials(manager?.name||account.name)};
   }
-  const session = { ...account, initials: memberInitials(account.name), scope: ['ADMIN', 'MARKETING', 'ACCOUNTING'].includes(account.role) ? 'ALL' : account.role === 'LEADER' ? 'TEAM' : account.role === 'SALE' ? 'OWN' : 'NONE', saleId: account.role === 'SALE' ? account.id : null, leaderId: account.role === 'LEADER' ? account.id : account.leaderId };
+  const session = { ...account, initials: memberInitials(account.name), scope: ['ADMIN', 'MARKETING', 'ACCOUNTING', 'HRM'].includes(account.role) ? 'ALL' : account.role === 'LEADER' ? 'TEAM' : account.role === 'SALE' ? 'OWN' : 'NONE', saleId: account.role === 'SALE' ? account.id : null, leaderId: account.role === 'LEADER' ? account.id : account.leaderId };
   const member = state.members.find(r=>r.id===account.id);
   if (member) {
     session.name = member.name;
