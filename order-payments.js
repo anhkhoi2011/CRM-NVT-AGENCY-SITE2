@@ -20,7 +20,7 @@
  }
  function status(order,format=String){return order.status==='REFUNDED'?'Đã hoàn tiền':order.status==='CANCELLED'?'Đã hủy':balance(order)===0&&paid(order)>0?'Thanh toán đủ':paid(order)>0?'Cọc '+format(paid(order)):'Chờ thanh toán';}
  function billLabel(kind){return kind==='FULL'?'Bill chuyển khoản đủ':'Bill cọc';}
- function images(receipt){return Array.isArray(receipt.images)?receipt.images.map(i=>({...i})):receipt.billImage?[{id:receipt.id+'-image',imageData:receipt.billImage,note:receipt.note||''}]:[];}
+ function images(receipt){return Array.isArray(receipt.images)?receipt.images.map(i=>({...i})):receipt.billImage?[{id:receipt.id+'-image',imageData:receipt.billImage,note:receipt.note||''}]:receipt.imageData?[{id:receipt.id+'-image',imageData:receipt.imageData,note:receipt.note||''}]:[];}
  function amounts(input){
   const inclusive=input.total!==undefined,base=Number(inclusive?input.total:input.subtotal);
   if(!Number.isSafeInteger(base)||base<=0)throw Error('Tổng tiền phải là số nguyên lớn hơn 0.');

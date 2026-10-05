@@ -2819,20 +2819,42 @@
   });
   const canChangeReceiptOrder=order=>['ADMIN','ACCOUNTING','SALE','LEADER','MANAGER'].includes(data.user.actualRole||data.user.role)&&!order.paymentReconciled&&!order.vatIssued&&!['REFUNDED','CANCELLED','COURSE_GRANTED'].includes(order.status);
   function receiptHistoryMarkup(order,editable=false){
-    return '<div class="ao-receipt-list">'+(OrderPayments.receipts(order).map((receipt,index)=>{const images=OrderPayments.images(receipt),count=images.length||Number(receipt.billCount||0);let html='';for(let i=0;i<count;i++){const image=images[i]||{};html+='<div><button class="ao-bill-zoom" type="button" data-receipt-image="'+index+':'+i+'"><img '+(image.imageData?'src="'+esc(image.imageData)+'"':'')+' alt="Bill" loading="lazy"><span>'+(image.imageData?'Xem anh day du':'Tai anh bill')+'</span></button><p>'+esc(image.note||OrderPayments.billLabel(receipt.kind))+'</p>'+(editable?'<button type="button" class="btn-action btn-danger" data-receipt-delete="'+index+':'+i+'">Xoa bill</button>':'')+'</div>';}return '<article class="ao-receipt"><div><b>'+esc(OrderPayments.billLabel(receipt.kind))+' ? '+money(receipt.amount)+'</b><p>Lan '+(index+1)+' ? '+esc(fmtDate(receipt.at))+'</p><small>'+esc(receipt.bankReference||'Chuyen khoan')+'</small>'+(receipt.note?'<p>Ghi chu lan thu: '+esc(receipt.note)+'</p>':'')+(editable?'<p><button type="button" class="btn-action btn-secondary" data-receipt-manage="'+index+'">\u0054h\u00eam bill / S\u1eeda bill</button></p>':'')+'</div><div class="receipt-images">'+(html||'<p>Chua co anh bill.</p>')+'</div></article>';}).join('')||'<p>Chua co thanh toan.</p>')+'</div>';
+    return '<div class="ao-receipt-list">'+(OrderPayments.receipts(order).map((receipt,index)=>{const images=OrderPayments.images(receipt),count=images.length||Number(receipt.billCount||0);let html='';for(let i=0;i<count;i++){const image=images[i]||{};html+='<div><button class="ao-bill-zoom" type="button" data-receipt-image="'+index+':'+i+'"><img '+(image.imageData?'src="'+esc(image.imageData)+'"':'')+' alt="Bill" loading="lazy"><span data-bill-action>'+(image.imageData?'Xem anh day du':'Tai anh bill')+'</span></button><p>'+esc(image.note||OrderPayments.billLabel(receipt.kind))+'</p>'+(editable?'<button type="button" class="btn-action btn-danger" data-receipt-delete="'+index+':'+i+'">Xoa bill</button>':'')+'</div>';}return '<article class="ao-receipt"><div><b>'+esc(OrderPayments.billLabel(receipt.kind))+' ? '+money(receipt.amount)+'</b><p>Lan '+(index+1)+' ? '+esc(fmtDate(receipt.at))+'</p><small>'+esc(receipt.bankReference||'Chuyen khoan')+'</small>'+(receipt.note?'<p>Ghi chu lan thu: '+esc(receipt.note)+'</p>':'')+(editable?'<p><button type="button" class="btn-action btn-secondary" data-receipt-manage="'+index+'">\u0054h\u00eam bill / S\u1eeda bill</button></p>':'')+'</div><div class="receipt-images">'+(html||'<p>Chua co anh bill.</p>')+'</div></article>';}).join('')||'<p>Chua co thanh toan.</p>')+'</div>';
   }
-  async function loadReceiptImages(order,receipt){if(OrderPayments.images(receipt).length)return receipt.images||[];try{const payload=await lazyAsset(lazyAssetUrl('order',order.id,receipt.id));receipt.images=payload.images||[];return receipt.images;}catch{return [];}}
+  async function loadReceiptImages(order,receipt){const local=OrderPayments.images(receipt);if(local.length){if(!Array.isArray(receipt.images))receipt.images=local;return receipt.images;}const payload=await lazyAsset(lazyAssetUrl('order',order.id,receipt.id));receipt.images=Array.isArray(payload.images)?payload.images:[];return receipt.images;}
   function bindReceiptImages(modal,order,accountingContext=false){
-    modal.querySelectorAll('[data-receipt-manage]').forEach(button=>button.onclick=()=>openReceiptImageEditor(order.id,OrderPayments.receipts(order)[Number(button.dataset.receiptManage)].id,accountingContext));
-    modal.querySelectorAll('[data-receipt-delete]').forEach(button=>button.onclick=()=>{
-      const [receiptIndex,imageIndex]=button.dataset.receiptDelete.split(':').map(Number),receipt=OrderPayments.receipts(order)[receiptIndex],images=OrderPayments.images(receipt);
-      if(!confirm('Xóa ảnh bill '+(imageIndex+1)+' của lần thu '+money(receipt.amount)+'? Số tiền đã thu giữ nguyên.'))return;
+    const receipts=OrderPayments.receipts(order),imageLoads=new Map();
+    const setAction=(button,text)=>{const node=button?.querySelector('[data-bill-action]');if(node)node.textContent=text;};
+    const paint=(receiptIndex,images)=>{
+      modal.querySelectorAll('[data-receipt-image]').forEach(button=>{
+        const [index,imageIndex]=button.dataset.receiptImage.split(':').map(Number);if(index!==receiptIndex)return;
+        const image=images[imageIndex];if(!image?.imageData)return;
+        let thumbnail=button.querySelector('img');
+        if(!thumbnail){thumbnail=document.createElement('img');thumbnail.alt='Bill';thumbnail.loading='lazy';button.insertBefore(thumbnail,button.querySelector('[data-bill-action]'));}
+        thumbnail.src=image.imageData;button.querySelector('[data-bill-placeholder]')?.remove();setAction(button,'Xem anh day du');
+      });
+    };
+    const load=(receiptIndex)=>{
+      if(!imageLoads.has(receiptIndex))imageLoads.set(receiptIndex,loadReceiptImages(order,receipts[receiptIndex]).then(images=>{receipts[receiptIndex].images=images;paint(receiptIndex,images);return images;}));
+      return imageLoads.get(receiptIndex);
+    };
+    modal.querySelectorAll('[data-receipt-manage]').forEach(button=>button.onclick=async()=>{const receipt=receipts[Number(button.dataset.receiptManage)];if(!receipt)return;try{const images=await load(receipts.indexOf(receipt));if((receipt.hasBill||Number(receipt.billCount)>0)&&!images.length)throw Error('Chua tai duoc bill. Vui long thu lai.');const source=(order.paymentReceipts||[]).find(item=>String(item.id)===String(receipt.id));if(source)source.images=images;openReceiptImageEditor(order.id,receipt.id,accountingContext);}catch(error){imageLoads.delete(receipts.indexOf(receipt));referenceNotice(error.message);}});
+    modal.querySelectorAll('[data-receipt-delete]').forEach(button=>button.onclick=async()=>{
+      const [receiptIndex,imageIndex]=button.dataset.receiptDelete.split(':').map(Number),receipt=receipts[receiptIndex];
+      if(!receipt)return;
+      let images;try{images=await load(receiptIndex);}catch(error){imageLoads.delete(receiptIndex);referenceNotice(error.message);return;}
+      if(!images[imageIndex]){referenceNotice('Khong tim thay bill de xoa. Hay tai lai chi tiet don.');return;}
+      if(!confirm('Xoa anh bill '+(imageIndex+1)+' cua lan thu '+money(receipt.amount)+'? So tien da thu giu nguyen.'))return;
       images.splice(imageIndex,1);run(()=>api.updateOrderAccounting(order.id,{action:'SAVE_RECEIPT_IMAGES',receiptId:receipt.id,images}),result=>{Object.assign(order,result?.order||{});openReceiptOrderDetail(order.id,true,accountingContext);});
     });
     modal.querySelectorAll('[data-receipt-image]').forEach(button=>button.onclick=async()=>{
-      const [receiptIndex,imageIndex]=button.dataset.receiptImage.split(':').map(Number),receipt=OrderPayments.receipts(order)[receiptIndex];await loadReceiptImages(order,receipt);const image=OrderPayments.images(receipt)[imageIndex];if(!image?.imageData)return;
-      const viewer=document.createElement('div');viewer.className='modal-overlay open';viewer.style.zIndex='15000';viewer.innerHTML='<div class="modal-card" style="max-width:960px;width:95vw;max-height:95vh"><div class="modal-header"><h3>Bill '+money(receipt.amount)+'</h3><button type="button" class="modal-close-btn">×</button></div><div class="modal-body"><p>'+esc(image.note||OrderPayments.billLabel(receipt.kind))+'</p><img src="'+esc(image.imageData)+'" alt="Bill chuyển khoản đầy đủ" style="max-width:100%;display:block;margin:auto"></div></div>';document.body.appendChild(viewer);viewer.querySelector('button').onclick=()=>viewer.remove();viewer.onclick=e=>{if(e.target===viewer)viewer.remove();};
+      const [receiptIndex,imageIndex]=button.dataset.receiptImage.split(':').map(Number),receipt=receipts[receiptIndex];setAction(button,'Dang tai bill...');
+      try{
+        const images=await load(receiptIndex),image=images[imageIndex];if(!image?.imageData)throw Error('Bill khong co anh de hien thi.');
+        const viewer=document.createElement('div');viewer.className='modal-overlay open';viewer.style.zIndex='15000';viewer.innerHTML='<div class="modal-card" style="max-width:960px;width:95vw;max-height:95vh"><div class="modal-header"><h3>Bill '+money(receipt.amount)+'</h3><button type="button" class="modal-close-btn">\u00d7</button></div><div class="modal-body"><p>'+esc(image.note||OrderPayments.billLabel(receipt.kind))+'</p><img src="'+esc(image.imageData)+'" alt="Bill chuyen khoan" style="max-width:100%;display:block;margin:auto"></div></div>';document.body.appendChild(viewer);viewer.querySelector('button').onclick=()=>viewer.remove();viewer.onclick=e=>{if(e.target===viewer)viewer.remove();};
+      }catch(error){imageLoads.delete(receiptIndex);setAction(button,'Tai loi - bam de thu lai');referenceNotice(error.message);}
     });
+    receipts.forEach((receipt,index)=>{if(Number(receipt.billCount)>0||receipt.hasBill)load(index).catch(()=>{const button=modal.querySelector('[data-receipt-image="'+index+':0"]');setAction(button,'Tai loi - bam de thu lai');imageLoads.delete(index);});});
   }
   function openReceiptImageEditor(orderId,receiptId,accountingContext=false){
     const order=data.orders.find(o=>o.id===orderId);if(!order||!canChangeReceiptOrder(order))return;

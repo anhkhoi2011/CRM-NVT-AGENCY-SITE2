@@ -358,7 +358,7 @@ function compactAssetValue(key, value) {
  if (key === 'orders') {
   const next = {...value}; const receipts = Array.isArray(next.paymentReceipts) ? next.paymentReceipts : [];
   next.paymentReceipts = receipts.map(receipt => {
-   const images = Array.isArray(receipt.images) ? receipt.images : (receipt.billImage ? [{imageData: receipt.billImage}] : []);
+   const images = OrderPayments.images(receipt);
    const compact = {...receipt}; delete compact.billImage; delete compact.imageData; delete compact.images; compact.hasBill = images.length > 0; compact.billCount = images.length; return compact;
   });
   next.hasBill = Boolean(next.billImage) || next.paymentReceipts.some(receipt => receipt.hasBill); delete next.billImage; return next;
@@ -1120,7 +1120,7 @@ function assetFromData(user, data, type, id, childId = null) {
  if (type === 'feedback') return {id:row.id,imageData:row.imageData||''};
  const receipt=(row.paymentReceipts||[]).find(item=>String(item.id)===String(childId));
  if(!receipt)error(404,'Khong tim thay bill.');
- const images=Array.isArray(receipt.images)?receipt.images:(receipt.billImage?[{id:`${receipt.id}-image`,imageData:receipt.billImage,note:receipt.note||''}]:[]);
+ const images=OrderPayments.images(receipt);
  return {orderId:row.id,receiptId:receipt.id,images};
 }
 async function readAsset(user, type, id, childId = null) {
