@@ -1824,6 +1824,27 @@ test('Customer cell drafts are mirrored to localStorage and reconnecting retries
  assert.match(crm,/addEventListener\('online'/);
 });
 
+test('Tạo lại đơn cho cùng SĐT dùng đúng hồ sơ của Sale được chọn, không đổi dữ liệu khách',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.members=[{id:'sale1',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'sale2',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[{id:'other',name:'Khách Sale 1',phone:'0912345678',saleId:'sale1',leaderId:'lead',teamId:'T'},{id:'own',name:'Khách Sale 2',phone:'0912345678',saleId:'sale2',leaderId:'lead',teamId:'T'}];`,c);
+ const input={source:'accounting-iframe',customerName:'Tên in trên đơn',phone:'+84 912345678',saleId:'sale2',productId:'p',total:5500000,amountPaid:500000,billImage:'data:image/png;base64,AA=='};
+ const first=await api.createOrder(input),second=await api.createOrder({...input,customerName:'Tên trên đơn sau'});
+ assert.notEqual(first.id,second.id);assert.equal(first.order.customerId,'own');assert.equal(second.order.customerId,'own');
+ assert.equal(vm.runInContext('state.customers.length',c),2);assert.equal(vm.runInContext('state.orders.length',c),2);
+ assert.equal(vm.runInContext('state.customers.find(row=>row.id==="own").name',c),'Khách Sale 2');
+ assert.equal(second.order.customerName,'Tên trên đơn sau');assert.equal(first.order.paymentReceipts.length,1);
+});
+
+test('Trùng SĐT khác Sale hoặc data chưa phân không ngăn tạo đơn và không chuyển chủ data cũ',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.members=[{id:'sale1',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'sale2',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[{id:'unassigned',name:'Data chưa phân',phone:'0912345678',saleId:null},{id:'other',name:'Khách Sale 1',phone:'0912345678',saleId:'sale1',leaderId:'lead',teamId:'T'}];`,c);
+ const input={source:'accounting-iframe',customerName:'Khách mua',phone:'0912345678',saleId:'sale2',productId:'p',total:5500000,amountPaid:500000,billImage:'data:image/png;base64,AA=='};
+ const first=await api.createOrder(input),second=await api.createOrder(input);
+ assert.notEqual(first.id,second.id);assert.equal(second.order.customerId,first.customer.id);
+ assert.equal(vm.runInContext('state.customers.length',c),3);assert.equal(vm.runInContext('state.customers.find(row=>row.id==="other").saleId',c),'sale1');
+ assert.equal(vm.runInContext('state.customers.find(row=>row.id==="unassigned").saleId',c),null);
+ assert.equal(vm.runInContext('state.orders.length',c),2);
+});
 test('Receipt orders apply VAT independently of invoice request and support own Sale updates',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
  vm.runInContext(`currentAccount={id:'sale',saleId:'sale',name:'Sale',role:'SALE',scope:'OWN',leaderId:'lead',teamId:'T'};state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
@@ -1936,16 +1957,61 @@ for(const actorRole of ['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'])for(cons
   await assert.rejects(()=>f.api.write(actor,'foreign-edit',[change('orders',{...restored,saleNote:'forged edit'},f.api.revision(restored))]),/phạm vi/);
  }
 });
-test('Order-created customer requires accompanying bill order; hidden duplicate phone is rejected atomically',async()=>{
- const f=fixture(),owner={id:'owner',name:'Owner',role:'MANAGER',active:true,teamId:''};await f.api.write(admin,'owner',[change('members',owner)]);
- const actor={id:'creator',role:'SALE'},cust={id:'created',name:'Test',phone:'0901234567',saleId:owner.id,leaderId:null,managerId:owner.id,teamId:'',createdVia:'ORDER',createdBy:actor.id};
- await assert.rejects(()=>f.api.write(actor,'no-order',[change('customers',cust)]),/cùng đơn/);assert.equal(f.db.customers.length,0);
- await f.api.write(admin,'existing',[change('customers',{...cust,id:'existing',createdVia:undefined})]);
- const o={...order,id:'new-order',customerId:cust.id,saleId:owner.id,leaderId:null,managerId:owner.id,teamId:'',createdBy:actor.id,discount:0,subtotal:5000000,vatRate:.1,vatAmount:500000,total:5500000,amountPaid:500000,balanceDue:5000000,status:'DEPOSIT',paymentReference:'Test',receiptsVersion:1,paymentReceipts:[{id:'r1',amount:500000,kind:'DEPOSIT',at:'2026-10-04T00:00:00Z',createdBy:actor.id,billImage:'data:image/png;base64,AA=='}]};
- await assert.rejects(()=>f.api.write(actor,'duplicate',[change('customers',cust),change('orders',o)]),/Số điện thoại đã tồn tại/);
+test('Một SĐT có nhiều đơn, kể cả khi khách cũ thuộc Sale khác và bị ẩn khỏi snapshot',async()=>{
+ const f=fixture(),actor={id:'sale2',role:'SALE',leaderId:'lead',teamId:'T'};
+ await f.api.write(admin,'owners',[change('members',{id:'lead',name:'Leader',role:'LEADER',teamId:'T',active:true}),change('members',{id:'sale1',name:'Sale 1',role:'SALE',leaderId:'lead',teamId:'T',active:true}),change('members',{id:'sale2',name:'Sale 2',role:'SALE',leaderId:'lead',teamId:'T',active:true})]);
+ const previous={...customer,id:'existing',saleId:'sale1',name:'Khách của Sale khác'};
+ await f.api.write(admin,'existing',[change('customers',previous)]);
+ assert.equal((await f.api.read(actor)).state.customers.length,0);
+ const cust={id:'created',name:'Khách mua hàng',phone:'+84 912345678',saleId:'sale2',leaderId:'lead',teamId:'T',createdVia:'ORDER',createdBy:actor.id};
+ await assert.rejects(()=>f.api.write(actor,'no-order',[change('customers',cust)]),/cùng đơn/);
+ const o={...order,id:'new-order',code:'NVT-NEW',customerId:cust.id,saleId:'sale2',leaderId:'lead',managerId:null,teamId:'T',createdBy:actor.id,discount:0,subtotal:5000000,vatRate:.1,vatAmount:500000,total:5500000,amountPaid:500000,balanceDue:5000000,status:'DEPOSIT',paymentReference:'Test',receiptsVersion:1,paymentReceipts:[{id:'r1',amount:500000,kind:'DEPOSIT',at:'2026-10-04T00:00:00Z',createdBy:actor.id,billImage:'data:image/png;base64,AA=='}]};
+ await assert.rejects(()=>f.api.write(actor,'no-bill',[change('customers',cust),change('orders',{...o,paymentReceipts:[]})]),/Lịch sử thanh toán/);
  assert.equal(f.db.customers.length,1);assert.equal(f.db.orders.length,0);
+ const saved=await f.api.write(actor,'duplicate-phone',[change('customers',cust),change('orders',o)]);
+ assert.equal(saved.ok,true);assert.equal(f.db.customers.length,2);assert.equal(f.db.orders.length,1);
+ assert.equal((await f.api.read(admin)).state.customers.find(c=>c.id===previous.id).saleId,'sale1');
+ const again={...o,id:'second-order',code:'NVT-SECOND',paymentReceipts:[{...o.paymentReceipts[0],id:'r2'}]};
+ await f.api.write(actor,'same-customer-second-order',[change('orders',again)]);
+ const replay=await f.api.write(actor,'same-customer-second-order',[change('orders',again)]);
+ assert.equal(replay.replayed,true);
+ const visible=(await f.api.read(actor)).state;
+ assert.equal(visible.customers.length,1);assert.equal(visible.customers[0].id,cust.id);
+ assert.equal(visible.orders.length,2);assert.equal(new Set(visible.orders.map(row=>row.customerId)).size,1);
+ assert.equal(f.db.customers.length,2);assert.equal(f.db.orders.length,2);
 });
-
+test('Tạo đơn trùng SĐT vượt 409 cũ, mất phản hồi SQL thì retry không tạo bản sao và báo thay đổi form',async()=>{
+ const f=fixture(),actor={id:'sale2',role:'SALE',teamId:'T',leaderId:'lead'};
+ await f.api.write(admin,'retry-owners',[change('members',{id:'lead',name:'Leader',role:'LEADER',teamId:'T',active:true}),change('members',{id:'sale1',name:'Sale 1',role:'SALE',leaderId:'lead',teamId:'T',active:true}),change('members',{id:'sale2',name:'Sale 2',role:'SALE',leaderId:'lead',teamId:'T',active:true})]);
+ await f.api.write(admin,'retry-existing',[change('customers',{...customer,id:'other-owner',saleId:'sale1'})]);
+ const c=frontend();vm.runInContext(fs.readFileSync('crm-runtime-api.js','utf8'),c);
+ c.seed={actor,snapshot:await f.api.read(actor,{passive:true})};
+ vm.runInContext(`currentAccount=hydrateSessionAccount(seed.actor);serverSyncToken='token';applyServerSnapshot(seed.snapshot);`,c);
+ const posts=[];let conflict=true,loseAck=true;
+ c.fetch=async (url,options)=>{
+  if(options?.method!=='POST')return {ok:true,status:200,json:async()=>f.api.read(actor,{passive:true})};
+  const body=JSON.parse(options.body);posts.push(body);
+  if(conflict){conflict=false;return {ok:false,status:409,json:async()=>({error:'Phiên cũ đang xung đột'})};}
+  try{
+   const saved=await f.api.write(actor,body.requestId,body.changes,{skipAutomatic:body.skipAutomatic,fastNote:body.fastNote});
+   if(loseAck){loseAck=false;throw Error('Mất phản hồi sau khi lưu đơn');}
+   return {ok:true,status:200,json:async()=>saved};
+  }catch(err){if(err.status)return {ok:false,status:err.status,json:async()=>({error:err.message})};throw err;}
+ };
+ const input={source:'accounting-iframe',customerName:'Khách mua lại',phone:'0912345678',saleId:'sale2',productId:'p1',total:5500000,amountPaid:500000,billImage:'data:image/png;base64,AA=='};
+ await assert.rejects(()=>c.window.crmApi.createOrder(input),/Mất phản hồi/);
+ assert.equal(posts.length,2);assert.equal(f.db.orders.length,1);assert.equal(f.db.customers.length,2);
+ assert.equal(vm.runInContext('serverPendingRequest.requestId',c),posts[1].requestId);
+ const recovered=await c.window.crmApi.createOrder({...input,amountPaid:1000000});
+ assert.equal(recovered.recoveredWithDifferentInput,true);
+ assert.equal(recovered.order.amountPaid,500000);
+ assert.equal(posts[2].requestId,posts[1].requestId);
+ assert.equal(f.db.orders.length,1);assert.equal(f.db.customers.length,2);
+ assert.equal(vm.runInContext('serverSaveError',c),'');assert.equal(vm.runInContext('hasServerChanges()',c),false);
+ const next=await c.window.crmApi.createOrder({...input,amountPaid:1000000});
+ assert.notEqual(next.id,recovered.id);assert.equal(next.order.amountPaid,1000000);
+ assert.equal(f.db.orders.length,2);assert.equal(f.db.customers.length,2);
+});
 test('Course trainer configuration survives SQL roundtrip for Admin and Accounting, without changing receipts',async()=>{
  const f=fixture();const c=referenceBridge();const api=c.window.crmApi;
  await api.saveCourseConfig({courseKey:'K03',trainerIds:['trainer'],trainerRates:{trainer:12},leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65});

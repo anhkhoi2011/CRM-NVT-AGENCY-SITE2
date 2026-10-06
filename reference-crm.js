@@ -3000,6 +3000,7 @@
       if(editing){q('#orderSuccessTitle').textContent='Cập nhật đơn hàng thành công';q('#referenceOrderSuccess h4').textContent='Đã lưu thay đổi đơn hàng';}
       const note=q('#referenceOrderSuccess .order-success-note'),order=result?.order;
       if(note&&order)note.textContent=order.status==='PAID'?'Đã ghi nhận thu đủ 100% (gồm VAT 10%). Đơn chờ Kế toán đối soát.':'Đã cọc '+money(order.amountPaid)+', còn lại '+money(order.balanceDue)+'. Xuất VAT mở khi thu đủ 100%.';
+      if(note&&result?.recoveredWithDifferentInput)note.textContent+=' Đây là đơn từ lần gửi trước; thay đổi trên form sau khi lỗi chưa được lưu. Hãy kiểm tra chi tiết đơn trước khi chỉnh sửa hoặc tạo đơn mới.';
     });
     modal.querySelector('.modal-card').classList.add('ao-card');
     const submit=modal.querySelector('.modal-footer [type=submit]');if(submit)submit.textContent='Tiếp tục → Phiếu thanh toán';
@@ -3014,10 +3015,11 @@
     q('#aoTotal').oninput=applyPayType;q('#aoPayType').onchange=applyPayType;
     q('#aoCollected').oninput=recalc;
     q('#aoRequireVat').onchange=e=>{q('#aoVatInputs').hidden=!e.target.checked;q('#aoTaxCode').required=q('#aoCompany').required=e.target.checked;applyPayType();};
-    // Chọn SĐT khách có sẵn thì điền tên, CCCD, địa chỉ và Sale đang phụ trách.
-    q('#aoPhone').onchange=()=>{const c=customers.find(item=>phoneKey(item.phone)===phoneKey(q('#aoPhone').value));if(!c)return;
-      q('#aoName').value=c.name||q('#aoName').value;if(c.cccd)q('#aoCccd').value=c.cccd;if(c.address)q('#aoAddress').value=c.address;if(c.email&&!q('#aoEmail').value)q('#aoEmail').value=c.email;
-      if(!editing&&c.saleId&&sales.some(s=>String(s.id)===String(c.saleId)))q('#aoSale').value=c.saleId;};
+    // Giữ Sale đã chọn khi nhập SĐT cũ: chỉ tự điền thông tin từ khách
+    // của đúng Sale đó, không lấy nhầm hồ sơ người khác cùng số điện thoại.
+    q('#aoPhone').onchange=()=>{const selectedSale=q('#aoSale').value,phone=phoneKey(q('#aoPhone').value);
+      const c=customers.find(item=>phone&&phoneKey(item.phone)===phone&&String(item.saleId||'')===String(selectedSale));if(!c)return;
+      q('#aoName').value=c.name||q('#aoName').value;if(c.cccd)q('#aoCccd').value=c.cccd;if(c.address)q('#aoAddress').value=c.address;if(c.email&&!q('#aoEmail').value)q('#aoEmail').value=c.email;};
     picker=bindBillPicker(modal,'aoBillFile','aoBillPreview','aoBillName',images,'aoBillType');
     ensureAccountingOrderStyles();setProductPrice();
     if(editing){

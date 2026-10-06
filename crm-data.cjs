@@ -1078,8 +1078,9 @@ async function writeLocked(user,requestId,changes,options={}){
   for(const {key,id,value} of changes){
    if(key!=='customers'||data.customers.has(id)||value?.createdVia!=='ORDER')continue;
    if(!changes.some(c=>c.key==='orders'&&c.value?.customerId===id&&!data.orders.has(c.id)&&c.value?.receiptsVersion===1&&c.value?.createdBy===user.id))error(403,'Khách tạo từ đơn phải được lưu cùng đơn và bill');
-   const phoneKey=v=>String(v||'').replace(/\D/g,'').replace(/^84/,'0');
-   if([...data.customers.values()].some(c=>phoneKey(c.phone)&&phoneKey(c.phone)===phoneKey(value.phone)))error(409,'Số điện thoại đã tồn tại. Tải lại hoặc nhờ quản lý kiểm tra khách trước khi tạo đơn.');
+   // Khách trùng số vẫn được tạo đơn (khác người phụ trách hoặc bản mới
+   // chưa có trong snapshot); không đổi chủ data cũ. Bill và đơn vẫn bắt buộc
+   // được kiểm tra ở trên và ghi trong cùng một giao dịch.
   }
   const resulting=new Map(data.customers);
   for(const change of changes.filter(x=>x.key==='customers')){if(change.value)resulting.set(change.id,change.value);else resulting.delete(change.id);}

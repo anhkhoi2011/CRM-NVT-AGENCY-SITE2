@@ -1240,7 +1240,7 @@ async function flushServerPersistence(requestOptions = {}) {
         applyServerSnapshot(payload,request.snapshot);serverPendingRequest=null;
         forgetPendingWrite();
       }while(hasServerChanges());
-      setSaveStatus('Đã lưu MySQL');return true;
+      serverSaveError='';setSaveStatus('Đã lưu MySQL');return true;
     }catch(error){serverSaveError=error.message||'Lỗi kết nối máy chủ';setSaveStatus(serverSaveError+' — chưa lưu, giữ trang mở',true);return false;}
     finally{serverSaveRunning=false;}
   })();

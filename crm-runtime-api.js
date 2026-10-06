@@ -11,7 +11,7 @@
     : currentAccount?.actualRole || currentAccount?.role || '';
   const requireRole = roles => { if(serverRecoveryPending)throw Error('Đang khôi phục lần lưu trước. Vui lòng chờ trong giây lát.'); if (!currentAccount || !serverStateLoaded || !roles.includes(permissionRole())) throw Error('Tài khoản không có quyền thực hiện thao tác này.'); };
   const persistenceError=()=>Error((typeof serverSaveError!=='undefined'&&serverSaveError?serverSaveError+' — ':'')+'Chưa lưu được dữ liệu. Bản nháp được giữ lại; bấm Lưu để thử lại.');
-  async function persist(action, kind) {
+  async function persist(action, kind, retryInputKey=null) {
     if (!serverStateLoaded && currentAccount && serverSyncToken) await syncServerState();
     if (!currentAccount || !serverStateLoaded) throw Error('Dữ liệu chưa sẵn sàng. Vui lòng chờ đồng bộ rồi thử lại.');
     requireRole(['ADMIN','MANAGER','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','HRM']);
@@ -19,12 +19,13 @@
     if (pendingResult) {
       if(pendingResult.kind!==kind) throw Error("Hãy lưu lại thao tác trước đó trước khi chuyển sang thao tác khác.");
       if (!await flushServerPersistence({skipAutomatic:kind.startsWith('add-extra-round-turn:')||kind.startsWith('accept-offer:')})) throw persistenceError();
+      const changedInput=kind==='accounting-order'&&pendingResult.retryInputKey!==retryInputKey;
       const result=pendingResult.result;pendingResult=null;
-      if (!kind.startsWith('customer-field:')) return result;
+      if (!kind.startsWith('customer-field:')) return changedInput?{...result,recoveredWithDifferentInput:true}:result;
     }
     const persistenceBlocked=typeof serverPendingRequest!=='undefined'&&(serverPendingRequest||serverConflict||serverSaveRunning);
     if (!persistenceBlocked&&!await flushServerPersistence()) throw Error('Máy chủ chưa xác nhận dữ liệu trước đó.');
-    const result=await action();pendingResult={kind,result:result || {ok:true}}; saveState();
+    const result=await action();pendingResult={kind,result:result || {ok:true},retryInputKey}; saveState();
     if (!await flushServerPersistence({skipAutomatic:kind.startsWith('add-extra-round-turn:')})) throw persistenceError();
     pendingResult=null;return result;
   }
@@ -421,9 +422,10 @@
           const active=member=>member&&member.active!==false&&member.active!==0&&member.active!=='0';
           const sale=directory.find(member=>String(member.id)===String(payload.saleId)&&active(member)&&['MANAGER','LEADER','SALE'].includes(member.role));
           if(!sale)throw Error('Người phụ trách không còn hoạt động. Hãy tải lại danh sách.');
-          let customer = state.customers.find(item => { const a=String(item.phone||'').replace(/\D/g,''); const b=phone.replace(/\D/g,''); return a&&b&&(a===b||a.replace(/^84/,'0')===b.replace(/^84/,'0')); });
-          if(customer&&customer.saleId&&String(customer.saleId)!==String(sale.id))throw Error('Số điện thoại đã thuộc một người phụ trách khác.');
-          if(customer&&!customer.saleId)throw Error('Khách chưa có người phụ trách. Phân công khách trước khi tạo đơn.');
+          // Một SĐT có thể mua nhiều lần. Chỉ dùng lại hồ sơ của đúng người
+          // phụ trách; không đổi chủ data của người khác hoặc data chưa phân.
+          const phoneKey=value=>String(value||'').replace(/\D/g,'').replace(/^84(?=\d{9,10}$)/,'0');
+          let customer=state.customers.find(item=>phoneKey(item.phone)===phoneKey(phone)&&String(item.saleId||'')===String(sale.id));
           const leader=sale.role==='LEADER'?sale:directory.find(member=>member.role==='LEADER'&&String(member.id)===String(sale.leaderId||''));
           const manager=sale.role==='MANAGER'?sale:directory.find(member=>member.role==='MANAGER'&&String(member.id)===String(sale.managerId||leader?.managerId||sale.leaderId||''));
           const assignment={saleId:sale.id,leaderId:sale.role==='LEADER'?sale.id:(sale.leaderId||null),managerId:sale.role==='MANAGER'?sale.id:(manager?.id||null),teamId:sale.teamId||leader?.teamId||manager?.teamId||''};
@@ -442,7 +444,7 @@
           images.forEach(image=>{if(!image.note)image.note=OrderPayments.billLabel(status==='PAID'?'FULL':'DEPOSIT');});
           if(amountPaid>0){if(!order.billImage)throw Error('Đính kèm bill chuyển khoản.');order.receiptsVersion=1;order.paymentReceipts=[{id:makeRecordId('PAY'),amount:amountPaid,kind:status==='PAID'?'FULL':'DEPOSIT',at:createdAt,billImage:order.billImage,images,bankReference:order.bankReference,createdBy:currentAccount.id}];order.billImage='';}
           state.orders.unshift(order); audit('CREATE_ORDER',id,`${order.code} \u00b7 ${order.productName}`); return {id:order.id,code:order.code,order,customer};
-        },'accounting-order');
+        },'accounting-order',JSON.stringify(input));
       }
       requireRole(['ADMIN','LEADER','SALE']);
       // Gọi đúng form nghiệp vụ hiện có trong frame để giữ kiểm tra giá, VAT và phân quyền.
