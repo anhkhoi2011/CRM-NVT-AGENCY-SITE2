@@ -2160,3 +2160,14 @@ test('New and pending Sale accounts can be saved without a Manager or Leader',as
  await api.saveMember('pending-alone',{name:'Pending',role:'SALE',teamId:'OWN2',leaderId:'',managerId:''});
  assert.equal(vm.runInContext("state.members.find(m=>m.id==='pending-alone').leaderId",c),null);assert.equal(vm.runInContext("state.registeredAccounts.length",c),0);
 });
+
+
+test('Process titles save uppercase while content, line breaks and existing image payload survive updates',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi,image='data:image/png;base64,aGVsbG8=';
+ const created=await api.saveProcess(null,{title:'Quy trình nhận data',summary:'Mô tả có CRM và Zalo',content:'Bước 1: nhận data\nBước 2: kết nối Zalo',link:'https://example.test/Guide',imageData:[image]});
+ let stored=vm.runInContext(`state.processes.find(item=>item.id===${JSON.stringify(created.id)})`,c);
+ assert.equal(stored.title,'QUY TRÌNH NHẬN DATA');assert.equal(stored.summary,'Mô tả có CRM và Zalo');assert.equal(stored.content,'Bước 1: nhận data\nBước 2: kết nối Zalo');assert.equal(stored.link,'https://example.test/Guide');assert.deepEqual(Array.from(stored.imageData),[image]);
+ await api.saveProcess(created.id,{...stored,title:'Quy trình cập nhật',content:'Nội dung mới'});
+ stored=vm.runInContext(`state.processes.find(item=>item.id===${JSON.stringify(created.id)})`,c);
+ assert.equal(stored.title,'QUY TRÌNH CẬP NHẬT');assert.deepEqual(Array.from(stored.imageData),[image]);assert.equal(vm.runInContext('state.processes.length',c),1);
+});

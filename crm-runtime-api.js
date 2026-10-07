@@ -578,7 +578,7 @@
       return persist(()=>{
         const existing=(state.processes||[]).find(item=>item.id===id);
         if(id&&!existing)throw Error('Quy trinh khong con ton tai.');
-        const title=String(input.title||'').trim(),summary=String(input.summary||'').trim(),content=String(input.content||'').trim(),link=String(input.link||'').trim();
+        const title=String(input.title||'').trim().toLocaleUpperCase('vi-VN'),summary=String(input.summary||'').trim(),content=String(input.content||'').trim(),link=String(input.link||'').trim();
         const imageData=Array.isArray(input.imageData)?input.imageData.map(value=>String(value||'')).filter(Boolean):String(input.imageData||'').trim()?[String(input.imageData).trim()]:[];
         if(!title||title.length>200||summary.length>500||!content||content.length>20000)throw Error('Kiem tra tieu de, mo ta va noi dung quy trinh.');
         if(link&&!/^https?:\/\/[^\s]+$/i.test(link))throw Error('Link quy trinh phai bat dau bang http:// hoac https://.');
