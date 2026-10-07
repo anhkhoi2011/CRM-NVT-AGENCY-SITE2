@@ -4461,10 +4461,10 @@ function renderMindmapTree() {
       }
 
       if (isTrainer) {
-        const comm = Math.round((crs.totalRevenue || 0) * (rate / 100));
+        const comm = Math.round((crs.commissionRevenue || 0) * (rate / 100));
         totalTrainerComm += comm;
         trainerCoursesCount++;
-        coursesList.push({ name: crs.name, rev: crs.totalRevenue, rate: rate, comm: comm });
+        coursesList.push({ name: crs.name, rev: crs.commissionRevenue || 0, rate: rate, comm: comm });
       }
     });
 
@@ -4498,7 +4498,8 @@ function renderMindmapTree() {
   function courseCommissionSummary(crs) {
     const revenue = Number(crs.totalRevenue) || 0;
     const sale = Object.values(crs.salesConfig || {}).reduce((sum, cfg) => sum + Math.round((Number(cfg.revenue) || 0) * Number(cfg.rateSale ?? crs.rateSale ?? 15) / 100), 0);
-    const trainer = (crs.trainers || []).reduce((sum, t) => sum + Math.round(revenue * Number(t.rate ?? crs.rateTrainer ?? 15) / 100), 0);
+    const commissionRevenue = Number(crs.commissionRevenue) || 0;
+    const trainer = (crs.trainers || []).reduce((sum, t) => sum + Math.round(commissionRevenue * Number(t.rate ?? crs.rateTrainer ?? 15) / 100), 0);
     const leader = APEX_DATA.reduce((sum, person) => sum + courseLeaderCommission(crs, person), 0);
     return {revenue, sale, trainer, leader, company: revenue - sale - trainer - leader};
   }
@@ -7619,7 +7620,7 @@ window.printOrderInvoice = printOrderInvoice;
           code:product.sku || '', name:product.name || productId,
           category, categoryLabel:{course:'Khóa học',indicator:'Chỉ báo',vip:'Nhóm VIP'}[category] || 'Sản phẩm khác',
           courseGroup:product.name || '', batchName:cohort,
-          price:Number(product.price) || 0, studentsCount:0, totalRevenue:0, salesConfig:{}, leaderRevenue:{},
+          price:Number(product.price) || 0, studentsCount:0, totalRevenue:0, commissionRevenue:0, salesConfig:{}, leaderRevenue:{},
           trainers:(cfg.trainerIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.trainerRates?.[id] ?? cfg.rateTrainer ?? 15)})),
           leaders:(cfg.leaderIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.leaderRates?.[id] ?? cfg.rateLeader ?? 5)})),
           rateSale:Number(cfg.rateSale ?? 15), hasSaleRate:cfg.rateSale != null, rateTrainer:Number(cfg.rateTrainer ?? 15),
@@ -7648,12 +7649,14 @@ window.printOrderInvoice = printOrderInvoice;
       const cohort = category === 'course' ? String(selectedCourse || '').trim() : '';
       const group = ensureGroup(product, cohort);
       group.totalRevenue += amount;
+      const commissionEligible = order.vatIssued === true;
+      if (commissionEligible) group.commissionRevenue += amount;
       const studentKey = String(order.customerId || order.id);
       const groupStudents = studentSets.get(group.id) || new Set();
       groupStudents.add(studentKey);
       studentSets.set(group.id, groupStudents);
       group.studentsCount = groupStudents.size;
-      if (order.saleId) {
+      if (order.saleId && commissionEligible) {
         const savedMetric = state.brokerageMetrics.find(m => String(m.memberId) === String(order.saleId) && m.period === currentGlobalMonth);
         const personalRate = savedMetric?.productRate ?? members.get(String(order.saleId))?.productRate ?? APEX_DATA.find(p => String(p.id) === String(order.saleId))?.productRate ?? 15;
         const saleConfig = group.salesConfig[String(order.saleId)] ||= {students:0,revenue:0,rateSale:group.saleRates?.[String(order.saleId)] ?? (group.hasSaleRate ? group.rateSale : personalRate)};
@@ -7665,10 +7668,12 @@ window.printOrderInvoice = printOrderInvoice;
           if (leaderId && String(leaderId) !== String(order.saleId)) group.leaderRevenue[String(leaderId)] = (group.leaderRevenue[String(leaderId)] || 0) + amount;
         }
       }
-      const saleKey = String(order.saleId || '');
-      if (!revenueBySale.has(saleKey)) revenueBySale.set(saleKey, {courseRev:0,indicatorRev:0,vipRev:0,otherRev:0});
-      const field = {course:'courseRev',indicator:'indicatorRev',vip:'vipRev'}[category] || 'otherRev';
-      revenueBySale.get(saleKey)[field] += amount;
+      if (commissionEligible) {
+        const saleKey = String(order.saleId || '');
+        if (!revenueBySale.has(saleKey)) revenueBySale.set(saleKey, {courseRev:0,indicatorRev:0,vipRev:0,otherRev:0});
+        const field = {course:'courseRev',indicator:'indicatorRev',vip:'vipRev'}[category] || 'otherRev';
+        revenueBySale.get(saleKey)[field] += amount;
+      }
     }
     COURSES_DATA = [...groups.values()];
     for (const person of APEX_DATA) {

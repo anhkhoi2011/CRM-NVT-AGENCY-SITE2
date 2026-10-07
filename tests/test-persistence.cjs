@@ -1901,6 +1901,8 @@ test('Receipt images can be replaced and added with individual notes without add
  assert.equal(saved.paymentReconciled,true);assert.equal(saved.paymentReconciledBy,'accountant');assert.equal(saved.amountPaid,5500000);assert.equal(saved.paymentReceipts.length,1);assert.equal(JSON.stringify(vm.runInContext('financialEvents(state.orders).map(e=>({amount:e.amount,at:e.occurredAt}))',c)),events);
  await assert.rejects(()=>api.updateOrderAccounting(result.id,{action:'RECONCILE',confirmed:true}),/đã được đối soát/);
  await assert.rejects(()=>api.updateOrderAccounting(result.id,{action:'SAVE_RECEIPT_IMAGES',receiptId,images}),/đối soát/);
+ vm.runInContext(`currentAccount={id:'sale',role:'SALE',scope:'OWN',name:'Sale'}`,c);await assert.rejects(()=>api.updateOrderAccounting(result.id,{action:'ISSUE_VAT',invoiceNumber:'INV-2',taxCode:'0123456789',companyName:'Test Company'}),/Chỉ Kế toán hoặc Admin/);
+ vm.runInContext(`currentAccount={id:'accountant',role:'ACCOUNTING',scope:'ALL',name:'Accounting'}`,c);
  await api.updateOrderAccounting(result.id,{action:'ISSUE_VAT',invoiceNumber:'INV-1',taxCode:'0123456789',companyName:'Test Company'});assert.equal(vm.runInContext('state.orders[0].vatInvoiceNumber',c),'INV-1');
 });
 

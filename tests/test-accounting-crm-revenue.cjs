@@ -31,11 +31,11 @@ test('Only paid CRM orders count, grouped by category, employee and paid month',
  const ctx=model();
  ctx.ACCOUNTING_CRM_STATE.products=[{id:'c',kind:'COURSE'},{id:'i',kind:'INDICATOR'},{id:'v',kind:'VIP'}];
  ctx.ACCOUNTING_CRM_STATE.orders=[
-  {id:'1',productId:'c',saleId:'sale-1',subtotal:125,status:'PAID',createdAt:'2026-09-01',paidAt:'2026-10-01'},
-  {id:'2',productId:'i',saleId:'sale-1',subtotal:75,status:'PAID',paidAt:'2026-10-01'},
-  {id:'3',productId:'v',saleId:'sale-2',subtotal:50,status:'PAID',paidAt:'2026-10-01'},
+  {id:'1',productId:'c',saleId:'sale-1',subtotal:125,status:'PAID',vatIssued:true,createdAt:'2026-09-01',paidAt:'2026-10-01'},
+  {id:'2',productId:'i',saleId:'sale-1',subtotal:75,status:'PAID',vatIssued:true,paidAt:'2026-10-01'},
+  {id:'3',productId:'v',saleId:'sale-2',subtotal:50,status:'PAID',vatIssued:true,paidAt:'2026-10-01'},
   {id:'4',productId:'c',saleId:'sale-1',subtotal:900,status:'DEPOSIT',paidAt:'2026-10-01'},
-  {id:'5',productId:'c',saleId:'sale-1',subtotal:30,status:'PAID',paidAt:'2026-09-01'}
+  {id:'5',productId:'c',saleId:'sale-1',subtotal:30,status:'PAID',vatIssued:true,paidAt:'2026-09-01'}
  ];
  ctx.rebuildAccountingRevenueFromCRM();
  assert.equal(ctx.COURSES_DATA.reduce((sum,c)=>sum+c.totalRevenue,0),250);
@@ -46,6 +46,12 @@ test('Only paid CRM orders count, grouped by category, employee and paid month',
  assert.equal(ctx.COURSES_DATA.reduce((sum,c)=>sum+c.totalRevenue,0),280);
  ctx.ACCOUNTING_CRM_STATE.orders=[]; ctx.rebuildAccountingRevenueFromCRM();
  assert.equal(ctx.COURSES_DATA.length,3); assert.ok(ctx.COURSES_DATA.every(g=>g.totalRevenue===0)); assert.equal(ctx.APEX_DATA[0].courseRev,0);
+});
+test('Only VAT-issued orders generate product commissions',()=>{
+ const ctx=model();ctx.ACCOUNTING_CRM_STATE.products=[{id:'c',kind:'COURSE'}];ctx.ACCOUNTING_CRM_STATE.courseField={id:'batch'};ctx.ACCOUNTING_CRM_STATE.customers=[{id:'c1',customFields:{batch:'K03'}}];ctx.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'c',courseKey:'K03',rateSale:10,trainerIds:['trainer'],trainerRates:{trainer:15},leaderIds:['leader'],rateLeader:5}];
+ ctx.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c1',productId:'c',saleId:'sale-1',status:'PAID',subtotal:1000,paidAt:'2026-10-01'}];ctx.rebuildAccountingRevenueFromCRM();
+ const pending=ctx.COURSES_DATA.find(g=>g.cohortKey==='K03');assert.equal(pending.totalRevenue,1000);assert.equal(pending.commissionRevenue,0);assert.equal(Object.keys(pending.salesConfig).length,0);assert.equal(ctx.APEX_DATA[0].courseRev,0);
+ ctx.ACCOUNTING_CRM_STATE.orders[0].vatIssued=true;ctx.rebuildAccountingRevenueFromCRM();const issued=ctx.COURSES_DATA.find(g=>g.cohortKey==='K03');assert.equal(issued.commissionRevenue,1000);assert.equal(issued.salesConfig['sale-1'].revenue,1000);assert.equal(ctx.APEX_DATA[0].courseRev,1000);
 });
 test('Lot and bonus values come only from CRM metrics for the selected period', () => {
  const ctx=model();
@@ -85,7 +91,7 @@ test('Mindmap đọc lại đúng mini/micro lot, định mức và biến số 
 
 test('Accounting recognizes deposit and later bills in their actual months without double counting',()=>{
  const ctx=model();ctx.ACCOUNTING_CRM_STATE.products=[{id:'c',kind:'COURSE'}];
- ctx.ACCOUNTING_CRM_STATE.orders=[{id:'receipt-order',productId:'c',saleId:'sale-1',subtotal:5000000,total:5500000,vatAmount:500000,status:'PAID',receiptsVersion:1,paymentReceipts:[{id:'deposit',kind:'DEPOSIT',amount:500000,at:'2026-09-30T12:00:00+07:00'},{id:'full',kind:'FULL',amount:5000000,at:'2026-10-03T12:00:00+07:00'}]}];
+ ctx.ACCOUNTING_CRM_STATE.orders=[{id:'receipt-order',productId:'c',saleId:'sale-1',subtotal:5000000,total:5500000,vatAmount:500000,status:'PAID',vatIssued:true,receiptsVersion:1,paymentReceipts:[{id:'deposit',kind:'DEPOSIT',amount:500000,at:'2026-09-30T12:00:00+07:00'},{id:'full',kind:'FULL',amount:5000000,at:'2026-10-03T12:00:00+07:00'}]}];
  ctx.currentGlobalMonth='2026-09';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA[0].totalRevenue,454545);assert.equal(ctx.APEX_DATA[0].courseRev,454545);
  ctx.currentGlobalMonth='2026-10';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA[0].totalRevenue,4545455);
  ctx.currentGlobalMonth='ALL';ctx.rebuildAccountingRevenueFromCRM();assert.equal(ctx.COURSES_DATA[0].totalRevenue,5000000);
@@ -116,7 +122,7 @@ test('Commission saves target selected historical month instead of today',()=>{c
 test('Product-cohort settings restore rates without changing actual collected revenue',()=>{
  const ctx=model();ctx.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE',price:5000000}];
  ctx.ACCOUNTING_CRM_STATE.courseField={id:'batch'};ctx.ACCOUNTING_CRM_STATE.customers=[{id:'c',customFields:{batch:'K03'}}];
- ctx.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',saleId:'sale-1',subtotal:5000000,total:5500000,vatAmount:500000,amountPaid:5500000,status:'PAID',paidAt:'2026-10-03'}];
+  ctx.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',saleId:'sale-1',subtotal:5000000,total:5500000,vatAmount:500000,amountPaid:5500000,status:'PAID',vatIssued:true,paidAt:'2026-10-03'}];
  ctx.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p',courseKey:'K03',trainerIds:['trainer'],leaderIds:['leader'],trainerRates:{trainer:12},leaderRates:{leader:4},saleRates:{'sale-1':18}}];
  ctx.rebuildAccountingRevenueFromCRM();const group=ctx.COURSES_DATA.find(g=>g.cohortKey==='K03');assert.equal(group.trainers[0].rate,12);assert.equal(group.leaders[0].rate,4);assert.equal(group.salesConfig['sale-1'].rateSale,18);assert.equal(group.totalRevenue,5000000);
 });
@@ -134,7 +140,7 @@ test('Only the selling Sale direct leader receives commission, even with legacy 
  c.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE',price:5000000}];
  c.ACCOUNTING_CRM_STATE.courseField={id:'batch'};c.ACCOUNTING_CRM_STATE.customers=[{id:'c',customFields:{batch:'K03'}}];
  c.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p',courseKey:'K03',leaderIds:['l1','l2','l3','m'],rateLeader:5,trainerIds:['l3'],trainerRates:{l3:15}}];
- c.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',saleId:'sale-1',status:'DEPOSIT',subtotal:5000000,total:5500000,vatAmount:500000,receiptsVersion:1,paymentReceipts:[{id:'r1',kind:'DEPOSIT',amount:550000,at:'2026-10-01'}]}];
+ c.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',saleId:'sale-1',status:'DEPOSIT',vatIssued:true,subtotal:5000000,total:5500000,vatAmount:500000,receiptsVersion:1,paymentReceipts:[{id:'r1',kind:'DEPOSIT',amount:550000,at:'2026-10-01'}]}];
  c.rebuildAccountingRevenueFromCRM();
  assert.equal(c.calculateLeaderCourseCommission(c.APEX_DATA[0],c.APEX_DATA),25000);
  for(const p of c.APEX_DATA.slice(1))assert.equal(c.calculateLeaderCourseCommission(p,c.APEX_DATA),0);
@@ -152,7 +158,7 @@ test('Same cohort has separate trainers for each product; all catalogue products
  c.ACCOUNTING_CRM_STATE.customers=[{id:'c1',customFields:{batch:'K03',course:['BMĐTHH']}},{id:'c2',customFields:{batch:'K03'}}];
  c.ACCOUNTING_CRM_STATE.products=[{id:'p1',name:'Product 1',kind:'COURSE',courseKeys:['K01','K03']},{id:'p2',name:'Product 2',kind:'COURSE'},{id:'vip',name:'VIP',kind:'VIP'},{id:'ind',name:'Indicator',kind:'INDICATOR'}];
  c.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p1',courseKey:'K03',trainerIds:['t1'],trainerRates:{t1:10},rateLeader:0,rateSale:0},{productId:'p2',courseKey:'K03',trainerIds:['t2'],trainerRates:{t2:20},rateLeader:0,rateSale:0}];
- c.ACCOUNTING_CRM_STATE.orders=[{id:'o1',customerId:'c1',productId:'p1',saleId:'sale-1',status:'PAID',subtotal:1000000,paidAt:'2026-10-01'},{id:'o2',customerId:'c2',productId:'p2',saleId:'sale-1',status:'PAID',subtotal:2000000,paidAt:'2026-10-01'}];
+ c.ACCOUNTING_CRM_STATE.orders=[{id:'o1',customerId:'c1',productId:'p1',saleId:'sale-1',status:'PAID',vatIssued:true,subtotal:1000000,paidAt:'2026-10-01'},{id:'o2',customerId:'c2',productId:'p2',saleId:'sale-1',status:'PAID',vatIssued:true,subtotal:2000000,paidAt:'2026-10-01'}];
  c.rebuildAccountingRevenueFromCRM();assert.equal(new Set(c.COURSES_DATA.map(g=>g.productId)).size,4);
  const first=c.COURSES_DATA.find(g=>g.productId==='p1'&&g.cohortKey==='K03'),second=c.COURSES_DATA.find(g=>g.productId==='p2'&&g.cohortKey==='K03');
  assert.equal(first.name,'Product 1');assert.equal(first.totalRevenue,1000000);assert.equal(first.trainers[0].id,'t1');assert.equal(c.courseCommissionSummary(first).trainer,100000);
@@ -163,14 +169,14 @@ test('Same cohort has separate trainers for each product; all catalogue products
 test('Customers without a cohort never inherit a product cohort or legacy unscoped trainer',()=>{
  const c=commissions(model());c.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE',courseKey:'K03'}];c.ACCOUNTING_CRM_STATE.courseField={id:'batch'};
  c.ACCOUNTING_CRM_STATE.courseConfigs=[{courseKey:'p',trainerIds:['legacy'],rateTrainer:15},{productId:'p',courseKey:'K03',trainerIds:['t'],rateTrainer:15}];
- c.ACCOUNTING_CRM_STATE.customers=[{id:'c',customFields:{course:['BMĐTHH']}}];c.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',courseKey:'K03',saleId:'sale-1',status:'PAID',subtotal:1000000,paidAt:'2026-10-01'}];
+ c.ACCOUNTING_CRM_STATE.customers=[{id:'c',customFields:{course:['BMĐTHH']}}];c.ACCOUNTING_CRM_STATE.orders=[{id:'o',customerId:'c',productId:'p',courseKey:'K03',saleId:'sale-1',status:'PAID',vatIssued:true,subtotal:1000000,paidAt:'2026-10-01'}];
  c.rebuildAccountingRevenueFromCRM();assert.equal(c.COURSES_DATA.reduce((sum,g)=>sum+c.courseCommissionSummary(g).trainer,0),0);assert.equal(c.COURSES_DATA.reduce((sum,g)=>sum+g.totalRevenue,0),1000000);
 });
 test('A direct Manager sale does not earn a second leader commission; sale owner snapshot takes precedence',()=>{
  const c=commissions(model());c.APEX_DATA=[{id:'m',roleLevel:'LV1'},{id:'old',roleLevel:'LV2'},{id:'new',roleLevel:'LV2'}];
  c.ACCOUNTING_CRM_STATE.members=[{id:'m',role:'MANAGER'},{id:'sale-1',role:'SALE',leaderId:'new'}];
  c.ACCOUNTING_CRM_STATE.products=[{id:'p',kind:'COURSE'}];
- c.ACCOUNTING_CRM_STATE.orders=[{id:'a',productId:'p',saleId:'m',managerId:'m',status:'PAID',subtotal:1000,paidAt:'2026-10-01'},{id:'b',productId:'p',saleId:'sale-1',leaderId:'old',status:'PAID',subtotal:2000,paidAt:'2026-10-01'}];
+ c.ACCOUNTING_CRM_STATE.orders=[{id:'a',productId:'p',saleId:'m',managerId:'m',status:'PAID',vatIssued:true,subtotal:1000,paidAt:'2026-10-01'},{id:'b',productId:'p',saleId:'sale-1',leaderId:'old',status:'PAID',vatIssued:true,subtotal:2000,paidAt:'2026-10-01'}];
  c.rebuildAccountingRevenueFromCRM();assert.equal(c.calculateLeaderCourseCommission(c.APEX_DATA[0]),0);assert.equal(c.calculateLeaderCourseCommission(c.APEX_DATA[1]),100);assert.equal(c.calculateLeaderCourseCommission(c.APEX_DATA[2]),0);
 });
 test('Report sorting uses numeric money values and toggles direction without mutating personnel',()=>{
@@ -204,7 +210,7 @@ test('One product can pay different trainers for K01 and K03 without cross-credi
  const c=commissions(model());c.ACCOUNTING_CRM_STATE.products=[{id:'p',name:'Course product',kind:'COURSE',courseKeys:['K01','K03']}];c.ACCOUNTING_CRM_STATE.courseField={id:'batch'};
  c.ACCOUNTING_CRM_STATE.customers=[{id:'a',customFields:{batch:'K01'}},{id:'b',customFields:{batch:'K03'}}];
  c.ACCOUNTING_CRM_STATE.courseConfigs=[{productId:'p',courseKey:'K01',trainerIds:['t1'],trainerRates:{t1:10}},{productId:'p',courseKey:'K03',trainerIds:['t3'],trainerRates:{t3:20}}];
- c.ACCOUNTING_CRM_STATE.orders=[{id:'oa',productId:'p',customerId:'a',saleId:'sale-1',status:'PAID',subtotal:1000000,paidAt:'2026-10-01'},{id:'ob',productId:'p',customerId:'b',saleId:'sale-1',status:'PAID',subtotal:2000000,paidAt:'2026-10-01'}];c.rebuildAccountingRevenueFromCRM();
+ c.ACCOUNTING_CRM_STATE.orders=[{id:'oa',productId:'p',customerId:'a',saleId:'sale-1',status:'PAID',vatIssued:true,subtotal:1000000,paidAt:'2026-10-01'},{id:'ob',productId:'p',customerId:'b',saleId:'sale-1',status:'PAID',vatIssued:true,subtotal:2000000,paidAt:'2026-10-01'}];c.rebuildAccountingRevenueFromCRM();
  const start=html.indexOf('  function calculateTrainerCommission('),end=html.indexOf('  function courseLeaderCommission(',start);vm.runInContext(html.slice(start,end),c);
  assert.equal(c.calculateTrainerCommission('t1').totalTrainerComm,100000);assert.equal(c.calculateTrainerCommission('t3').totalTrainerComm,400000);
  c.ACCOUNTING_CRM_STATE.customers[1].customFields.batch='K01';c.rebuildAccountingRevenueFromCRM();assert.equal(c.calculateTrainerCommission('t1').totalTrainerComm,300000);assert.equal(c.calculateTrainerCommission('t3').totalTrainerComm,0);

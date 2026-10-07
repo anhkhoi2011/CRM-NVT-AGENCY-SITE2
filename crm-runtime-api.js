@@ -190,6 +190,7 @@
         const original=state.orders.find(item=>item.id===id);if(!original)throw Error('Đơn hàng không còn tồn tại.');const order=structuredClone(original);
         const action=String(input?.action||'');
         const role=permissionRole();
+        if(action==='ISSUE_VAT'&&!['ADMIN','ACCOUNTING'].includes(role))throw Error('Chỉ Kế toán hoặc Admin được xuất VAT.');
         if(!['ADMIN','ACCOUNTING'].includes(role)&&(!scopedOrders().some(o=>o.id===id)||!['UPDATE','COLLECT','SAVE_RECEIPT_IMAGES'].includes(action)))throw Error('Không có quyền chỉnh sửa đơn này.');
         if(['UPDATE','COLLECT','SAVE_RECEIPT_IMAGES'].includes(action)&&(order.paymentReconciled||order.vatIssued||['REFUNDED','CANCELLED','COURSE_GRANTED'].includes(order.status)))throw Error('Đơn đã đối soát, xuất hóa đơn hoặc kết thúc; không thể sửa trực tiếp.');
         const text=(value,max=4000)=>String(value??'').trim().slice(0,max);
@@ -212,6 +213,7 @@
           order.receiptsVersion=1;order.paymentReceipts=receipts;order.updatedAt=stamp();
           audit('UPDATE_RECEIPT_IMAGES',id,receipt.id+' · '+images.length+' ảnh');
         }else if(action==='ISSUE_VAT'){
+          if(!['ADMIN','ACCOUNTING'].includes(role))throw Error('Chỉ Kế toán hoặc Admin được xuất VAT.');
           if(!order.paymentReconciled||OrderPayments.balance(order)!==0)throw Error('Cần Kế toán đối soát đủ trước khi ghi nhận hóa đơn VAT.');
           if(!text(input.invoiceNumber,120)||!/^\d{10,13}$/.test(text(input.taxCode,20)||order.taxCode||'')||!(text(input.companyName,200)||order.companyName))throw Error('Nhập số hóa đơn, MST và tên công ty hợp lệ.');
           order.vatIssued=true;order.vatIssuedAt=stamp();
