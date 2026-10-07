@@ -1307,6 +1307,33 @@ body.accounting-modal-open { overflow: hidden; }
 .report-sort-button{display:inline-flex;align-items:center;justify-content:inherit;gap:6px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;padding:0;cursor:pointer;text-align:inherit;white-space:nowrap}
 .report-sort-button:focus-visible{outline:2px solid #2563eb;outline-offset:4px}
 [data-report-sort][aria-sort="ascending"],[data-report-sort][aria-sort="descending"]{color:#2563eb;background:#eff6ff}
+
+ .kpi-card[data-accounting-detail] { cursor:pointer; transition:box-shadow .15s, transform .15s; }
+ .kpi-card[data-accounting-detail]:hover { box-shadow:0 6px 18px rgba(15,23,42,.1); transform:translateY(-2px); }
+ .kpi-card[data-accounting-detail]:focus-visible { outline:3px solid #2563eb; outline-offset:3px; }
+ .accounting-card-hint { display:block; margin-top:8px; color:#64748b; font-size:11px; }
+ .accounting-detail-dialog { width:min(1100px,calc(100vw - 28px)); max-width:none; max-height:calc(100dvh - 32px); padding:0; border:0; border-radius:16px; color:#0f172a; box-shadow:0 24px 80px #0f172a40; }
+ .accounting-detail-dialog::backdrop { background:#0f172a99; backdrop-filter:blur(3px); }
+ .accounting-detail-dialog .modal-header { padding:16px 20px; }
+ .accounting-detail-period { margin-top:5px; color:#64748b; font-size:12px; }
+ .accounting-detail-content { padding:16px 20px; }
+ .accounting-detail-toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin:12px 0; }
+ .accounting-detail-total { font-size:24px; font-weight:800; color:#0284c7; }
+ .accounting-detail-search { width:280px; max-width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:9px 12px; font:inherit; font-size:12px; }
+ .accounting-detail-description { font-size:12px; line-height:1.6; color:#64748b; margin:0; }
+ .accounting-detail-scroll { max-height:52dvh; overflow:auto; border:1px solid #e2e8f0; border-radius:8px; }
+ .accounting-detail-table { width:100%; border-collapse:collapse; font-size:12px; }
+ .accounting-detail-table th { position:sticky; top:0; background:#f1f5f9; z-index:1; text-align:left; color:#475569; }
+ .accounting-detail-table th,.accounting-detail-table td { padding:10px 12px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
+ .accounting-detail-table td { min-width:90px; max-width:260px; overflow-wrap:anywhere; }
+ .accounting-detail-table tbody tr:nth-child(even) { background:#f8fafc; }
+ .accounting-detail-table .detail-money { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+ .accounting-detail-table .detail-negative { color:#dc2626; }
+ .accounting-detail-table td:last-child { font-weight:700; }
+ .accounting-detail-footer { display:flex; flex-wrap:wrap; gap:8px 20px; justify-content:space-between; padding-top:12px; font-size:12px; color:#475569; }
+ .accounting-detail-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+ @media(max-width:600px) { .accounting-detail-content { padding:12px; } .accounting-detail-dialog .modal-header { padding:12px; } .accounting-detail-search { width:100%; } .accounting-detail-toolbar { align-items:stretch; flex-direction:column; } }
+
 </style>
 <script>
   if (window.self !== window.top || (window.location.search && window.location.search.includes('embedded=1'))) {
@@ -1314,6 +1341,7 @@ body.accounting-modal-open { overflow: hidden; }
   }
 </script>
 <script src="order-payments.js?v=20261003-bill-types-6"></script>
+<script src="accounting-detail.js?v=20261007-accounting-details-31"></script>
 </head>
 <body>
 
@@ -1876,28 +1904,32 @@ body.accounting-modal-open { overflow: hidden; }
 
         <!-- 4 Thẻ P&L Sang Trọng -->
         <div class="kpi-grid-4">
-          <div class="kpi-card blue">
+          <div class="kpi-card blue" data-accounting-detail="revenue" role="button" tabindex="0" aria-label="Xem chi tiết doanh thu" aria-haspopup="dialog" onclick="openAccountingDetail('revenue')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAccountingDetail('revenue');}">
             <div class="kpi-label">1. Tổng Doanh Thu SP & Dịch Vụ</div>
             <div class="kpi-val" id="accTotalRevenue" style="color:#0284c7;">0 đ</div>
             <div class="kpi-sub">Thực thu trước VAT từ các bill trong kỳ</div><div class="kpi-sub" id="accCashSummary"></div>
+            <span class="accounting-card-hint">Xem chi tiết →</span>
           </div>
 
-          <div class="kpi-card orange">
+          <div class="kpi-card orange" data-accounting-detail="commission" role="button" tabindex="0" aria-label="Xem chi tiết hoa hồng" aria-haspopup="dialog" onclick="openAccountingDetail('commission')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAccountingDetail('commission');}">
             <div class="kpi-label">2. Chi Phí Hoa Hồng (Nhân Sự CRM)</div>
             <div class="kpi-val" id="accTotalCommission" style="color:#ea580c;">0 đ</div>
             <div class="kpi-sub">Lot + sản phẩm + thưởng theo dữ liệu CRM</div>
+            <span class="accounting-card-hint">Xem chi tiết →</span>
           </div>
 
-          <div class="kpi-card purple">
+          <div class="kpi-card purple" data-accounting-detail="expense" role="button" tabindex="0" aria-label="Xem chi tiết chi phí vận hành" aria-haspopup="dialog" onclick="openAccountingDetail('expense')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAccountingDetail('expense');}">
             <div class="kpi-label">3. Chi Phí Vận Hành (Admin Nhập)</div>
             <div class="kpi-val" id="accTotalAdminExpense" style="color:#7c3aed;">0 đ</div>
             <div class="kpi-sub" id="accExpenseCountSub">Tổng cộng 6 khoản chi trong kỳ</div>
+            <span class="accounting-card-hint">Xem chi tiết →</span>
           </div>
 
-          <div class="kpi-card emerald" style="border:2px solid #10b981; background:linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);">
+          <div class="kpi-card emerald" data-accounting-detail="profit" role="button" tabindex="0" aria-label="Xem chi tiết lợi nhuận ròng" aria-haspopup="dialog" onclick="openAccountingDetail('profit')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAccountingDetail('profit');}" style="border:2px solid #10b981; background:linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);">
             <div class="kpi-label" style="color:#047857;">4. LỢI NHUẬN RÒNG CÔNG TY (P&L)</div>
             <div class="kpi-val" id="accNetProfit" style="color:#059669; font-size:24px;">0 đ</div>
             <div class="kpi-sub" id="accNetProfitMargin" style="color:#047857; font-weight:800;">Tỷ suất LN ròng: ~44.4% doanh thu</div>
+            <span class="accounting-card-hint">Xem chi tiết →</span>
           </div>
         </div>
       </div>
@@ -2517,6 +2549,17 @@ Tổng gửi: <span id="sendSelectedTotalMoney" style="color:#059669; font-size:
 <!-- ====================================================================
      MODAL 6: THÊM / CHỈNH SỬA KHOẢN CHI PHÍ DO ADMIN NHẬP
      ==================================================================== -->
+<dialog id="accountingDetailDialog" class="accounting-detail-dialog" aria-labelledby="accountingDetailTitle" aria-describedby="accountingDetailDescription" onclick="if(event.target===this){const r=this.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeAccountingDetail();}">
+  <div class="modal-header"><div><h3 id="accountingDetailTitle"></h3><div class="accounting-detail-period" id="accountingDetailPeriod"></div></div><button type="button" class="modal-close" aria-label="Đóng bảng chi tiết" onclick="closeAccountingDetail()">✕</button></div>
+  <div class="accounting-detail-content">
+    <p id="accountingDetailDescription" class="accounting-detail-description"></p>
+    <div class="accounting-detail-toolbar"><div><div class="accounting-detail-description">Tổng trong kỳ</div><div id="accountingDetailTotal" class="accounting-detail-total"></div></div><input id="accountingDetailSearch" class="accounting-detail-search" type="search" aria-label="Tìm trong bảng chi tiết" placeholder="Tìm trong bảng chi tiết…" oninput="renderAccountingDetail()"></div>
+    <div class="accounting-detail-scroll"><table class="accounting-detail-table"><thead id="accountingDetailHead"></thead><tbody id="accountingDetailRows"></tbody></table></div>
+    <div id="accountingDetailFooter" class="accounting-detail-footer" aria-live="polite"></div>
+    <div id="accountingDetailLinks" class="accounting-detail-links" hidden><button type="button" class="tool-btn" onclick="openAccountingDetail('revenue')">Chi tiết doanh thu</button><button type="button" class="tool-btn" onclick="openAccountingDetail('commission')">Chi tiết hoa hồng</button><button type="button" class="tool-btn" onclick="openAccountingDetail('expense')">Chi tiết vận hành</button></div>
+  </div>
+</dialog>
+
 <div class="modal-backdrop" id="expenseModal" style="z-index: 1090;">
   <div class="modal-card" style="max-width: 560px;">
     <div class="modal-header" style="background:#fdf2f8; border-bottom:1px solid #fbcfe8;">
@@ -5134,33 +5177,53 @@ function _old_navigateAccountingMonth(direction) {
     }
   }
 
+  function accountingSnapshot() {
+    return AccountingDetail.snapshot({period:currentAccountingMonth,orders:ACCOUNTING_CRM_STATE.orders,
+      products:ACCOUNTING_CRM_STATE.products,customers:ACCOUNTING_CRM_STATE.customers,members:ACCOUNTING_CRM_STATE.members,
+      groups:COURSES_DATA,expenses:ADMIN_EXPENSES_DATA,personnel:APEX_DATA.map(person=>({...person,finance:calculatePersonnelFinance(person)}))});
+  }
+  let activeAccountingDetail = '';
+  let accountingDetailReturnFocus = null;
+  let accountingDetailOverflow = '';
+  function openAccountingDetail(type) {
+    const dialog=document.getElementById('accountingDetailDialog');
+    if(!dialog.open){accountingDetailReturnFocus=document.activeElement;accountingDetailOverflow=document.body.style.overflow;}
+    activeAccountingDetail=type;
+    document.getElementById('accountingDetailSearch').value='';
+    renderAccountingDetail();
+    if(!dialog.open){dialog.showModal();document.body.style.overflow='hidden';}
+    dialog.oncancel=event=>{event.preventDefault();closeAccountingDetail();};
+    document.getElementById('accountingDetailSearch').focus();
+  }
+  function closeAccountingDetail() {
+    const dialog=document.getElementById('accountingDetailDialog');
+    if(!dialog.open)return;
+    dialog.close();activeAccountingDetail='';document.body.style.overflow=accountingDetailOverflow;
+    accountingDetailReturnFocus?.focus();accountingDetailReturnFocus=null;
+  }
+  function renderAccountingDetail(snapshot=accountingSnapshot()) {
+    if(!activeAccountingDetail)return;
+    const table=AccountingDetail.table(snapshot,activeAccountingDetail);
+    const query=document.getElementById('accountingDetailSearch').value;
+    const rows=AccountingDetail.filter(table,query);
+    const escape=escapeOrderContact;
+    document.getElementById('accountingDetailTitle').textContent=table.title;
+    document.getElementById('accountingDetailPeriod').textContent=formatMonthDisplay(snapshot.period);
+    document.getElementById('accountingDetailDescription').textContent=table.description;
+    const total=document.getElementById('accountingDetailTotal');total.textContent=formatMoney(table.total);total.style.color=table.total<0?'#dc2626':activeAccountingDetail==='profit'?'#059669':'#0284c7';
+    document.getElementById('accountingDetailHead').innerHTML='<tr>'+table.columns.map(([,label,money])=>'<th scope="col"'+(money?' class="detail-money"':'')+'>'+escape(label)+'</th>').join('')+'</tr>';
+    document.getElementById('accountingDetailRows').innerHTML=rows.length?rows.map(row=>'<tr>'+table.columns.map(([key,,money])=>'<td'+(money?' class="detail-money'+(Number(row[key])<0?' detail-negative':'')+'"':'')+'>'+escape(money?formatMoney(row[key]):row[key]||'—')+'</td>').join('')+'</tr>').join(''):'<tr><td colspan="'+table.columns.length+'" style="text-align:center;padding:28px;color:#64748b">'+(query.trim()?'Không có kết quả phù hợp.':'Chưa có dữ liệu trong kỳ này.')+'</td></tr>';
+    const filteredTotal=AccountingDetail.sum(rows,table.amountKey);
+    document.getElementById('accountingDetailFooter').innerHTML='<span>'+rows.length+' / '+table.rows.length+' dòng'+(query.trim()?' · Tổng kết quả: <b>'+escape(formatMoney(filteredTotal))+'</b>':'')+'</span><span><b>'+(activeAccountingDetail==='profit'?'Lợi nhuận ròng':'Tổng trong kỳ')+': '+escape(formatMoney(table.total))+'</b>'+(activeAccountingDetail==='profit'?' · Tỷ suất: '+snapshot.margin.toFixed(1)+'%':'')+'</span>';
+    const links=document.getElementById('accountingDetailLinks');links.hidden=activeAccountingDetail!=='profit';links.style.display=links.hidden?'none':'flex';
+  }
+
   function renderAccountingView() {
-    // 1. Lọc danh sách chi phí theo tháng được chọn
-    let expensesForMonth = ADMIN_EXPENSES_DATA;
-    if (currentAccountingMonth !== 'ALL') {
-      expensesForMonth = ADMIN_EXPENSES_DATA.filter(item => {
-        const itemMonth = (item.month || item.date || '').substring(0, 7);
-        return itemMonth === currentAccountingMonth;
-      });
-    }
-
-    // 2. Tính Doanh thu và Hoa hồng theo tháng được chọn
-    let totalRevenue = 0;
-    let totalCommission = 0;
-
-    COURSES_DATA.forEach(c => totalRevenue += Number(c.totalRevenue) || 0);
-    APEX_DATA.forEach(p => totalCommission += calculatePersonnelFinance(p).netIncome);
-
-    const cashEvents=ACCOUNTING_CRM_STATE.orders.flatMap(order=>OrderPayments.events(order)).filter(event=>currentAccountingMonth==='ALL'||String(event.occurredAt||'').slice(0,7)===currentAccountingMonth);
-    const cashTotal=cashEvents.reduce((sum,event)=>sum+event.amount,0),taxTotal=cashEvents.reduce((sum,event)=>sum+event.vatAmount,0);
+    const summary=accountingSnapshot();
+    const {operating:expensesForMonth,totalRevenue,totalCommission,totalExpense:totalAdminExpense,netProfit,cash:cashTotal,vat:taxTotal}=summary;
+    const netMargin=summary.margin.toFixed(1);
     const outstanding=ACCOUNTING_CRM_STATE.orders.reduce((sum,order)=>sum+OrderPayments.balance(order),0);
     const cashSummary=document.getElementById('accCashSummary');if(cashSummary)cashSummary.textContent='Thực thu gồm VAT trong kỳ: '+formatMoney(cashTotal)+' · VAT trong thực thu: '+formatMoney(taxTotal)+' · Công nợ hiện tại (mọi kỳ): '+formatMoney(outstanding);
-    // 3. Tính tổng chi phí Admin của tháng được chọn
-    let totalAdminExpense = expensesForMonth.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-
-    // 4. Lợi nhuận ròng = Doanh thu - Hoa hồng - Chi phí admin
-    let netProfit = totalRevenue - totalCommission - totalAdminExpense;
-    let netMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0;
 
     // Cập nhật tiêu đề báo cáo theo tháng
     const titleEl = document.getElementById('accReportTitle');
@@ -5202,6 +5265,7 @@ function _old_navigateAccountingMonth(direction) {
 
     // Render bảng chi tiết chi phí của tháng đó
     renderExpenseTable();
+    renderAccountingDetail(summary);
   }
 
   function renderExpenseTable() {
