@@ -234,7 +234,7 @@ function managerReadable(user,key,r,data){
  const inScope=m=>!!m&&(ids.has(m.id)||m.role==='SALE'&&ids.has(m.leaderId));
  if(key==='attendance')return r.accountId===user.id||inScope(memberById(data,r.accountId));
  if(key==='brokerageMetrics')return r.memberId===user.id||ids.has(r.leaderId);
- if(key==='notifications')return r.role==='ALL'||r.saleId===user.id||managerSales(user,data).some(m=>m.id===r.saleId)||ids.has(r.leaderId)||inScope(memberById(data,r.saleId));
+ if(key==='notifications')return r.role==='ALL'||r.managerId===user.id||r.saleId===user.id||managerSales(user,data).some(m=>m.id===r.saleId)||ids.has(r.leaderId)||inScope(memberById(data,r.saleId));
  if(key==='audit')return r.actorId===user.id;
  if(key==='dataOffers')return (ids.has(r.leaderId)||r.leaderId===user.id||managerSales(user,data).some(m=>m.id===r.saleId))&&managerOwns(user,data.customers.get(r.customerId),data);
  return !!r.customerId&&managerOwns(user,data.customers.get(r.customerId),data);
@@ -297,6 +297,7 @@ function pendingOffer(data,user,id){
  return (index.get(id)||[]).find(o=>offerPending(o,user,id));
 }
 function readable(user,key,r,data){
+ if(key==='notifications'&&(r.deletedBy||[]).includes(user.id))return false;
  if(key==='hrProfiles')return ['ADMIN','HRM'].includes(user.role);
  if(user.role==='HRM')return ['members','attendance','orders','products','brokerageMetrics','settings'].includes(key);
  if(key==='feedbacks'||key==='processes')return true;
@@ -442,6 +443,13 @@ function authorizeReceiptOrder(user,old,next,data){
  if(next.status!==(next.amountPaid===next.total?'PAID':'DEPOSIT'))error(400,'Trạng thái không khớp số tiền đã thu');
 }
 function authorize(user,key,old,next,data){
+ // Read/delete state belongs to the viewer; preserve other viewers' state and notice content.
+ if(key==='notifications'&&old&&next&&readable(user,key,old,data)&&sameExcept(old,next,['readBy','deletedBy'])){
+  const ownAppend=field=>Array.isArray(next[field]||[])&&(old[field]||[]).every(id=>(next[field]||[]).includes(id))&&(next[field]||[]).every(id=>id===user.id||(old[field]||[]).includes(id));
+  if(ownAppend('readBy')&&ownAppend('deletedBy'))return;
+  error(403,'Không được thay đổi trạng thái thông báo của người khác');
+ }
+
  if(key==='hrProfiles'){
   if(!['ADMIN','HRM'].includes(user.role)||!next)error(403,'Chỉ Admin/HRM được cập nhật hồ sơ nhân sự');
   if(next.id!==next.employeeId||!data.members.has(next.employeeId))error(400,'Nhân viên hồ sơ không tồn tại');
@@ -684,6 +692,34 @@ async function project(c,key,id,r){
  }else if(key==='settings')await c.execute("INSERT INTO system_settings(setting_key,setting_value) VALUES ('crm',?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)",[JSON.stringify(r||{})]);
 }
 // Hết hạn được lưu trên server ngay ở lần đọc tiếp theo, kể cả Admin đã đóng trình duyệt.
+function dataArrivalNotice(customer){
+ return {id:`NT-DATA-${customer.id}`,kind:'DATA_ARRIVAL',role:'ADMIN',customerId:customer.id,title:'Data mới về',text:`${customer.name||'Khách hàng'} · ${customer.source||'CRM'}`,at:new Date().toISOString(),readBy:[]};
+}
+function expiredOfferNotice(offer,data,at){
+ const customer=data.customers.get(offer.customerId),sale=data.members.get(offer.saleId),leader=data.members.get(offer.leaderId);
+ return {id:`NT-DATA-24H-${offer.id}`,kind:'DATA_UNRECEIVED_24H',role:'OWN',customerId:offer.customerId,saleId:offer.saleId,leaderId:offer.leaderId,managerId:customer?.managerId||sale?.managerId||leader?.managerId||null,teamId:offer.teamId,title:'Data Sale không nhận trong 24 giờ',text:`${customer?.name||'Khách hàng'} · ${sale?.name||'Sale'} chưa nhận data. Chờ phân lại.`,at,readBy:[]};
+}
+function orderNotices(old,order){
+ if(!order)return [];
+ const notices=[],scope={orderId:order.id,saleId:order.saleId,leaderId:order.leaderId,managerId:order.managerId,teamId:order.teamId};
+ if(!order.paymentReconciled&&OrderPayments.paid(order)>OrderPayments.paid(old||{})){
+  const paid=OrderPayments.paid(order),at=OrderPayments.receipts(order).at(-1)?.at||order.paidAt||order.updatedAt||order.createdAt;
+  notices.push({...scope,id:`NT-PAY-REVIEW-${order.id}-${paid}`,kind:'PAYMENT_REVIEW',role:'ACCOUNTING',title:'Có đơn hàng thanh toán cần kiểm tra',text:`${order.code||order.id} · ${order.customerName||'Khách hàng'} · đã thu ${paid.toLocaleString('vi-VN')} đ`,at,readBy:[]});
+ }
+ if(order.paymentReconciled&&!old?.paymentReconciled){
+  notices.push({...scope,id:`NT-PAY-CONFIRMED-${order.id}`,kind:'PAYMENT_CONFIRMED',role:'OWN',title:'Đã xác nhận đơn hàng thanh toán thành công',text:`${order.code||order.id} · ${order.customerName||'Khách hàng'} · ${OrderPayments.paid(order).toLocaleString('vi-VN')} đ`,at:order.paymentReconciledAt||order.updatedAt,readBy:[]});
+ }
+ return notices;
+}
+async function saveSystemNotice(c,data,notification,history=null){
+ if(data.notifications.has(notification.id))return;
+ notification={...notification,at:new Date().toISOString()};
+ await c.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE body=VALUES(body),deleted=0',['notifications',notification.id,JSON.stringify(notification)]);
+ const change={key:'notifications',id:notification.id,before:null,after:notification};
+ if(history)history.push(change);
+ else await c.execute('INSERT INTO crm_changes(request_id,actor_id,changes_json) VALUES (?,?,?)',['notice-'+crypto.randomUUID(),'SYSTEM',JSON.stringify([change])]);
+ data.notifications.set(notification.id,notification);
+}
 async function expireOffers(c,data){
  for(const [id,offer] of data.dataOffers){
   const expiry=Date.parse(String(offer.offeredAt).replace(' ','T')+'+07:00')+24*3600000;
@@ -692,6 +728,8 @@ async function expireOffers(c,data){
   await c.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE body=VALUES(body),deleted=0',['dataOffers',id,JSON.stringify(next)]);
   await c.execute('INSERT INTO crm_changes(request_id,actor_id,changes_json) VALUES (?,?,?)',['expire-'+crypto.randomUUID(),'SYSTEM',JSON.stringify([{key:'dataOffers',id,before:offer,after:next}])]);
   data.dataOffers.set(id,next);
+  const notification=expiredOfferNotice(offer,data,next.resolvedAt);
+  await saveSystemNotice(c,data,notification);
   // Ghi chu het han va tra ve dung Team, khong tu dong chia lai.
   const customer=data.customers.get(offer.customerId);
   if(customer && !customer.saleId && ![...data.dataOffers.values()].some(o=>o.id!==id&&o.customerId===offer.customerId&&o.status==='PENDING')){
@@ -779,6 +817,7 @@ async function distributeAutomatic(c, data = null) {
  let globalConfig=saleConfigs.$||{id:'ROUND-1',enabledSaleIds:globalRecipients.map(p=>p.id),weights:globalWeights};
  let roundsChanged=false;
  const put = async (key,id,value) => {
+  if(key==='notifications')value={...value,at:new Date().toISOString()};
   history.push({key,id,before:data[key].get(id) || null,after:value});
   await project(c,key,id,value);
   await c.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE body=VALUES(body),deleted=0',[key,id,JSON.stringify(value)]);
@@ -817,7 +856,7 @@ async function distributeAutomatic(c, data = null) {
    if(!direct&&!managerDirect){const id='OFR-'+crypto.randomUUID();await put('dataOffers',id,{id,customerId:row.id,saleId:recipient.id,leaderId:assignedLeaderId,teamId:assignedTeamId,offeredAt:at,status:'PENDING',resolvedAt:'',source:'AUTO'});}
    if(direct){const id='TSK-'+crypto.randomUUID();const dueAt=new Date(Date.parse(at.replace(' ','T')+'+07:00')+(Number(settings.slaMinutes)||30)*60000).toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19);await put('tasks',id,{id,customerId:row.id,customerName:row.name,ownerId:recipient.id,leaderId:assignedLeaderId,teamId:assignedTeamId,type:'Lien he data moi',createdAt:at,dueAt,slaBased:true,status:'OPEN',priority:'HIGH'});}
    const id='ASN-'+crypto.randomUUID();await put('assignmentHistory',id,{id,customerId:row.id,fromSaleId:null,fromLeaderId:null,toSaleId:next.saleId,toLeaderId:assignedLeaderId,toLeaderName:assignedLeaderId?members.find(p=>p.id===assignedLeaderId)?.name||'':'',toSaleName:direct||managerDirect?recipient.name:'',offeredSaleId:direct||managerDirect?null:recipient.id,managerId:assignedManagerId,teamId:assignedTeamId,actorId:'SYSTEM',actor:'He thong',source:'AUTO',reason:next.note,at});
-   const notificationId='NT-'+crypto.randomUUID();await put('notifications',notificationId,{id:notificationId,role:managerDirect?'MANAGER':'OWN',saleId:managerDirect?null:recipient.id,managerId:assignedManagerId,leaderId:assignedLeaderId,teamId:assignedTeamId,title:'Data moi duoc phan',text:row.name,at,readBy:[]});
+   const notificationId='NT-'+crypto.randomUUID();await put('notifications',notificationId,{id:notificationId,kind:'DATA_ARRIVAL',role:managerDirect?'MANAGER':'OWN',saleId:managerDirect?null:recipient.id,managerId:assignedManagerId,leaderId:assignedLeaderId,teamId:assignedTeamId,title:'Data moi duoc phan',text:row.name,at,readBy:[]});
    count++;
    continue;
   }
@@ -862,7 +901,7 @@ async function distributeAutomatic(c, data = null) {
   const id='ASN-'+crypto.randomUUID();
   await put('assignmentHistory',id,{id,customerId:row.id,fromSaleId:null,fromLeaderId:null,toSaleId:next.saleId,toLeaderId:assignedLeaderId,toLeaderName:leader.name,toSaleName:direct?leader.name:managerDirect?recipient.name:'',offeredSaleId:direct||managerDirect?null:recipient?.id||null,managerId:leader.directManagerBranch?leader.id:managerDirect?recipient.id:null,teamId:assignedTeamId,actorId:'SYSTEM',actor:'H\u1ec7 th\u1ed1ng',source:'AUTO',reason:next.note,at});
   const notificationId='NT-'+crypto.randomUUID();
-  await put('notifications',notificationId,{id:notificationId,role:managerDirect?'MANAGER':recipient?'OWN':'LEADER',saleId:managerDirect?null:recipient?.id||null,managerId:leader.directManagerBranch?leader.id:managerDirect?recipient.id:null,leaderId:assignedLeaderId,teamId:assignedTeamId,title:recipient?'Data m\u1edbi \u0111\u01b0\u1ee3c ph\u00e2n':'Kh\u00e1ch m\u1edbi trong Team',text:row.name,at,readBy:[]});
+  await put('notifications',notificationId,{id:notificationId,kind:'DATA_ARRIVAL',role:managerDirect?'MANAGER':recipient?'OWN':'LEADER',saleId:managerDirect?null:recipient?.id||null,managerId:leader.directManagerBranch?leader.id:managerDirect?recipient.id:null,leaderId:assignedLeaderId,teamId:assignedTeamId,title:recipient?'Data m\u1edbi \u0111\u01b0\u1ee3c ph\u00e2n':'Kh\u00e1ch m\u1edbi trong Team',text:row.name,at,readBy:[]});
   count++;
  }
  if (count || roundsChanged) {
@@ -1099,6 +1138,12 @@ async function writeLocked(user,requestId,changes,options={}){
    await project(c,key,id,value);
    await c.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE body=VALUES(body),deleted=VALUES(deleted)',[key,id,JSON.stringify(value===null?data[key].get(id)||{}:value),value===null?1:0]);
   }
+  for(const change of changes.filter(item=>item.key==='customers'&&item.value&&item.value.createdVia!=='ORDER'&&!data.customers.has(item.id))){
+   await saveSystemNotice(c,data,dataArrivalNotice(change.value),history);
+  }
+  for(const change of changes.filter(item=>item.key==='orders')){
+   for(const notice of orderNotices(data.orders.get(change.id),change.value))await saveSystemNotice(c,data,notice,history);
+  }
   await c.execute('INSERT INTO crm_changes(request_id,actor_id,changes_json) VALUES (?,?,?)',[requestId,user.id,JSON.stringify(history)]);
   // Chỉ quét lại DB + chia data khi thật sự có khách đang chờ chia. Lượt lưu thường (đổi trạng thái,
   // sửa đơn, cấu hình...) commit và nhả khóa ghi chung ngay: 20 người lưu cùng lúc không còn phải chờ
@@ -1132,4 +1177,4 @@ async function readAuditPage(user, page=1, limit=50) {
  const result = await read(user,{passive:true,full:true}); const all=result.state.audit||[]; const safePage=Math.max(1,Number(page)||1), safeLimit=Math.min(200,Math.max(1,Number(limit)||50));
  return {items:all.slice((safePage-1)*safeLimit,safePage*safeLimit),page:safePage,limit:safeLimit,total:all.length,hasMore:all.length>safePage*safeLimit};
 }
-module.exports={mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};
+module.exports={dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};

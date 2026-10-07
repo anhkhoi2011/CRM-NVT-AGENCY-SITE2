@@ -227,12 +227,16 @@
     ensureHrmMenu(role);
     document.documentElement.classList.toggle('role-hrm',role==='HRM');
     document.documentElement.classList.toggle('role-accounting',isAccountant);
-    if(!q('#accountingWorkspaceStyles')){const style=document.createElement('style');style.id='accountingWorkspaceStyles';style.textContent='.role-accounting .nav-group:not(#accountingNavGroup),.role-accounting .nav-link[data-tab],.role-accounting section.tab-section:not(#tab-accounting){display:none!important}.role-accounting #accountingNavGroup{display:block!important}';document.head.appendChild(style);}
+    if(!q('#accountingWorkspaceStyles')){const style=document.createElement('style');style.id='accountingWorkspaceStyles';style.textContent='.role-accounting .nav-group:not(#accountingNavGroup),.role-accounting .nav-link[data-tab]:not([data-tab="tab-notifications"]),.role-accounting section.tab-section:not(#tab-accounting):not(#tab-notifications){display:none!important}.role-accounting #accountingNavGroup{display:block!important}';document.head.appendChild(style);}
     const accountingGroup=q('#accountingNavGroup');
     if(accountingGroup){
       accountingGroup.hidden=!canAccount;
       accountingGroup.setAttribute('aria-hidden',String(!canAccount));
       accountingGroup.style.setProperty('display',canAccount?'':'none','important');
+      if(isAccountant&&!q('#accountingNoticeLink')){
+        const button=document.createElement('button');button.id='accountingNoticeLink';button.className='nav-link';button.type='button';button.dataset.tab='tab-notifications';button.textContent='Thông báo';button.onclick=()=>switchTab('tab-notifications');accountingGroup.appendChild(button);
+      }
+      if(q('#accountingNoticeLink'))q('#accountingNoticeLink').hidden=!isAccountant;
     }
 
     const restrictedOperations=['SALE','LEADER','MANAGER'].includes(role);
@@ -306,7 +310,7 @@
     });
 
     const active=q('section.active[id^="tab-"]')?.id?.replace('tab-','');
-    if(isAccountant&&active!=='accounting')renders.switchTab('tab-accounting');
+    if(isAccountant&&!['accounting','notifications'].includes(active))renders.switchTab('tab-accounting');
     else if(!isAdmin&&!isAccountant&&restrictedAdminTabs.has(active)) renders.switchTab('tab-customers');
 
     // Admin xem tong quan data theo pham vi; Sale xem rieng data dang cho nhan.
@@ -2002,21 +2006,33 @@
     tab.innerHTML=`<div class='user-log-heading'><div><h1>User log</h1><p>Theo dõi phiên đăng nhập, IP và màn hình đang mở của toàn bộ nhân sự.</p></div><span id='userActivityStatus' class='chip'>${snapshot?`Cập nhật ${esc(userActivityTime(snapshot.generatedAt))}`:'Đang tải dữ liệu...'}</span></div><div class='user-log-summary'><div class='user-log-kpi'><small>Đang trực tuyến</small><b>${online}</b><span>Hoạt động trong 2 phút gần nhất</span></div><div class='user-log-kpi'><small>Tổng tài khoản</small><b>${users.length}</b><span>Tài khoản đang hoạt động trong CRM</span></div><div class='user-log-kpi'><small>Đăng nhập gần nhất</small><b style='font-size:14px;line-height:1.35'>${esc(lastLogin?.name||'Chưa ghi nhận')}</b><span>${esc(userActivityTime(lastLogin?.at))}</span></div></div><section class='table-container'><div class='user-log-table-title'><div><b>Trạng thái nhân sự</b><small>Danh sách hiển thị trạng thái thực tế từ phiên máy chủ.</small></div><button id='userActivityReload' class='btn-action btn-secondary' type='button'>Làm mới</button></div><div class='table-responsive'><table class='modern-table user-log-table'><thead><tr><th>NHÂN SỰ</th><th>VAI TRÒ</th><th>TRẠNG THÁI</th><th>ĐANG LÀM GÌ</th><th>IP</th><th>HOẠT ĐỘNG GẦN NHẤT</th></tr></thead><tbody>${people}</tbody></table></div></section><section class='table-container' style='margin-top:16px'><div class='user-log-table-title'><div><b>Lịch sử hoạt động</b><small>Ghi nhận bởi server: đăng nhập, đăng xuất và màn hình được mở.</small></div><span class='chip'>${events.length} sự kiện</span></div><div class='table-responsive'><table class='modern-table user-log-table'><thead><tr><th>THỜI GIAN</th><th>NHÂN SỰ</th><th>VAI TRÒ</th><th>IP</th><th>SỰ KIỆN</th><th>CHI TIẾT</th></tr></thead><tbody>${history}</tbody></table></div></section>`;
     q('#userActivityReload')?.addEventListener('click',()=>loadUserActivity(true));
   }
-  const noticeFeed=q('#tab-notifications .pill-tab-group')?.parentElement?.nextElementSibling;
-  const noticeTemplate=noticeFeed?.firstElementChild?.cloneNode(true);
-  const noticeDropdownBody=q('#notificationDropdown')?.children[1],noticeDropdownTemplate=noticeDropdownBody?.firstElementChild?.cloneNode(true);
-  const noticeKind=n=>/RENT|EXPIR|THUÊ/i.test(n.type||n.title)?2:/PAY|ORDER|THANH TOÁN/i.test(n.type||n.title)?1:/DATA|WEBHOOK/i.test(n.type||n.title)?3:4;
+  const noticeColors={DATA_ARRIVAL:'#2563eb',PAYMENT_REVIEW:'#d97706',PAYMENT_CONFIRMED:'#059669',DATA_UNRECEIVED_24H:'#dc2626'};
+  const noticeIcons={DATA_ARRIVAL:'↓',PAYMENT_REVIEW:'₫',PAYMENT_CONFIRMED:'✓',DATA_UNRECEIVED_24H:'24h'};
+  const noticeKind=n=>CrmNotifications.kind(n);
+  function noticeRow(n){
+    const kind=noticeKind(n),read=(n.readBy||[]).includes(data.user.id);
+    return `<article class="notice-row ${read?'notice-read':'notice-unread'}" data-notice-id="${esc(n.id)}" style="--notice-color:${noticeColors[kind]}"><div class="notice-icon" aria-hidden="true">${noticeIcons[kind]}</div><div class="notice-content"><div class="notice-title">${read?'':'<span class="notice-dot" aria-label="Chưa đọc"></span>'}<b>${esc(n.title||CrmNotifications.labels[kind])}</b></div><p>${esc(n.text||'')}</p><div class="notice-meta"><span>${esc(CrmNotifications.labels[kind])}</span><span>·</span><time>${esc(CrmNotifications.formatTime(n.at||n.createdAt))}</time><span>· ${read?'Đã đọc':'Chưa đọc'}</span></div></div><div class="notice-actions"><button type="button" class="btn-secondary" data-notice-read="${esc(n.id)}" ${read?'disabled':''}>${read?'Đã đọc':'Đánh dấu đã đọc'}</button><button type="button" class="btn-secondary notice-delete" data-notice-delete="${esc(n.id)}" aria-label="Xóa thông báo">Xóa</button></div></article>`;
+  }
   function notices(){
-    q("#adminTelegramStudio")?.remove();
-    const unseen=data.notifications.filter(n=>!(n.readBy||[]).includes(data.user.id)).length;text('topbarNotifBadge',unseen);const badge=q('.nav-link[data-tab="tab-notifications"] .nav-badge');if(badge)badge.textContent=unseen;
-    if(noticeDropdownBody&&noticeDropdownTemplate){noticeDropdownBody.replaceChildren();data.notifications.slice(0,8).forEach(n=>{const row=noticeDropdownTemplate.cloneNode(true),content=row.children[1];content.querySelector('b').textContent=n.title;content.querySelector('small').textContent=fmtDate(n.at);content.children[1].textContent=n.text;row.onclick=()=>{switchTab('tab-notifications');closeNotificationDropdown();};noticeDropdownBody.appendChild(row);});q('#notificationDropdown').firstElementChild.querySelector('span').textContent=unseen;if(!noticeDropdownBody.children.length)noticeDropdownBody.textContent='Chưa có thông báo.';}
-    if(noticeFeed&&noticeTemplate){noticeFeed.replaceChildren();data.notifications.filter(n=>!noticeFilter||noticeKind(n)===noticeFilter).forEach(n=>{const row=noticeTemplate.cloneNode(true),content=row.firstElementChild.children[1],kind=noticeKind(n);content.querySelector('b').textContent=n.title;content.children[1].textContent=n.text;content.querySelector('.chip').textContent=['Tất cả','Tài chính','Hạn thuê','Data mới','Vận hành'][kind];row.lastElementChild.querySelector('span').textContent=fmtDate(n.at);const button=row.querySelector('button');button.removeAttribute('onclick');button.textContent=(n.readBy||[]).includes(data.user.id)?'Đã đọc':'Đánh dấu đã đọc';button.disabled=(n.readBy||[]).includes(data.user.id);button.onclick=()=>run(()=>api.readNotice(n.id));row.style.opacity=button.disabled?'.65':'1';noticeFeed.appendChild(row);});if(!noticeFeed.children.length){const empty=document.createElement('p');empty.textContent='Chưa có thông báo.';noticeFeed.appendChild(empty);}}
-    qa('#tab-notifications .pill-tab-item').forEach((b,i)=>{b.textContent=['Tất cả','Tài chính','Hạn thuê','Data mới','Vận hành'][i]+' ('+data.notifications.filter(n=>!i||noticeKind(n)===i).length+')';b.classList.toggle('active',noticeFilter===i);b.onclick=()=>{noticeFilter=i;notices();};});
-    const buttons=qa('#tab-notifications .headline-row button').filter(b=>b.id!=='refCreateNotice');buttons.forEach(b=>b.removeAttribute('onclick'));if(buttons[0]){buttons[0].id='markNotificationsReadButton';buttons[0].onclick=()=>run(()=>api.readNotifications());}if(buttons[1]){buttons[1].id='notificationSettingsButton';buttons[1].onclick=notificationSettings;buttons[1].hidden=data.user.role!=='ADMIN';buttons[1].style.display=data.user.role==='ADMIN'?'':'none';}
-    if(!q('#refCreateNotice')){const b=document.createElement('button');b.id='refCreateNotice';b.className='btn-action btn-primary';b.textContent='+ Tạo thông báo';buttons[1]?.before(b);}
-    q('#refCreateNotice').onclick=()=>announcementEditor();
-    q('#refCreateNotice').hidden=data.user.role!=='ADMIN';
-    const cards=qa('#tab-notifications .bento-card');cards.forEach((c,i)=>{const value=c.querySelector('[style*="font-size: 28px"], [style*="font-size: 26px"], [style*="font-size: 32px"]');if(value)value.textContent=[data.notifications.length,data.notifications.filter(n=>noticeKind(n)===2).length,data.notifications.filter(n=>noticeKind(n)===1).length,data.notifications.filter(n=>noticeKind(n)===3).length][i]||0;if(c.children[2])c.children[2].textContent=i===0?unseen+' chưa đọc':i===1?'Thông báo hạn thuê':i===2?'Thông báo tài chính':'Thông báo nguồn data';});
+    const tab=q('#tab-notifications'),dropdown=q('#notificationDropdown');
+    const all=CrmNotifications.list(data.notifications,data.user.id),unseen=all.filter(n=>!(n.readBy||[]).includes(data.user.id)).length;
+    text('topbarNotifBadge',unseen);const badge=q('.nav-link[data-tab="tab-notifications"] .nav-badge');if(badge)badge.textContent=unseen;
+    if(tab){
+      q('#noticeCategories').innerHTML=Object.entries(CrmNotifications.labels).map(([kind,label])=>{const items=all.filter(n=>noticeKind(n)===kind),unread=items.filter(n=>!(n.readBy||[]).includes(data.user.id)).length;return `<button type="button" class="notice-category ${noticeFilter===kind?'active':''}" data-notice-filter="${kind}" aria-pressed="${noticeFilter===kind}" style="--notice-color:${noticeColors[kind]}"><strong>${esc(label)}</strong><b>${items.length}</b><small>${unread} chưa đọc</small></button>`;}).join('');
+      const items=all.filter(n=>!noticeFilter||noticeKind(n)===noticeFilter);
+      q('#noticeFeed').innerHTML=items.map(noticeRow).join('')||'<div class="notice-empty">Chưa có thông báo trong mục này.</div>';
+      text('noticeListCount',`${items.length} thông báo · Mới nhất ở trên`);
+      const readAll=q('#markNotificationsReadButton');readAll.disabled=!unseen;readAll.onclick=()=>run(()=>api.readNotifications());
+      const allButton=q('#noticeAllFilter');allButton.textContent=`Tất cả (${all.length})`;allButton.classList.toggle('btn-primary',!noticeFilter);allButton.onclick=()=>{noticeFilter=0;notices();};
+      qa('[data-notice-filter]').forEach(button=>button.onclick=()=>{noticeFilter=button.dataset.noticeFilter;notices();});
+    }
+    if(dropdown){
+      dropdown.innerHTML=`<div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)"><b>Thông báo <span class="chip">${unseen} chưa đọc</span></b><button type="button" id="noticeDropdownReadAll" class="btn-secondary" ${unseen?'':'disabled'}>Đọc tất cả</button></div><div class="notice-preview" style="max-height:420px;overflow-y:auto">${all.slice(0,8).map(noticeRow).join('')||'<div class="notice-empty">Chưa có thông báo.</div>'}</div><div style="padding:12px;text-align:center;border-top:1px solid var(--border)"><button type="button" id="noticeOpenAll" class="btn-secondary">Xem tất cả thông báo</button></div>`;
+      q('#noticeDropdownReadAll').onclick=()=>run(()=>api.readNotifications());
+      q('#noticeOpenAll').onclick=()=>{switchTab('tab-notifications');closeNotificationDropdown();};
+    }
+    qa('[data-notice-read]').forEach(button=>button.onclick=()=>run(()=>api.readNotice(button.dataset.noticeRead)));
+    qa('[data-notice-delete]').forEach(button=>button.onclick=()=>run(()=>api.deleteNotice(button.dataset.noticeDelete)));
   }
   function webhookEditor(id){const w=data.websites.find(w=>w.id===id);const modal=editor('Cấu hình URL webhook',formField('Mã webhook (slug)',`<input id="refWebhookSlug" required maxlength="60" value="${esc(w.webhookSlug)}">`)+formField('URL công khai ghi đè (HTTPS, tùy chọn)',`<input id="refWebhookOverride" type="url" value="${esc(w.webhookUrlOverride||'')}">`)+formField('Domain công khai dùng chung',`<input id="refWebhookBase" type="url" value="${esc(data.settings.webhookPublicBase||'')}">`)+`<button type="button" id="refGenerateWebhook" class="btn-action btn-secondary">Tạo mã mới</button>`,()=>api.saveWebhook(id,{slug:q('#refWebhookSlug').value,override:q('#refWebhookOverride').value,base:q('#refWebhookBase').value}));q('#refGenerateWebhook').onclick=()=>{q('#refWebhookSlug').value=api.newWebhookSlug();q('#refWebhookOverride').value='';};}
   // Dùng form nghiệp vụ hiện có, trình bày bằng thành phần của mẫu mới.
@@ -2633,7 +2649,7 @@
     const view=id.replace(/^tab-/,'');
     const role=data.user.actualRole||data.user.role;
     const alias={data:role==='LEADER'?'pool':role==='SALE'?'accept':'distribution'};
-    if(role==='ACCOUNTING')return view==='accounting';
+    if(role==='ACCOUNTING')return ['accounting','notifications'].includes(view);
     if(role==='HRM')return ['team','attendance','orders','businessReport','hrProfiles'].includes(view);
     return sharedOrganizationTabs.has(view)||data.navigation.includes(alias[view]||view);
   };
@@ -3086,7 +3102,7 @@
   // Khi bat tu dong, mac dinh dung che do ty trong cho data moi.
   toggleAutoDist=enabled=>run(()=>api.distribution(enabled,enabled?'BALANCED':data.settings.assignmentMode));
   updateAssignmentMode=mode=>run(()=>api.distribution(data.leaderDistribution.enabled,mode));
-  switchTab=function(id){document.getElementById('crm-preheat-tab-style')?.remove();if(data&&(data.user.actualRole||data.user.role)==='ACCOUNTING'&&id!=='tab-accounting')return;if(data&&(data.user.actualRole||data.user.role)==='HRM'&&!tabAllowedForSnapshot(id))return;if(data){const view=id.replace('tab-',''),alias={data:data.user.role==='LEADER'?'pool':data.user.role==='SALE'?'accept':'distribution'},target=alias[view]||view;if(!sharedOrganizationTabs.has(view)&&!data.navigation.includes(target)&&!data.navigation.includes(view))return;}rememberActiveTab(id);renders.switchTab(id);if(data){if(id==='tab-customers')clearAutofilledCustomerSearch();if(id==='tab-data'&&(data.user.actualRole||data.user.role)==='SALE'){const search=q('#dataQueueSearch');if(search)search.value='';}paintTab(id,id==='tab-data');if(id==='tab-audit'){renderUserLog();loadUserActivity();}reportUserActivity(id);wireParity();}};
+  switchTab=function(id){document.getElementById('crm-preheat-tab-style')?.remove();if(data&&(data.user.actualRole||data.user.role)==='ACCOUNTING'&&!['tab-accounting','tab-notifications'].includes(id))return;if(data&&(data.user.actualRole||data.user.role)==='HRM'&&!tabAllowedForSnapshot(id))return;if(data){const view=id.replace('tab-',''),alias={data:data.user.role==='LEADER'?'pool':data.user.role==='SALE'?'accept':'distribution'},target=alias[view]||view;if(!sharedOrganizationTabs.has(view)&&!data.navigation.includes(target)&&!data.navigation.includes(view))return;}rememberActiveTab(id);renders.switchTab(id);if(data){if(id==='tab-customers')clearAutofilledCustomerSearch();if(id==='tab-data'&&(data.user.actualRole||data.user.role)==='SALE'){const search=q('#dataQueueSearch');if(search)search.value='';}paintTab(id,id==='tab-data');if(id==='tab-audit'){renderUserLog();loadUserActivity();}reportUserActivity(id);wireParity();}};
   qa('.nav-link[data-tab]').forEach(button=>button.addEventListener('click',()=>rememberActiveTab(button.dataset.tab),true));
   filterTeamPeriod=(period,button)=>{q('#teamStartDate').value=fromDay(parseInt(period)||30);q('#teamEndDate').value=data.today;if(button){qa('.team-period-btn').forEach(b=>b.className='btn-secondary team-period-btn');button.className='btn-primary team-period-btn';}updateTeamDateLabel();};
   updateTeamDateLabel=()=>text('teamDateRangeLabel',fmtDate(q('#teamStartDate').value)+' - '+fmtDate(q('#teamEndDate').value));

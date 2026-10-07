@@ -223,6 +223,10 @@ async function persistWebhook(record) {
         website ? `Data từ ${website.sourceUrl || website.domain}` : 'Data landing page chưa gắn nguồn',
         JSON.stringify({ __crmMeta: meta, __crmFields: {} }), record.receivedAt]);
     }
+    if(record.status==='NEW'&&!replay){
+      const notification={id:`NT-DATA-${eventId}`,kind:'DATA_ARRIVAL',role:'ADMIN',customerId,title:'Data mới về',text:`${record.customer.name} · ${website?.name||'Landing Page'}`,at:new Date().toISOString(),readBy:[]};
+      await connection.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE id=id',['notifications',notification.id,JSON.stringify(notification)]);
+    }
     if (record.status === 'NEW' && !replay) await crmData.distributeAutomatic(connection);
     await connection.commit();
     return { eventId, customerId: record.status === 'NEW' ? customerId : null, duplicate: replay, replay, source: sourceSnapshot };

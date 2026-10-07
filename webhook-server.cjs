@@ -43,7 +43,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261005-order-contact-columns-27';
+const BUILD_VERSION = '20261007-notifications-29';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -366,6 +366,10 @@ function seedDemoWorkspace() {
   addOnce(demoState.careGroups, { id: 'DEMO-CARE-PREMIUM', name: 'Khach Premium', fieldId: 'customerClass', values: ['Premium'], color: '#ca8a04' });
   addOnce(demoState.careGroups, { id: 'DEMO-CARE-WHALE', name: 'Khach Whale', fieldId: 'customerClass', values: ['Whale'], color: '#0f766e' });
   addOnce(demoState.notifications, { id: 'DEMO-NOTICE-1', title: 'Co data moi can xu ly', text: 'Hai khach demo dang cho nhan va phan cong.', role: 'ALL', at: '2026-09-17 08:15', readBy: [] });
+  const demoNoticeAt=new Date().toISOString();
+  addOnce(demoState.notifications,{id:'DEMO-NOTICE-REVIEW',kind:'PAYMENT_REVIEW',role:'ACCOUNTING',title:'Có đơn hàng thanh toán cần kiểm tra',text:'Ví dụ demo: đơn đã có bill chuyển khoản, chờ Kế toán kiểm tra.',at:demoNoticeAt,readBy:[]});
+  addOnce(demoState.notifications,{id:'DEMO-NOTICE-CONFIRMED',kind:'PAYMENT_CONFIRMED',role:'OWN',saleId:'demo-sale',leaderId:'demo-leader',title:'Đã xác nhận đơn hàng thanh toán thành công',text:'Ví dụ demo: Kế toán đã xác nhận giao dịch khớp với bill.',at:demoNoticeAt,readBy:[]});
+  addOnce(demoState.notifications,{id:'DEMO-NOTICE-24H',kind:'DATA_UNRECEIVED_24H',role:'OWN',saleId:'demo-sale',leaderId:'demo-leader',title:'Data Sale không nhận trong 24 giờ',text:'Ví dụ demo: data quá hạn nhận, chờ Leader phân lại.',at:demoNoticeAt,readBy:[]});
   addOnce(demoState.attendance, { id: 'DEMO-ATT-1', accountId: 'demo-sale', date: '2026-09-17', checkInAt: '2026-09-17 08:02', status: 'PRESENT', ip: '127.0.0.1' });
   addOnce(demoState.attendance, { id: 'DEMO-ATT-2', accountId: 'demo-leader', date: '2026-09-17', checkInAt: '2026-09-17 08:05', status: 'PRESENT', ip: '127.0.0.1' });
   addOnce(demoState.tasks, { id: 'DEMO-TASK-1', customerId: 'DEMO-CUS-4', saleId: 'demo-sale-3', leaderId: 'demo-leader', teamId: 'DEMO', title: 'Goi lai khach Whale', status: 'OPEN', dueAt: '2026-09-18 09:00', createdAt: '2026-09-17 08:30' });
@@ -406,6 +410,8 @@ function expireDemoOffers() {
   for(const offer of demoState.dataOffers){
     if(offer.status!=='PENDING'||Date.parse(String(offer.offeredAt).replace(' ','T')+'+07:00')+24*3600000>now)continue;
     offer.status='EXPIRED';offer.resolvedAt=at;
+    const notice=crmData.expiredOfferNotice(offer,demoData(),at);
+    if(!demoState.notifications.some(item=>item.id===notice.id))demoState.notifications.unshift(notice);
     const customer=demoState.customers.find(c=>c.id===offer.customerId);
     if(customer&&!customer.saleId&&!demoState.dataOffers.some(o=>o.customerId===customer.id&&o.status==='PENDING')){
       customer.saleAcceptedAt=null;customer.updatedAt=at;
@@ -472,7 +478,7 @@ async function handleDemoApi(request, response, pathname) {
   if(pathname==='/api/customers/manual'&&request.method==='POST'){
     try{
       const body=await readDbBody(request),customer=manualCustomerRecord(user,{accounts:demoState.members,customers:demoState.customers,websites:demoState.websites},{...body,request});
-      if(!demoState.customers.some(item=>item.id===customer.id))demoState.customers.unshift(customer);
+      if(!demoState.customers.some(item=>item.id===customer.id)){demoState.customers.unshift(customer);demoState.notifications.unshift(crmData.dataArrivalNotice(customer));}
       return dbJson(request,response,200,{...demoPayload(user),ok:true,customerId:customer.id});
     }catch(error){return dbJson(request,response,error.status||400,{error:error.message});}
   }
@@ -494,6 +500,14 @@ async function handleDemoApi(request, response, pathname) {
         crmData.validate(key,value,id);crmData.authorize(user,key,old,value,demoData(next));
         if(crmData.OBJECTS.includes(key)){next[key]=(user.role==='MANAGER'&&['settings','saleDistributionByLeader'].includes(key)||user.role==='ACCOUNTING'&&key==='settings')?{...next[key],...value}:value;}
         else{next[key]=(next[key]||[]).filter(r=>r.id!==id);if(value)next[key].push(value);}
+      }
+      for(const change of changes.filter(item=>item.key==='customers'&&item.value&&item.value.createdVia!=='ORDER'&&!original.customers.has(item.id))){
+        const notice=crmData.dataArrivalNotice(change.value);if(!next.notifications.some(item=>item.id===notice.id))next.notifications.unshift(notice);
+      }
+      for(const change of changes.filter(item=>item.key==='orders')){
+        for(const notice of crmData.orderNotices(original.orders.get(change.id),change.value)){
+          if(!next.notifications.some(item=>item.id===notice.id))next.notifications.unshift(notice);
+        }
       }
       Object.assign(demoState,next);
     }catch(e){return dbJson(request,response,e.status||400,{error:e.message});}
@@ -1487,7 +1501,7 @@ async function serveStatic(request, response, urlPathname) {
     }
     return;
   }
-  if (!['/','/index.html','/crm.js','/crm.css','/crm-modern.css','/crm-boot.css','/logo.jpg','/login-background.jpg','/customer-journey.svg','/care-ui.js','/crm-runtime.html','/crm-runtime-api.js','/reference-view.js','/reference-crm.js','/order-payments.js','/hr-profiles.js','/customer-save-queue.js','/support-chat-widget.js','/nvt-mobile-auth.css','/team-tree-hierarchy.css','/commission_tree_demo.html','/commission-apex-mindmap.svg','/assets/livechat-employee.png'].includes(decoded)) return sendJson(response,404,{error:'Không tìm thấy tài nguyên'});
+  if (!['/','/index.html','/crm.js','/crm.css','/crm-modern.css','/crm-boot.css','/logo.jpg','/login-background.jpg','/customer-journey.svg','/care-ui.js','/crm-runtime.html','/crm-runtime-api.js','/reference-view.js','/reference-crm.js','/crm-notifications.js','/order-payments.js','/hr-profiles.js','/customer-save-queue.js','/support-chat-widget.js','/nvt-mobile-auth.css','/team-tree-hierarchy.css','/commission_tree_demo.html','/commission-apex-mindmap.svg','/assets/livechat-employee.png'].includes(decoded)) return sendJson(response,404,{error:'Không tìm thấy tài nguyên'});
 
   let relative = decoded === '/' ? '/index.html' : decoded;
   const absolute = path.resolve(REPO_ROOT, `.${path.posix.normalize(relative)}`);

@@ -259,7 +259,7 @@ const NAVIGATION = {
     ['Cá nhân', [['attendance', 'Điểm danh', '✓'], ['notifications', 'Thông báo', '●']]]
   ],
   ACCOUNTING: [
-    ['Kế toán & Hoa hồng', [['accounting', 'Kế toán & Hoa hồng', '₫']]]
+    ['Kế toán & Hoa hồng', [['accounting', 'Kế toán & Hoa hồng', '₫'], ['notifications', 'Thông báo', '●']]]
   ],
   LEADER: [
     ['Vận hành', [['dashboard', 'Tổng quan đội', '◫'], ['customers', 'Khách hàng Team', '♙'], ['pool', 'Chia data cho Sale', '↔']] ],
@@ -2899,7 +2899,7 @@ function integrationsView() {
 }
 
 function visibleNotifications() {
-  return state.notifications.filter(item => currentAccount.role === 'ADMIN' || item.role === 'ALL');
+  return state.notifications.filter(item => !(item.deletedBy || []).includes(currentAccount.id));
 }
 
 function notificationsView() {
@@ -2917,7 +2917,7 @@ function newAnnouncementModal() {
     const title = cleanText($('#announcementTitle').value.trim(), '', 200);
     const text = cleanText($('#announcementText').value.trim(), '', 1000);
     if (!title || !text) { toast('Nhập đủ tiêu đề và nội dung'); return; }
-    state.notifications.unshift({ id: `NT-${Date.now()}`, role: 'ALL', title, text, at: stamp(), readBy: [] });
+    state.notifications.unshift({ id: `NT-${Date.now()}`, role: 'ALL', title, text, at: new Date().toISOString(), readBy: [] });
     audit('CREATE_ANNOUNCEMENT', 'NOTIFICATIONS', title);
     saveState(); closeModal(); render(); toast('Đã gửi thông báo tới Leader và Sale');
   };
@@ -3267,7 +3267,7 @@ function visibleNavigation() {
       : null;
   return groups.map(([name, items]) => [name, items.filter(item => !allowed || allowed.has(item[0]))]).filter(([, items]) => items.length);
 }
-function allowedViews() { if(effectivePermissionRole()==='HRM')return ['hrProfiles','team','attendance','orders','businessReport','profile']; if(effectivePermissionRole()==='ACCOUNTING')return ['accounting','profile'];return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
+function allowedViews() { if(effectivePermissionRole()==='HRM')return ['hrProfiles','team','attendance','orders','businessReport','profile']; if(effectivePermissionRole()==='ACCOUNTING')return ['accounting','notifications','profile'];return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
 function viewLabel(view) { return visibleNavigation().flatMap(([, items]) => items).find(item => item[0] === view)?.[1] || view; }
 
 function newCustomerCount() {
@@ -3569,7 +3569,7 @@ async function updateCustomer(id) {
   customer.updatedAt = stamp();
   if (oldName !== nextName) audit('UPDATE_CUSTOMER_NAME', customer.id, `${oldName} -> ${nextName}`);
   if (oldStatus !== nextStatus) audit('UPDATE_CUSTOMER_STATUS', customer.id, `${STATUS_META[oldStatus]?.label || oldStatus} -> ${STATUS_META[nextStatus]?.label || nextStatus}`);
-  if (state.settings.notifyMilestones && ['PAID', 'WON'].includes(nextStatus)) state.notifications.unshift({ id: `NT-${Date.now()}`, role: 'ADMIN', title: 'Khách đạt milestone', text: `${customer.name} chuyển sang ${STATUS_META[nextStatus].label}.`, at: stamp(), readBy: [] });
+  if (state.settings.notifyMilestones && ['PAID', 'WON'].includes(nextStatus)) state.notifications.unshift({ id: `NT-${Date.now()}`, role: 'ADMIN', title: 'Khách đạt milestone', text: `${customer.name} chuyển sang ${STATUS_META[nextStatus].label}.`, at: new Date().toISOString(), readBy: [] });
   if (!await persistCustomer(customer)) { toast('Không thể lưu khách hàng lên MySQL'); return; }
   saveState(); render(); openCustomerDrawer(id); toast(oldName !== nextName && oldStatus !== nextStatus ? 'Đã cập nhật tên và trạng thái khách hàng' : oldName !== nextName ? 'Đã cập nhật tên khách hàng' : 'Đã cập nhật trạng thái khách hàng');
 }
@@ -4280,7 +4280,7 @@ function handleDuplicateSubmission(existing, incoming, context = {}) {
   existing.lastIntakeAt = event.at;
   existing.lastIntakeType = 'RESUBMISSION';
   state.resubmissions.unshift(event);
-  if (oldSale) state.notifications.unshift({ id: `NT-DUP-${Date.now()}-${existing.id}`, role: 'OWN', saleId: oldSale.id, title: registeredAccount ? 'DATA TRÙNG - DATA đã đăng ký TK' : 'Khách cũ điền lại form', text: `${existing.name} · ${existing.phone} · tiếp tục do bạn phụ trách`, at: stamp(), readBy: [] });
+  if (oldSale) state.notifications.unshift({ id: `NT-DUP-${Date.now()}-${existing.id}`, role: 'OWN', saleId: oldSale.id, title: registeredAccount ? 'DATA TRÙNG - DATA đã đăng ký TK' : 'Khách cũ điền lại form', text: `${existing.name} · ${existing.phone} · tiếp tục do bạn phụ trách`, at: new Date().toISOString(), readBy: [] });
   audit('DUPLICATE_SUBMISSION', existing.id, `${registeredAccount ? 'DATA đã đăng ký TK' : 'Khách điền lại'} · ${oldSale ? `giữ ${oldSale.name}` : 'chưa có Sale cũ'}`);
   const ownerCopy = oldSale ? ` · giữ Sale ${oldSale.name}` : ' · chưa có Sale cũ còn hoạt động';
   return { duplicate: true, customer: existing, message: `${registeredAccount ? 'DATA TRÙNG - DATA đã đăng ký TK' : 'DATA TRÙNG'}${ownerCopy}` };
@@ -4671,7 +4671,7 @@ function offerOrAssignSale(customer, target, reason, source, previous, direct = 
     // Sale tự tạo khách thì coi như đã nhận ngay; đường gán thẳng khác vẫn để sale bấm "Nhận data" trong bảng.
     if (target.teamLeaderRecipient || target.id === currentAccount?.saleId) customer.saleAcceptedAt = stamp();
     createInitialTask(customer);
-    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, title: 'Bạn vừa nhận data mới', text: `${customer.name} · ${customer.phone}`, at: stamp(), readBy: [] });
+    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, title: 'Bạn vừa nhận data mới', text: `${customer.name} · ${customer.phone}`, at: new Date().toISOString(), readBy: [] });
     queueEmailNotification(
       [target.email, staffEmail(target.leaderId)],
       `Data mới được giao - ${customer.name}`,
@@ -4695,7 +4695,7 @@ function offerOrAssignSale(customer, target, reason, source, previous, direct = 
   customer.teamId = target.teamId;
   customer.managerId = target.managerId || null;
   state.dataOffers.unshift({ id: `OFR-${Date.now()}-${customer.id}`, customerId: customer.id, saleId: target.id, leaderId: target.leaderId, teamId: target.teamId, offeredAt: stamp(), status: 'PENDING', resolvedAt: '', source });
-  state.notifications.unshift({ id: `NT-OFFER-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, title: 'Có data chờ bạn nhận', text: `${customer.name} · nhận trong ${hours} giờ`, at: stamp(), readBy: [] });
+  state.notifications.unshift({ id: `NT-OFFER-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, title: 'Có data chờ bạn nhận', text: `${customer.name} · nhận trong ${hours} giờ`, at: new Date().toISOString(), readBy: [] });
   queueEmailNotification(
     [target.email, staffEmail(target.leaderId)],
     `Data mới chờ Sale nhận - ${customer.name}`,
@@ -4803,7 +4803,7 @@ function applyCustomerAssignment(customer, target, reason, source = 'MANUAL', di
     customer.saleAcceptedAt = stamp();
     customer.updatedAt = stamp();
     customer.note = reason;
-    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, managerId: target.id, leaderId: target.leaderId, teamId: target.teamId, title: 'Khách mới trong tuyến', text: `${customer.name} · ${customerLandingName(customer)}`, at: stamp(), readBy: [] });
+    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, managerId: target.id, leaderId: target.leaderId, teamId: target.teamId, title: 'Khách mới trong tuyến', text: `${customer.name} · ${customerLandingName(customer)}`, at: new Date().toISOString(), readBy: [] });
     state.notes.unshift({ id: `NOTE-${Date.now()}-${customer.id}-${target.id}`, customerId: customer.id, authorId: currentAccount?.id || 'SYSTEM', author: currentAccount?.name || 'Hệ thống phân data', role: currentAccount?.role || 'SYSTEM', text: `${reason} · ${target.name}`, at: stamp() });
     recordAssignmentChange(customer, previous, reason, source);
     return true;
@@ -4815,7 +4815,7 @@ function applyCustomerAssignment(customer, target, reason, source = 'MANUAL', di
     customer.managerId = target.managerId || null;
     customer.saleAcceptedAt = stamp();
     createInitialTask(customer);
-    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, leaderId: target.id, teamId: target.teamId, title: 'Khách mới trong Team', text: `${customer.name} · ${customerLandingName(customer)}`, at: stamp(), readBy: [] });
+    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'OWN', saleId: target.id, leaderId: target.id, teamId: target.teamId, title: 'Khách mới trong Team', text: `${customer.name} · ${customerLandingName(customer)}`, at: new Date().toISOString(), readBy: [] });
     queueEmailNotification(
       [target.email],
       `Data mới được giao cho Leader - ${customer.name}`,
@@ -4991,7 +4991,7 @@ function reassignCustomer(id, targetId) {
     customer.saleId = null;
     customer.leaderId = target.id;
     customer.teamId = target.teamId;
-    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'LEADER', leaderId: target.id, teamId: target.teamId, title: 'Khách được chuyển vào Team', text: `${customer.name} vừa được giao cho ${target.name}.`, at: stamp(), readBy: [] });
+    state.notifications.unshift({ id: `NT-${Date.now()}-${customer.id}`, role: 'LEADER', leaderId: target.id, teamId: target.teamId, title: 'Khách được chuyển vào Team', text: `${customer.name} vừa được giao cho ${target.name}.`, at: new Date().toISOString(), readBy: [] });
   } else {
     closeOpenCustomerTasks(customer, 'TRANSFERRED_PENDING_ACCEPT');
     offerOrAssignSale(customer, target, `Chuyển phụ trách cho ${target.name}`, 'MANUAL', previous);

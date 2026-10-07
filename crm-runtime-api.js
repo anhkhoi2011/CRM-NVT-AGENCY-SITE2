@@ -708,6 +708,7 @@
       },'announcement');
     },
     async readNotice(id) {return persist(()=>{const item=visibleNotifications().find(n=>n.id===id);if(!item)throw Error('Không tìm thấy thông báo.');item.readBy=Array.from(new Set([...(item.readBy||[]),currentAccount.id]));return {ok:true};},'read-notice:'+id);},
+    async deleteNotice(id) {return persist(()=>{const item=visibleNotifications().find(n=>n.id===id);if(!item)throw Error('Không tìm thấy thông báo.');item.deletedBy=Array.from(new Set([...(item.deletedBy||[]),currentAccount.id]));return {ok:true};},'delete-notice:'+id);},
     async telegramBroadcast(input) {
       requireRole(['ADMIN']);
       const target=String(input.target||'ALL').toUpperCase();
@@ -733,7 +734,7 @@
       },'webhook:'+id);
     },
     async settings(input) { requireRole(['ADMIN','ACCOUNTING']);if(permissionRole()==='ACCOUNTING'&&Object.keys(input||{}).some(key=>!['accountingLotConfig','brokeragePublishedPeriods'].includes(key)))throw Error('Kế toán chỉ được sửa cấu hình kế toán và hoa hồng.'); return persist(()=>{state.settings={...state.settings,...input};return {ok:true};},'settings'); },
-    async readNotifications() { markNotificationRead();if(!await flushServerPersistence())throw Error('Chưa lưu trạng thái đã đọc.'); },
+    async readNotifications() {return persist(()=>{visibleNotifications().forEach(item=>{item.readBy=Array.from(new Set([...(item.readBy||[]),currentAccount.id]));});return {ok:true};},'read-all-notices');},
     async distribution(enabled,mode) {
       requireRole(['ADMIN']);
       if(mode)await setAssignmentMode(mode);

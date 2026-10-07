@@ -1518,12 +1518,19 @@
     </style>
 <link rel="preload" as="script" href="reference-view.js?v=20261001-cleanup-1">
 <link rel="preload" as="script" href="customer-save-queue.js?v=20261003-offline-save-1">
-<link rel="preload" as="script" href="reference-crm.js?v=20261005-order-contact-columns-27">
+<link rel="preload" as="script" href="reference-crm.js?v=20261007-notifications-29">
 <style id="crm-startup-guard">
 body:not(.reference-ready) > .app-shell,
 body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 </style>
-<script src="order-payments.js?v=20261005-order-contact-columns-27"></script>
+<script src="order-payments.js?v=20261007-notifications-29"></script>
+
+<style id="crm-notifications-style">
+.notice-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}.notice-heading h1{margin:0}.notice-heading p{color:var(--text-muted);font-size:12px;margin:6px 0 0}
+.notice-categories{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:20px}.notice-category{cursor:pointer;text-align:left;padding:17px;border:1px solid var(--border);border-radius:12px;background:var(--bg-surface);color:var(--text-main);border-top:3px solid var(--notice-color)}.notice-category.active{outline:2px solid var(--notice-color);outline-offset:2px}.notice-category strong{display:block;font-size:12px;min-height:32px}.notice-category b{display:block;font-size:28px;margin:8px 0 3px}.notice-category small{color:var(--text-muted)}
+.notice-list-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--border)}.notice-list-header small{color:var(--text-muted)}.notice-list{padding:0 16px}.notice-row{display:flex;gap:14px;align-items:flex-start;padding:18px 0;border-bottom:1px solid var(--border-light)}.notice-row:last-child{border-bottom:0}.notice-icon{display:grid;place-items:center;flex-shrink:0;width:34px;height:34px;border-radius:9px;background:var(--bg-subtle);color:var(--notice-color);font-weight:800}.notice-content{flex:1;min-width:0}.notice-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}.notice-dot{width:7px;height:7px;border-radius:50%;background:#2563eb}.notice-content p{font-size:12px;color:var(--text-muted);line-height:1.6;margin:6px 0;overflow-wrap:anywhere;white-space:pre-wrap}.notice-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted);flex-wrap:wrap}.notice-actions{display:flex;gap:6px;flex-shrink:0}.notice-actions button{font-size:11px;padding:6px 9px;border-radius:7px}.notice-actions .notice-delete{color:#dc2626}.notice-read .notice-title{font-weight:500}.notice-empty{padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px}.notice-preview .notice-row{padding:14px 16px;flex-wrap:wrap}.notice-preview .notice-actions{margin-left:48px}.notice-preview .notice-content p{margin:4px 0}.notice-preview .notice-title{font-size:12px}
+@media(max-width:850px){.notice-categories{grid-template-columns:repeat(2,minmax(0,1fr))}.notice-row{flex-wrap:wrap}.notice-actions{margin-left:48px}}@media(max-width:600px){.notice-row .notice-content{flex:1 1 calc(100% - 48px)}.notice-row .notice-actions{margin-left:48px}}@media(max-width:480px){.notice-heading{align-items:flex-start}.notice-heading h1{font-size:20px}.notice-categories{gap:9px}.notice-category{padding:12px}.notice-list-header{align-items:flex-start}.notice-category strong{font-size:11px}}
+</style>
 </head>
 <body>
 <div id=crmBootScreen role=status aria-label="Đang tải CRM"><div class="crm-boot-skeleton" aria-hidden="true"><aside class="crm-boot-sidebar"><b>NVT AGENCY</b><i></i><i></i><i></i><i></i></aside><div class="crm-boot-topbar"><i></i></div></div><div class=crm-boot-mark><span class=crm-boot-spinner aria-hidden=true></span><span>NVT AGENCY · Đang tải dữ liệu…</span></div></div>
@@ -1559,7 +1566,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 })();
 </script>
 <!-- Ẩn lớp đăng nhập trong lúc khôi phục phiên để F5 không nhấp nháy về form login. -->
-<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261005-order-contact-columns-27" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
+<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261007-notifications-29" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
 
 
 <div class="bg-aura"></div>
@@ -1741,59 +1748,11 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
         <div style="position: relative;">
           <button class="icon-btn" id="topbarBellBtn" title="Thông báo" onclick="toggleNotificationDropdown(event)" style="position: relative;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-            <span id="topbarNotifBadge" style="position: absolute; top: -4px; right: -4px; background: #dc2626; color: white; border-radius: 10px; font-size: 9.5px; font-weight: 800; padding: 1px 5px; line-height: 1.2;">20</span>
+            <span id="topbarNotifBadge" style="position: absolute; top: -4px; right: -4px; background: #dc2626; color: white; border-radius: 10px; font-size: 9.5px; font-weight: 800; padding: 1px 5px; line-height: 1.2;">0</span>
           </button>
 
           <!-- Dropdown Thông Báo (Chuẩn 100% Ảnh 4) -->
-          <div id="notificationDropdown" style="display: none; position: absolute; top: calc(100% + 10px); right: 0; width: 380px; max-width: 90vw; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.15); z-index: 1000; overflow: hidden;">
-            <div style="padding: 14px 18px; border-bottom: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface);">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <b style="font-size: 14px; color: var(--text-main);">Thông báo</b>
-                <span style="background: #dc2626; color: #fff; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 10px;">20</span>
-              </div>
-              <button class="btn-secondary" style="padding: 3px 8px; font-size: 11px; border-radius: 6px;" onclick="markAllNotificationsRead()">Đánh dấu đã đọc</button>
-            </div>
-            <div style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column;">
-              <!-- 1. Email -->
-              <div style="padding: 14px 16px; border-bottom: 1px solid var(--border-light); display: flex; gap: 12px; background: var(--bg-subtle);">
-                <div style="width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;">✉</div>
-                <div style="flex: 1;">
-                  <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                    <b style="font-size: 12.5px; color: var(--text-main);">Cập nhật tính năng gửi Email tự động</b>
-                    <small style="font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap;">10p trước</small>
-                  </div>
-                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.4;">Hệ thống CRM đã hoàn tất cập nhật cổng gửi email SMTP tự động cho khách hàng khi đăng ký mới.</div>
-                </div>
-              </div>
-
-              <!-- 2. GPT Credit -->
-              <div style="padding: 14px 16px; border-bottom: 1px solid var(--border-light); display: flex; gap: 12px;">
-                <div style="width: 32px; height: 32px; border-radius: 8px; background: #ecfdf5; color: #059669; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;">🎁</div>
-                <div style="flex: 1;">
-                  <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                    <b style="font-size: 12.5px; color: var(--text-main);">Khuyến mại tặng thêm 20% Credit GPT</b>
-                    <small style="font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap;">2h trước</small>
-                  </div>
-                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.4;">Chương trình nạp credit AI trong tháng 9: Tặng ngay 20% giá trị nạp cho mọi tài khoản Admin/Agency.</div>
-                </div>
-              </div>
-
-              <!-- 3. Server Compensation -->
-              <div style="padding: 14px 16px; display: flex; gap: 12px;">
-                <div style="width: 32px; height: 32px; border-radius: 8px; background: #fff7ed; color: #ea580c; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;">🔧</div>
-                <div style="flex: 1;">
-                  <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                    <b style="font-size: 12.5px; color: var(--text-main);">Đền bù sự cố mạng máy chủ</b>
-                    <small style="font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap;">Hôm qua</small>
-                  </div>
-                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.4;">Máy chủ đã hoàn tất khắc phục sự cố gián đoạn đường truyền ngày hôm qua. Tặng thêm 500 CR vào tài khoản của bạn.</div>
-                </div>
-              </div>
-            </div>
-            <div style="padding: 10px; text-align: center; border-top: 1px solid var(--border-light); background: var(--bg-surface);">
-              <a href="#" onclick="switchTab('tab-notifications'); closeNotificationDropdown(); return false;" style="font-size: 12px; color: #2563eb; font-weight: 700; text-decoration: none;">Xem tất cả thông báo trong Hub →</a>
-            </div>
-          </div>
+          <div id="notificationDropdown" style="display:none;position:absolute;top:calc(100% + 10px);right:0;width:420px;max-width:90vw;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 15px 35px rgba(0,0,0,.15);z-index:1000;overflow:hidden"><div class="notice-empty">Đang tải thông báo...</div></div>
         </div>
         <div class="user-pill">
           <div class="user-avatar-initials" role="img" aria-label="NVT AGENCY">NVT</div>
@@ -3745,161 +3704,9 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 
       <!-- ══════════ [TAB 12] THÔNG BÁO (NOTIFICATION HUB BENTO LUXURY) ══════════ -->
       <section class="tab-section" id="tab-notifications">
-        <div class="headline-row">
-          <div>
-            <h1>Trung Tâm Thông Báo</h1>
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Theo dõi hoạt động giao dịch, cảnh báo hạn thuê chỉ báo và thông báo vận hành</div>
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn-action btn-secondary" onclick="alert('Đã đánh dấu tất cả thông báo là đã đọc!')">Đánh dấu đã đọc</button>
-            <button class="btn-action btn-primary" id="notificationSettingsButton" onclick="alert('Mở cấu hình kênh nhận thông báo Telegram / Webhook!')">Cài đặt thông báo</button>
-          </div>
-        </div>
-
-        <!-- Dải 4 Card KPI Thông Báo -->
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px;">
-          <div class="bento-card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; border-left: 4px solid #2563eb; box-shadow: var(--shadow-sm);">
-            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">TỔNG THÔNG BÁO</div>
-            <div style="font-size: 26px; font-weight: 900; font-family: var(--font-mono); color: var(--text-main); margin: 4px 0 2px;">0</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Cập nhật theo thời gian thực</div>
-          </div>
-
-          <div class="bento-card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; border-left: 4px solid #f59e0b; box-shadow: var(--shadow-sm);">
-            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">CẢNH BÁO QUAN TRỌNG</div>
-            <div style="font-size: 26px; font-weight: 900; font-family: var(--font-mono); color: #d97706; margin: 4px 0 2px;">0</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Hạn thuê & Chờ chia Sale</div>
-          </div>
-
-          <div class="bento-card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; border-left: 4px solid #059669; box-shadow: var(--shadow-sm);">
-            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">GIAO DỊCH TÀI CHÍNH</div>
-            <div style="font-size: 26px; font-weight: 900; font-family: var(--font-mono); color: #059669; margin: 4px 0 2px;">0</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Tổng thanh toán: <b style="color: #059669;">0 ₫</b></div>
-          </div>
-
-          <div class="bento-card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; border-left: 4px solid #0284c7; box-shadow: var(--shadow-sm);">
-            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">DATA LANDING PAGE</div>
-            <div style="font-size: 26px; font-weight: 900; font-family: var(--font-mono); color: #0284c7; margin: 4px 0 2px;">0</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Chưa có thông báo mới</div>
-          </div>
-        </div>
-
-        <!-- Danh Sách Thông Báo Dạng Feed Đa Kênh -->
-        <div class="table-container" style="padding: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;">
-            <div class="pill-tab-group">
-              <button class="pill-tab-item active">Tất cả (5)</button>
-              <button class="pill-tab-item">Tài chính (2)</button>
-              <button class="pill-tab-item">Hạn thuê (1)</button>
-              <button class="pill-tab-item">Data mới (1)</button>
-              <button class="pill-tab-item">Vận hành (1)</button>
-            </div>
-            <span style="font-size: 11.5px; color: var(--text-muted);">Tự động làm mới mỗi 30 giây</span>
-          </div>
-
-          <div style="display: flex; flex-direction: column; gap: 12px;">
-
-            <!-- Feed Item 1: Thanh toán thành công -->
-            <div style="padding: 16px 18px; background: var(--bg-subtle); border-radius: 10px; border-left: 4px solid #10b981; display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;">
-              <div style="display: flex; gap: 14px; align-items: flex-start;">
-                <div style="width: 36px; height: 36px; border-radius: 8px; background: #ecfdf5; color: #059669; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">💰</div>
-                <div>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <b style="font-size: 13.5px; color: var(--text-main);">Thanh toán đơn hàng thành công: ORD-202609-001</b>
-                    <span class="chip chip-green" style="font-size: 10px;">Tài chính</span>
-                  </div>
-                  <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5;">
-                    Khách hàng <b>Lê Hoàng Nam</b> (0912839291) đã thanh toán hoàn tất <b style="color: #059669; font-family: var(--font-mono);">28.600.000 ₫</b> cho sản phẩm <i>Khóa học RSI MA vùng phản ứng chuyên sâu</i> qua cổng VietQR tự động. Sale phụ trách: Nguyễn Thị Mai.
-                  </div>
-                </div>
-              </div>
-              <div style="text-align: right; flex-shrink: 0;">
-                <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-faint);">10/09 09:30</span>
-                <button class="btn-secondary" style="display: block; margin-top: 6px; padding: 3px 8px; font-size: 10.5px; border-radius: 5px;" onclick="switchTab('tab-orders')">Xem đơn</button>
-              </div>
-            </div>
-
-            <!-- Feed Item 2: Cảnh báo hạn thuê chỉ báo -->
-            <div style="padding: 16px 18px; background: #fffbeb; border-radius: 10px; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;">
-              <div style="display: flex; gap: 14px; align-items: flex-start;">
-                <div style="width: 36px; height: 36px; border-radius: 8px; background: #fef3c7; color: #b45309; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">⏰</div>
-                <div>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <b style="font-size: 13.5px; color: #b45309;">Cảnh báo: Khách thuê sắp đáo hạn trong 6 ngày</b>
-                    <span class="chip chip-warm" style="font-size: 10px;">Cảnh báo hạn thuê</span>
-                  </div>
-                  <div style="font-size: 12px; color: #78350f; margin-top: 4px; line-height: 1.5;">
-                    Khách hàng <b>Hoàng Minh Đức</b> (0909552233) đang sử dụng gói <i>Suite Tool Trading Pro 1M</i> sẽ hết hạn vào ngày <b>20/09/2026</b>. Sale Nguyễn Thị Mai cần liên hệ chăm sóc và kích hoạt gia hạn kịp thời để duy trì dòng tiền.
-                  </div>
-                </div>
-              </div>
-              <div style="text-align: right; flex-shrink: 0;">
-                <span style="font-size: 11px; font-family: var(--font-mono); color: #b45309; font-weight: 700;">Hôm nay 08:30</span>
-                <button class="btn-primary" style="display: block; margin-top: 6px; padding: 4px 10px; font-size: 11px; border-radius: 5px;" onclick="alert('Đã gửi thông báo nhắc nhở gia hạn đến Sale Nguyễn Thị Mai!')">Nhắc Sale</button>
-              </div>
-            </div>
-
-            <!-- Feed Item 3: Data mới tiếp nhận -->
-            <div style="padding: 16px 18px; background: var(--bg-subtle); border-radius: 10px; border-left: 4px solid #0284c7; display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;">
-              <div style="display: flex; gap: 14px; align-items: flex-start;">
-                <div style="width: 36px; height: 36px; border-radius: 8px; background: #e0f2fe; color: #0284c7; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">📥</div>
-                <div>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <b style="font-size: 13.5px; color: var(--text-main);">Tiếp nhận +2 data mới từ Webhook Landing Page</b>
-                    <span class="chip" style="background: #e0f2fe; color: #0284c7; font-size: 10px; font-weight: 700;">Landing Page</span>
-                  </div>
-                  <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5;">
-                    Nguồn <b>nvtagency.top/rsi-ma</b> vừa ghi nhận 2 khách hàng điền form đăng ký tư vấn khóa học lúc 07:52 và 07:15. Dữ liệu đã được lưu trữ tự động vào hàng chờ phân phối.
-                  </div>
-                </div>
-              </div>
-              <div style="text-align: right; flex-shrink: 0;">
-                <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-faint);">Hôm nay 07:55</span>
-                <button class="btn-secondary" style="display: block; margin-top: 6px; padding: 3px 8px; font-size: 10.5px; border-radius: 5px;" onclick="switchTab('tab-data')">Xem data</button>
-              </div>
-            </div>
-
-            <!-- Feed Item 4: Kích hoạt bản quyền chỉ báo -->
-            <div style="padding: 16px 18px; background: var(--bg-subtle); border-radius: 10px; border-left: 4px solid #8b5cf6; display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;">
-              <div style="display: flex; gap: 14px; align-items: flex-start;">
-                <div style="width: 36px; height: 36px; border-radius: 8px; background: #ede9fe; color: #7c3aed; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">🔑</div>
-                <div>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <b style="font-size: 13.5px; color: var(--text-main);">Kích hoạt bản quyền Chỉ báo Breakout VIP 3M thành công</b>
-                    <span class="chip" style="background: #ede9fe; color: #7c3aed; font-size: 10px; font-weight: 700;">Bản quyền</span>
-                  </div>
-                  <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5;">
-                    Đã cấp quyền TradingView cho khách hàng <b>Dũng Lưu</b> (0991234567) gói hợp đồng thuê 3 tháng trị giá <b style="color: #059669; font-family: var(--font-mono);">3.346.200 ₫</b>. Thời hạn sử dụng đến hết ngày 12/12/2026.
-                  </div>
-                </div>
-              </div>
-              <div style="text-align: right; flex-shrink: 0;">
-                <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-faint);">12/09 14:20</span>
-                <button class="btn-secondary" style="display: block; margin-top: 6px; padding: 3px 8px; font-size: 10.5px; border-radius: 5px;" onclick="switchTab('tab-revenue')">Xem hợp đồng</button>
-              </div>
-            </div>
-
-            <!-- Feed Item 5: Cảnh báo phân bổ nhân sự -->
-            <div style="padding: 16px 18px; background: var(--bg-subtle); border-radius: 10px; border-left: 4px solid #ef4444; display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;">
-              <div style="display: flex; gap: 14px; align-items: flex-start;">
-                <div style="width: 36px; height: 36px; border-radius: 8px; background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;">👥</div>
-                <div>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <b style="font-size: 13.5px; color: var(--text-main);">Cảnh báo vận hành: 6 khách hàng đang chờ phân Sale</b>
-                    <span class="chip chip-cold" style="font-size: 10px; color: #dc2626; border-color: #fecaca; background: #fef2f2;">Chờ xử lý</span>
-                  </div>
-                  <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5;">
-                    Hệ thống ghi nhận 6 khách hàng trong hàng chờ chưa được gán Sale phụ trách. Leader Phạm Thu Hà cần thực hiện chia đều hoặc chia lần lượt để đảm bảo gọi khách đúng thời gian cam kết.
-                  </div>
-                </div>
-              </div>
-              <div style="text-align: right; flex-shrink: 0;">
-                <span style="font-size: 11px; font-family: var(--font-mono); color: var(--text-faint);">13/09 18:00</span>
-                <button class="btn-secondary" style="display: block; margin-top: 6px; padding: 3px 8px; font-size: 10.5px; border-radius: 5px;" onclick="switchTab('tab-data')">Phân Sale ngay</button>
-              </div>
-            </div>
-
-          </div>
-        </div>
+        <div class="notice-heading"><div><h1>Thông báo</h1><p>Data và thanh toán · Mới nhất ở trên</p></div><button id="markNotificationsReadButton" type="button" class="btn-action btn-primary">Đọc tất cả</button></div>
+        <div class="notice-categories" id="noticeCategories"></div>
+        <div class="table-container"><div class="notice-list-header"><button id="noticeAllFilter" type="button" class="btn-action btn-secondary">Tất cả</button><small id="noticeListCount"></small></div><div class="notice-list" id="noticeFeed"></div></div>
       </section>
 
       <!-- ══════════ [TAB 13] USER LOG (THEO CHUẨN ẢNH 2 CỦA BẠN) ══════════ -->
@@ -4701,7 +4508,8 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 <script src="reference-view.js?v=20261001-cleanup-1"></script>
 <script src="customer-save-queue.js?v=20261003-offline-save-1"></script>
 <script src="hr-profiles.js?v=20261005-hrm-24" ></script>
-<script src="reference-crm.js?v=20261005-order-contact-columns-27"></script>
+<script src="crm-notifications.js?v=20261007-notifications-29"></script>
+<script src="reference-crm.js?v=20261007-notifications-29"></script>
 <script src="support-chat-widget.js?v=20261001-no-sse-1"></script>
 <script>
   (() => {

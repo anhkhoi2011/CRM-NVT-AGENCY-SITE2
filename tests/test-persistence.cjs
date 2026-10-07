@@ -1940,7 +1940,7 @@ test('Accountant reads and writes the four accounting collections without changi
  await assert.rejects(()=>f.api.write(actor,'acct-escalate',[{key:'settings',id:'$',base:r.versions['settings/$'],value:{...r.state.settings,dataBotToken:'tamper'}}]),e=>e.status===403);
  await f.api.write(actor,'acct-delete',[{key:'expenses',id:'acct-exp',base:r.versions['expenses/acct-exp'],value:null}]);assert.equal((await f.api.read(actor)).state.expenses.length,0);assert.equal(f.db.history.at(-1).changes_json[0].before.amount,100000);
 });
-test('Accounting runtime opens only accounting workspace and can manage expense, course and lot configuration',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`currentAccount={id:'accountant',name:'Kế toán',role:'ACCOUNTING',scope:'ALL'};state.members=[{id:'sale',name:'Sale',role:'SALE',active:true}];`,c);assert.deepEqual(Array.from(vm.runInContext('allowedViews()',c)),['accounting','profile']);const expense=await api.saveExpense({date:'2026-10-03',title:'Office',amount:1000});await api.saveCourseConfig({courseKey:'p1'});await api.saveBrokerageMetric({memberId:'sale',period:'2026-10',basicLots:2});await api.settings({accountingLotConfig:{rateApex:90000}});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('state.courseConfigs.length',c),1);assert.equal(vm.runInContext('state.brokerageMetrics[0].basicLots',c),2);await api.removeExpense(expense.id);assert.equal(vm.runInContext('state.expenses.length',c),0);await assert.rejects(()=>api.settings({dataBotToken:'tamper'}),/Kế toán/);await assert.rejects(()=>api.saveMember(null,{}),/quyền/);});
+test('Accounting runtime opens accounting and notifications and can manage expense, course and lot configuration',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`currentAccount={id:'accountant',name:'Kế toán',role:'ACCOUNTING',scope:'ALL'};state.members=[{id:'sale',name:'Sale',role:'SALE',active:true}];`,c);assert.deepEqual(Array.from(vm.runInContext('allowedViews()',c)),['accounting','notifications','profile']);const expense=await api.saveExpense({date:'2026-10-03',title:'Office',amount:1000});await api.saveCourseConfig({courseKey:'p1'});await api.saveBrokerageMetric({memberId:'sale',period:'2026-10',basicLots:2});await api.settings({accountingLotConfig:{rateApex:90000}});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('state.courseConfigs.length',c),1);assert.equal(vm.runInContext('state.brokerageMetrics[0].basicLots',c),2);await api.removeExpense(expense.id);assert.equal(vm.runInContext('state.expenses.length',c),0);await assert.rejects(()=>api.settings({dataBotToken:'tamper'}),/Kế toán/);await assert.rejects(()=>api.saveMember(null,{}),/quyền/);});
 test('Image deletion commits to SQL projection and rereads without altering receipts or original images',async()=>{const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'},payments=require('./order-payments.js');f.db.users.push({id:'sale',name:'Sale',role:'SALE',leader_id:'lead',team_id:'T',active:1});const o={...order,subtotal:5000000,total:5500000,vatAmount:500000,discount:0,amountPaid:500000,depositAmount:500000,balanceDue:5000000,status:'DEPOSIT',receiptsVersion:1,paymentReceipts:[{id:'r',kind:'DEPOSIT',amount:500000,at:'2026-10-03T10:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AA=='}]};await f.api.write(admin,'bill-seed',[change('customers',customer),change('orders',o)]);let r=await f.api.read(actor);const next=structuredClone(r.state.orders[0]),receipt=next.paymentReceipts[0];const beforeImages=payments.images(receipt);receipt.images=[];receipt.imageRevisions=[{id:'rev',by:actor.id,at:'2026-10-03T11:00:00Z',images:beforeImages}];await f.api.write(actor,'bill-delete',[change('orders',next,r.versions['orders/o1'])]);r=await f.api.read(actor);assert.equal(payments.images(r.state.orders[0].paymentReceipts[0]).length,0);assert.equal(r.state.orders[0].amountPaid,500000);const projection=JSON.parse(f.db.orders[0].items_json);assert.equal(projection.paymentReceipts[0].images.length,0);assert.equal(projection.paymentReceipts[0].imageRevisions[0].images[0].imageData,'data:image/png;base64,AA==');});
 test('Retry after server update clears old rejection and preserves pending bill edit exactly once',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`let tries=0;flushServerPersistence=async()=>{tries++;if(tries===2){serverConflict=true;serverSaveError='Máy chủ từ chối ảnh bill';return false;}return true;};resolveServerConflict=async()=>{serverConflict=false;return true;};`,c);await assert.rejects(()=>api.saveExpense({date:'2026-10-03',title:'Retry',amount:1000}),/Máy chủ từ chối ảnh bill/);await api.saveExpense({date:'2026-10-03',title:'Retry',amount:1000});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('serverConflict',c),false);});
 
@@ -2091,4 +2091,49 @@ test('Backfill save failure retains draft and retry does not duplicate',async()=
  const input={accountId:'staff',date:'2026-01-03',time:'08:30',note:'Makeup'};
  await assert.rejects(c.window.crmApi.saveAttendance(input));assert.equal(vm.runInContext('state.attendance.length',c),1);
  await c.window.crmApi.saveAttendance(input);assert.equal(vm.runInContext('state.attendance.length',c),1);
+});
+
+
+test('Notification read and per-viewer delete persist for Sale, Manager and Accounting without changing anyone else',async()=>{
+ const f=fixture(),manager={id:'manager',role:'MANAGER'},accounting={id:'accountant',role:'ACCOUNTING'};
+ await f.api.write(admin,'notices-seed',[change('members',{id:'manager',role:'MANAGER',active:true,name:'Manager'}),change('members',{id:'lead',role:'LEADER',managerId:'manager',active:true,teamId:'T',name:'Leader'}),change('members',{...sale,managerId:'manager',active:true,name:'Sale'}),change('notifications',{id:'notice-own',kind:'DATA_ARRIVAL',role:'OWN',saleId:'sale',leaderId:'lead',teamId:'T',readBy:['lead'],at:'2026-10-07 08:00'}),change('notifications',{id:'notice-review',kind:'PAYMENT_REVIEW',role:'ACCOUNTING',readBy:[],at:'2026-10-07 09:00'})]);
+ for(const [actor,id] of [[sale,'notice-own'],[manager,'notice-own'],[accounting,'notice-review']]){
+  let snapshot=await f.api.read(actor),notice=snapshot.state.notifications.find(n=>n.id===id);assert.ok(notice);
+  await f.api.write(actor,'notice-read-'+actor.id,[change('notifications',{...notice,readBy:[...notice.readBy,actor.id]},snapshot.versions['notifications/'+id])]);
+  snapshot=await f.api.read(actor);notice=snapshot.state.notifications.find(n=>n.id===id);assert.ok(notice.readBy.includes(actor.id));
+  await f.api.write(actor,'notice-delete-'+actor.id,[change('notifications',{...notice,deletedBy:[...(notice.deletedBy||[]),actor.id]},snapshot.versions['notifications/'+id])]);
+  assert.equal((await f.api.read(actor)).state.notifications.some(n=>n.id===id),false);
+ }
+ const visible=(await f.api.read(admin)).state.notifications.find(n=>n.id==='notice-own');assert.ok(visible);assert.ok(visible.readBy.includes('lead'));assert.ok(visible.deletedBy.includes('sale'));assert.ok(visible.deletedBy.includes('manager'));
+ await assert.rejects(()=>f.api.write({...sale,id:'outsider'},'notice-outside',[change('notifications',{...visible,readBy:[...visible.readBy,'outsider']},f.api.revision(visible))]),e=>e.status===403);
+ const snapshot=await f.api.read(admin),notice=snapshot.state.notifications.find(n=>n.id==='notice-review');
+ await assert.rejects(()=>f.api.write({id:'other-accountant',role:'ACCOUNTING'},'notice-forge',[change('notifications',{...notice,deletedBy:['sale']},snapshot.versions['notifications/'+notice.id])]),e=>e.status===403);
+});
+test('Read-all and delete APIs await persistence and retry the same notification after a lost acknowledgement',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.notifications=[{id:'first',role:'ALL',title:'Data mới về',readBy:[]},{id:'second',role:'ALL',title:'Data mới về',readBy:['someone']}];`,c);
+ await api.readNotice('first');await api.readNotifications();assert.equal(vm.runInContext('state.notifications.every(n=>n.readBy.includes("admin"))',c),true);
+ vm.runInContext('let noticeFlushes=0;flushServerPersistence=async()=>++noticeFlushes!==2;',c);
+ await assert.rejects(()=>api.deleteNotice('first'),/Chưa lưu/);await api.deleteNotice('first');
+ assert.equal(vm.runInContext('state.notifications[0].deletedBy.length',c),1);assert.equal(vm.runInContext('visibleNotifications().length',c),1);
+ await assert.rejects(()=>api.deleteNotice('missing'),/Không tìm thấy/);
+});
+test('Payment notices are generated inside the SQL transaction for deposits, new receipts and reconciliation exactly once',async()=>{
+ const f=fixture(),paidOrder={...order,rentalEndsAt:null,status:'DEPOSIT',subtotal:5000000,vatAmount:500000,total:5500000,discount:0,amountPaid:500000,balanceDue:5000000,paidAt:null,receiptsVersion:1,paymentReceipts:[{id:'r1',kind:'DEPOSIT',amount:500000,at:'2026-10-07 08:00',createdBy:'admin',billImage:'data:image/png;base64,AA=='}],paymentReconciled:false};
+ let result=await f.api.write(admin,'payment-notice-create',[change('customers',customer),change('orders',paidOrder)]);
+ assert.equal(result.state.notifications.filter(n=>n.kind==='PAYMENT_REVIEW').length,1);
+ result=await f.api.write(admin,'payment-notice-full',[change('orders',{...result.state.orders[0],status:'PAID',amountPaid:5500000,balanceDue:0,paidAt:'2026-10-07 09:00',paymentReceipts:[...paidOrder.paymentReceipts,{id:'r2',kind:'FULL',amount:5000000,at:'2026-10-07 09:00',createdBy:'admin',billImage:'data:image/png;base64,AA=='}]},result.versions['orders/o1'])]);
+ assert.equal(result.state.notifications.filter(n=>n.kind==='PAYMENT_REVIEW').length,2);
+ const accountant={id:'accountant',role:'ACCOUNTING'};
+ result=await f.api.write(accountant,'payment-notice-confirm',[change('orders',{...result.state.orders[0],paymentReconciled:true,paymentReconciledBy:accountant.id,paymentReconciledAt:'2026-10-07 10:00'},result.versions['orders/o1'])]);
+ await f.api.write(accountant,'payment-notice-confirm',[]);
+ const notices=(await f.api.read(admin)).state.notifications;assert.equal(notices.filter(n=>n.kind==='PAYMENT_CONFIRMED').length,1);
+ assert.equal(f.db.history.find(r=>r.request_id==='payment-notice-confirm').changes_json.some(c=>c.key==='notifications'),true);
+ assert.equal((await f.api.read({id:'other',role:'SALE'})).state.notifications.length,0);
+ assert.equal((await f.api.read(sale)).state.notifications.some(n=>n.kind==='PAYMENT_CONFIRMED'),true);
+});
+test('24-hour data expiry emits one notice, while accepted and manually revoked offers do not emit timeout notices',async()=>{
+ const f=fixture();await f.api.write(admin,'notice-expiry-seed',[change('customers',{...customer,saleId:null}),...['late','accepted','revoked'].map((id,index)=>change('dataOffers',{id,customerId:customer.id,saleId:sale.id,leaderId:'lead',teamId:'T',status:['PENDING','ACCEPTED','EXPIRED'][index],offeredAt:'2020-01-01 00:00'}))]);
+ await f.api.read(admin);const result=await f.api.read(admin),notices=result.state.notifications.filter(n=>n.kind==='DATA_UNRECEIVED_24H');assert.equal(notices.length,1);assert.equal(notices[0].id,'NT-DATA-24H-late');
+ assert.equal((await f.api.read(sale)).state.notifications.some(n=>n.id===notices[0].id),true);
 });

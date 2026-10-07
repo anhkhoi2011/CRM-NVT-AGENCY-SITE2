@@ -120,3 +120,8 @@ test('Unknown webhook slug stays unattributed without inventing a website', asyn
   assert.equal(values[4], 'UNATTRIBUTED');
   assert.equal(values[5], null);
 });
+
+test('Webhook creates a durable data-arrival notice only once when the incoming event is replayed',async()=>{
+ const f=fixture();await f.persistWebhook(record);await f.persistWebhook({...record,id:'WHE-replay'});
+ const notices=[...f.documents.values()].filter(d=>d.collection==='notifications');assert.equal(notices.length,1);assert.equal(notices[0].body.kind,'DATA_ARRIVAL');assert.equal(notices[0].body.role,'ADMIN');
+});
