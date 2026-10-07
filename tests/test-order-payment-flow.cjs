@@ -195,3 +195,27 @@ test('Asset restoration preserves explicit image deletion and does not authorize
  const tampered=crm.mergeOrderAssets(old,{...snapshot,paymentReceipts:[{...snapshot.paymentReceipts[0],amount:600000}]});assert.throws(()=>crm.authorize(sale,'orders',old,tampered,data));
  const withoutAudit=crm.mergeOrderAssets(old,{...snapshot,paymentReceipts:[{...snapshot.paymentReceipts[0],images:[]}]});assert.throws(()=>crm.authorize(sale,'orders',old,withoutAudit,data));
 });
+
+function collectionForm(full=true){
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8'),item={...order(),customerName:'Khách cọc',customerPhone:'0901234567',productName:'Sản phẩm',paymentReference:'Khách cọc 0901234567'},nodes=new Map(),calls=[];let save;
+ const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,disabled:false,readOnly:false,innerHTML:'',classList:{add(){}},focus(){},before(){}});return nodes.get(id);};
+ const modal={style:{},querySelector:node,querySelectorAll:()=>[]};
+ const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item]},q:node,esc:String,money:String,shortOrderCode:String,canChangeReceiptOrder:()=>true,ensureAccountingOrderStyles(){},compressBill:async()=> 'data:image/png;base64,AA==',editor:(title,body,fn)=>{save=fn;node('#receiptAmount').value=body.match(/id="receiptAmount"[^>]*value="([^"]*)"/)[1];node('#receiptAmount').readOnly=full;node('#receiptPayMode').value=full?'FULL':'CUSTOM';node('#receiptBillType').value=full?'FULL':'DEPOSIT';return modal;},document:{createElement:()=>({})},api:{updateOrderAccounting:async(id,input)=>{calls.push({id,input});return {order:item};}},referenceNotice(){},setTimeout(){},Date,Math});
+ vm.runInContext(source.slice(source.indexOf('  function bindBillPicker('),source.indexOf('  function openAccountingOrderForm(')),ctx);
+ vm.runInContext(source.slice(source.indexOf('  function paymentSlipMarkup('),source.indexOf('  function ensureAccountingOrderStyles()')),ctx);
+ ctx.openReceiptPaymentForm(item.id,full);return {node,calls,save:()=>save(),upload:()=>node('#receiptFile').onchange({target:{files:[{name:'new-bill.png'}]}})};
+}
+test('Collect remaining balance immediately shows exact QR and requires a new bill and confirmation before saving',async()=>{
+ const f=collectionForm();assert.equal(f.node('#receiptAmount').value,'5000000');assert.equal(f.node('#receiptAmount').readOnly,true);assert.match(f.node('#receiptInvoice').innerHTML,/amount=5000000/);assert.match(f.node('#receiptInvoice').innerHTML,/Đã thanh toán trước đó/);assert.equal(f.calls.length,0);
+ await assert.rejects(f.save(),/Tải ảnh bill/);await f.upload();await assert.rejects(f.save(),/Xác nhận đã nhận tiền/);assert.equal(f.calls.length,0);
+ f.node('#receiptConfirm').checked=true;await f.save();assert.equal(f.calls.length,1);assert.equal(f.calls[0].input.action,'COLLECT');assert.equal(f.calls[0].input.amount,5000000);assert.equal(f.calls[0].input.confirmed,true);assert.equal(f.calls[0].input.images.length,1);
+});
+test('Partial collection regenerates QR, resets confirmation and rejects invalid or excessive amounts',async()=>{
+ const f=collectionForm(false);assert.doesNotMatch(f.node('#receiptInvoice').innerHTML,/qr.sepay/);
+ f.node('#receiptAmount').value='1000000';f.node('#receiptAmount').oninput();assert.match(f.node('#receiptInvoice').innerHTML,/amount=1000000/);assert.match(f.node('#receiptInvoice').innerHTML,/<strong>4000000<\/strong>/);
+ await f.upload();f.node('#receiptConfirm').checked=true;f.node('#receiptAmount').value='2000000';f.node('#receiptAmount').oninput();assert.equal(f.node('#receiptConfirm').checked,false);await assert.rejects(f.save(),/Xác nhận/);
+ for(const value of ['0','-1','1.5','5000001']){f.node('#receiptAmount').value=value;f.node('#receiptAmount').oninput();assert.doesNotMatch(f.node('#receiptInvoice').innerHTML,/qr.sepay/);await assert.rejects(f.save(),/không vượt/);}
+ f.node('#receiptPayMode').value='FULL';f.node('#receiptPayMode').onchange();assert.equal(f.node('#receiptAmount').readOnly,true);assert.match(f.node('#receiptInvoice').innerHTML,/amount=5000000/);
+ f.node('#receiptPayMode').value='CUSTOM';f.node('#receiptPayMode').onchange();assert.equal(f.node('#receiptAmount').readOnly,false);assert.equal(f.node('#receiptAmount').value,'');
+ f.node('#receiptAmount').value='1000000';f.node('#receiptAmount').oninput();f.node('#receiptConfirm').checked=true;await f.save();assert.equal(f.calls.length,1);assert.equal(f.calls[0].input.amount,1000000);
+});

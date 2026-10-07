@@ -2546,7 +2546,7 @@
   });
 
   window.addEventListener('message', function(event) {
-    if(event.data?.type==='OPEN_CRM_ORDER'&&event.origin===location.origin&&event.source===q('#accountingIframe')?.contentWindow){if(event.data.create){openAccountingOrderForm('');return;}const id=String(event.data.orderId||'');if(event.data.reconcile)openOrderReconciliation(id);else if(event.data.collect)openReceiptPaymentForm(id,event.data.full===true);else openReceiptOrderDetail(id,false,true);return;}
+    if(event.data?.type==='OPEN_CRM_ORDER'&&event.origin===location.origin&&event.source===q('#accountingIframe')?.contentWindow){if(event.data.create){openAccountingOrderForm('');return;}const id=String(event.data.orderId||'');if(event.data.reconcile)openOrderReconciliation(id);else if(event.data.collect)openReceiptPaymentForm(id,event.data.full===true,true);else openReceiptOrderDetail(id,false,true);return;}
     if (event.data && event.data.type === 'CREATE_ACCOUNTING_ORDER') {
       createAccountingOrderFromIframe(event.data.payload || {}, event.source).catch(error => {
         (event.source || q('#accountingIframe')?.contentWindow)?.postMessage({type:'ACCOUNTING_ORDER_RESULT',ok:false,error:error.message||'Không tạo được đơn hàng.'},'*');
@@ -2950,9 +2950,9 @@
     const editButton=modal.querySelector('#receiptEditInfo');if(editButton){editButton.classList.replace('btn-secondary','btn-primary');modal.querySelector('.modal-footer').appendChild(editButton);}
     modal.style.zIndex='12000';bindReceiptImages(modal,order,accountingContext);
     modal.querySelector('#receiptEditInfo')?.addEventListener('click',()=>openAccountingOrderForm(order.customerId,order,accountingContext));
-    modal.querySelector('#receiptAdd')?.addEventListener('click',()=>openReceiptPaymentForm(id,false));
+    modal.querySelector('#receiptAdd')?.addEventListener('click',()=>openReceiptPaymentForm(id,false,accountingContext));
     modal.querySelector('#receiptReconcile')?.addEventListener('click',()=>openOrderReconciliation(id));
-    modal.querySelector('#receiptFull')?.addEventListener('click',()=>openReceiptPaymentForm(id,true));
+    modal.querySelector('#receiptFull')?.addEventListener('click',()=>openReceiptPaymentForm(id,true,accountingContext));
   }
   function bindBillPicker(modal,fileId,previewId,statusId,images,typeId){
     let uploading=false;
@@ -2966,22 +2966,42 @@
     if(typeId)q('#'+typeId).onchange=()=>{images.forEach(image=>image.note=OrderPayments.billLabel(q('#'+typeId).value));draw();};
     draw();return {get uploading(){return uploading;}};
   }
-  function openReceiptPaymentForm(id,full=false){
+  function openReceiptPaymentForm(id,full=false,accountingContext=false){
     const order=data.orders.find(o=>o.id===id);if(!order||!canChangeReceiptOrder(order))return;
-    const balance=OrderPayments.balance(order);if(balance<=0)return;const images=[];let picker;
-    const modal=editor(full?'Thu hết phần còn lại':'Ghi nhận tiền thu thêm',
-      '<p><b>'+esc(order.customerName)+'</b> · '+esc(order.productName)+'</p><p>Đã thu: '+money(OrderPayments.paid(order))+' · <b>Cần thu: '+money(balance)+'</b></p>'+
-      '<label class="crm-field"><span>Số tiền thu lần này *</span><input id="receiptAmount" type="number" required min="1" max="'+balance+'" step="1" value="'+(full?balance:'')+'" '+(full?'readonly':'')+'></label>'+
-      '<label class="crm-field"><span>Loại bill / Ghi chú ảnh</span><select id="receiptBillType"><option value="FULL" '+(full?'selected':'')+'>Bill chuyển khoản đủ</option><option value="DEPOSIT" '+(!full?'selected':'')+'>Bill cọc</option></select></label>'+
-      '<label class="crm-field"><span>Thêm bill của lần chuyển khoản này *</span><input type="file" id="receiptFile" accept="image/*" multiple></label><p id="receiptFileStatus"></p><div id="receiptPreview" class="ao-image-editor"></div>'+
-      '<label class="crm-field"><span>Mã giao dịch / Ngân hàng</span><input id="receiptBank" maxlength="240" placeholder="Ví dụ: MB · FT..."></label><label class="crm-field"><span>Ghi chú</span><input id="receiptNote" maxlength="500"></label>'+
-      '<label class="ao-vat-check"><input type="checkbox" id="receiptConfirm" required> Tôi xác nhận đã nhận khoản tiền này</label>',async()=>{
+    const balance=OrderPayments.balance(order),paid=OrderPayments.paid(order);if(balance<=0)return;ensureAccountingOrderStyles();
+    const images=[];let picker;
+    const modal=editor('THANH TOÁN TIẾP · '+shortOrderCode(order.code||order.id),
+      '<div class="receipt-collection-controls ow-section"><div class="ow-section-head"><h3>Khoản thanh toán tiếp theo</h3><span>Còn '+money(balance)+'</span></div><div class="crm-form-grid">'+
+      '<label class="crm-field"><span>Hình thức thanh toán <em>*</em></span><select id="receiptPayMode"><option value="FULL" '+(full?'selected':'')+'>Thu hết phần còn lại</option><option value="CUSTOM" '+(!full?'selected':'')+'>Thanh toán một phần</option></select></label>'+
+      '<label class="crm-field"><span>Số tiền thanh toán lần này <em>*</em></span><input id="receiptAmount" type="number" required min="1" max="'+balance+'" step="1" value="'+(full?balance:'')+'" '+(full?'readonly':'')+' placeholder="Nhập số tiền khách thanh toán"></label></div></div>'+
+      '<div id="receiptInvoice" class="receipt-collection-invoice"></div>'+
+      '<section class="ow-section receipt-collection-evidence"><div class="ow-section-head"><h3>Xác nhận thanh toán</h3></div>'+
+      '<input id="receiptBillType" type="hidden" value="'+(full?'FULL':'DEPOSIT')+'">'+
+      '<label class="crm-field"><span>Ảnh bill của lần chuyển khoản này <em>*</em></span><input type="file" id="receiptFile" accept="image/*" multiple></label><p id="receiptFileStatus" role="status" aria-live="polite"></p><div id="receiptPreview" class="ao-image-editor"></div>'+
+      '<div class="crm-form-grid"><label class="crm-field"><span>Mã giao dịch / ngân hàng</span><input id="receiptBank" maxlength="240" placeholder="Ví dụ: MB · FT..."></label><label class="crm-field"><span>Ghi chú thanh toán</span><input id="receiptNote" maxlength="500" placeholder="Nhập ghi chú"></label></div>'+
+      '<label class="ao-vat-check"><input type="checkbox" id="receiptConfirm" required> Tôi xác nhận đã nhận khoản tiền này</label></section>',async()=>{
+        const amount=Number(q('#receiptAmount').value);
+        if(!Number.isSafeInteger(amount)||amount<=0||amount>balance)throw Error('Số tiền thanh toán phải lớn hơn 0 và không vượt '+money(balance)+'.');
         if(picker.uploading)throw Error('Đang xử lý ảnh bill, vui lòng chờ.');if(!images.length)throw Error('Tải ảnh bill của lần thanh toán này.');
-        await api.updateOrderAccounting(id,{action:'COLLECT',amount:Number(q('#receiptAmount').value),images,billImage:images[0].imageData,bankReference:q('#receiptBank').value,note:q('#receiptNote').value,confirmed:q('#receiptConfirm').checked});
-        referenceNotice('Đã lưu thanh toán và đồng bộ doanh thu / kế toán.');
+        if(!q('#receiptConfirm').checked)throw Error('Xác nhận đã nhận tiền trước khi lưu.');
+        const result=await api.updateOrderAccounting(id,{action:'COLLECT',amount,images,billImage:images[0].imageData,bankReference:q('#receiptBank').value,note:q('#receiptNote').value,confirmed:true});
+        Object.assign(order,result?.order||{});referenceNotice('Đã lưu khoản thanh toán và bill.');setTimeout(()=>openReceiptOrderDetail(id,false,accountingContext),0);
       });
-    modal.style.zIndex='12000';modal.querySelector('.modal-footer [type=submit]').textContent=full?'Xác nhận đủ & Lưu bill':'Lưu thanh toán';
+    modal.style.zIndex='12000';modal.querySelector('.modal-card').classList.add('ao-card','ow-workspace','ow-form','ow-collection');
+    const submit=modal.querySelector('.modal-footer [type=submit]');submit.textContent='Xác nhận & lưu thanh toán';
+    const preview=document.createElement('button');preview.type='button';preview.className='btn-action btn-secondary';preview.id='receiptSlipPreview';preview.textContent='Xem phiếu gửi khách';preview.onclick=()=>openPaymentSlipPreview(q('#receiptInvoice'),preview);submit.before(preview);
     picker=bindBillPicker(modal,'receiptFile','receiptPreview','receiptFileStatus',images,'receiptBillType');
+    const updateSlip=()=>{
+      const amount=Number(q('#receiptAmount').value),valid=Number.isSafeInteger(amount)&&amount>0&&amount<=balance;
+      q('#receiptConfirm').checked=false;preview.disabled=!valid;
+      if(!valid){q('#receiptInvoice').innerHTML='<p class="ao-help">Nhập số tiền thanh toán từ 1 VND đến '+money(balance)+' để hiện phiếu và mã QR.</p>';return;}
+      const kind=amount===balance?'FULL':'DEPOSIT';if(q('#receiptBillType').value!==kind){q('#receiptBillType').value=kind;q('#receiptBillType').onchange();}
+      const total=Number(order.total),vatAmount=Number(order.vatAmount??Math.round(total/11));
+      q('#receiptInvoice').innerHTML=paymentSlipMarkup({customerName:order.customerName,phone:order.customerPhone||order.billing?.phone||'',productName:order.productName||'—',paymentReference:order.paymentReference||((order.customerName||'')+' '+(order.customerPhone||order.billing?.phone||'')).trim(),subtotal:Number(order.subtotal??total-vatAmount),vatAmount,total,collected:amount,remaining:balance-amount,alreadyPaid:paid});
+    };
+    q('#receiptAmount').oninput=updateSlip;
+    q('#receiptPayMode').onchange=()=>{const all=q('#receiptPayMode').value==='FULL';q('#receiptAmount').readOnly=all;q('#receiptAmount').value=all?balance:'';updateSlip();};
+    updateSlip();if(!full)q('#receiptAmount').focus();
   }
   function openAccountingOrderForm(customerId, editing=null,accountingContext=false){
     const products=(data.products||[]).filter(p=>p.active!==false),sales=orderSalesInScope();
@@ -3047,17 +3067,7 @@
         Object.assign(editing,result.order||{});referenceNotice('Đã cập nhật thông tin đơn. Lịch sử bill được giữ nguyên.');if(manageBillsAfterSave)setTimeout(()=>openReceiptOrderDetail(editing.id,true,accountingContext),0);return;
       }
       if(step===1){
-        const qr='https://qr.sepay.vn/img?acc=75725888888&bank=MBBank&amount='+a.collected+'&des='+encodeURIComponent(paymentReference);
-        const slipDate=new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date());
-        q('#aoInvoice').innerHTML=`<section class="ao-slip" aria-label="Phiếu thanh toán gửi khách hàng">
-          <header><div class="ao-slip-heading"><h3>PHIẾU THANH TOÁN</h3><p>Ngày lập: <b>${esc(slipDate)}</b></p></div></header>
-          <div class="ao-slip-customer"><div><small>KHÁCH HÀNG</small><strong>${esc(payload.customerName)}</strong></div><div><small>SỐ ĐIỆN THOẠI</small><strong>${esc(phone)}</strong></div></div>
-          <div class="ao-slip-items"><table><thead><tr><th scope="col">Sản phẩm / dịch vụ</th><th scope="col">Đơn giá</th></tr></thead><tbody><tr><td>${esc(products.find(p=>p.id===payload.productId)?.name||'—')}</td><td>${money(a.subtotal)}</td></tr></tbody></table></div>
-          <dl class="ao-slip-totals"><div><dt>VAT <span>(10%)</span></dt><dd>${money(a.vatAmount)}</dd></div><div class="ao-slip-total"><dt>Tổng thanh toán <small>(gồm VAT)</small></dt><dd>${money(a.total)}</dd></div></dl>
-          <div class="ao-slip-payment"><div><span>${a.remaining>0?'Thanh toán đặt cọc lần này':'Thanh toán lần này'}</span><strong>${money(a.collected)}</strong></div><div><span>Còn lại sau thanh toán</span><strong>${money(a.remaining)}</strong></div></div>
-          <div class="ao-slip-bank"><div><h4>THÔNG TIN CHUYỂN KHOẢN</h4><p>Ngân hàng <b>MB Bank</b></p><p>Số tài khoản <strong class="ao-slip-account">75725888888</strong></p><p class="ao-slip-owner">CONG TY TNHH NVT AGENCY ACADEMY</p><div class="ao-slip-description"><small>Nội dung chuyển khoản</small><b>${esc(paymentReference)}</b></div></div><div class="ao-slip-qr"><img src="${esc(qr)}" alt="QR chuyển khoản MB theo số tiền thanh toán lần này"><span>Quét mã để thanh toán</span></div></div>
-          <footer><b>Cảm ơn quý khách đã tin tưởng NVT Agency Academy!</b><span>Vui lòng chuyển đúng số tiền và nội dung bên trên.</span></footer>
-        </section>`;
+        q('#aoInvoice').innerHTML=paymentSlipMarkup({...a,customerName:payload.customerName,phone,productName:products.find(p=>p.id===payload.productId)?.name||'—',paymentReference});
 
         q('#aoBillType').value=a.collected===a.total?'FULL':'DEPOSIT';q('#aoBillType').onchange();
         step=2;q('#aoDetails').hidden=true;q('#aoPayment').hidden=false;q('#aoConfirmed').checked=false;
@@ -3115,6 +3125,19 @@
     overlay.querySelector('button').onclick=close;overlay.onclick=event=>{if(event.target===overlay)close();};
     document.addEventListener('keydown',escape);document.body.appendChild(overlay);overlay.querySelector('button').focus();
   }
+  function paymentSlipMarkup({customerName,phone,productName,paymentReference,alreadyPaid=0,...a}){
+    const qr='https://qr.sepay.vn/img?acc=75725888888&bank=MBBank&amount='+a.collected+'&des='+encodeURIComponent(paymentReference);
+    const slipDate=new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date());
+    return `<section class="ao-slip" aria-label="Phiếu thanh toán gửi khách hàng">
+          <header><div class="ao-slip-heading"><h3>PHIẾU THANH TOÁN</h3><p>Ngày lập: <b>${esc(slipDate)}</b></p></div></header>
+          <div class="ao-slip-customer"><div><small>KHÁCH HÀNG</small><strong>${esc(customerName)}</strong></div><div><small>SỐ ĐIỆN THOẠI</small><strong>${esc(phone)}</strong></div></div>
+          <div class="ao-slip-items"><table><thead><tr><th scope="col">Sản phẩm / dịch vụ</th><th scope="col">Đơn giá</th></tr></thead><tbody><tr><td>${esc(productName)}</td><td>${money(a.subtotal)}</td></tr></tbody></table></div>
+          <dl class="ao-slip-totals"><div><dt>VAT <span>(10%)</span></dt><dd>${money(a.vatAmount)}</dd></div><div class="ao-slip-total"><dt>Tổng thanh toán <small>(gồm VAT)</small></dt><dd>${money(a.total)}</dd></div></dl>
+          <div class="ao-slip-payment">${alreadyPaid>0?'<div><span>Đã thanh toán trước đó</span><strong>'+money(alreadyPaid)+'</strong></div>':''}<div><span>${alreadyPaid>0?'Thanh toán tiếp lần này':a.remaining>0?'Thanh toán đặt cọc lần này':'Thanh toán lần này'}</span><strong>${money(a.collected)}</strong></div><div><span>Còn lại sau thanh toán</span><strong>${money(a.remaining)}</strong></div></div>
+          <div class="ao-slip-bank"><div><h4>THÔNG TIN CHUYỂN KHOẢN</h4><p>Ngân hàng <b>MB Bank</b></p><p>Số tài khoản <strong class="ao-slip-account">75725888888</strong></p><p class="ao-slip-owner">CONG TY TNHH NVT AGENCY ACADEMY</p><div class="ao-slip-description"><small>Nội dung chuyển khoản</small><b>${esc(paymentReference)}</b></div></div><div class="ao-slip-qr"><img src="${esc(qr)}" alt="QR chuyển khoản MB theo số tiền thanh toán lần này"><span>Quét mã để thanh toán</span></div></div>
+          <footer><b>Cảm ơn quý khách đã tin tưởng NVT Agency Academy!</b><span>Vui lòng chuyển đúng số tiền và nội dung bên trên.</span></footer>
+        </section>`;
+  }
   function ensureAccountingOrderStyles(){
     if(q('#accountingOrderStyles'))return;
     const style=document.createElement('style');style.id='accountingOrderStyles';style.textContent=`
@@ -3139,6 +3162,7 @@
       .ow-workspace.ow-form .ow-form-layout{align-items:stretch;gap:16px}.ow-workspace.ow-form .ow-form-layout>.ow-section{height:100%;padding:18px}.ow-workspace.ow-form .ow-section-head{margin-bottom:12px}.ow-workspace.ow-form .ao-lead{margin-bottom:16px;font-size:12px}.ow-workspace.ow-form .crm-form-grid{align-items:start;gap:14px 16px}.ow-workspace.ow-form .crm-field{display:flex;flex-direction:column;gap:6px;align-self:start}.ow-workspace.ow-form .crm-field>span{display:block;min-height:34px;line-height:18px;font-size:12px}.ow-workspace.ow-form .crm-field>span small{display:block;margin:0;font-size:10px;line-height:14px;color:#8491a5}.ow-workspace.ow-form .crm-field input:not([type=file]),.ow-workspace.ow-form .crm-field select{height:42px!important;min-height:42px!important;max-height:42px;flex:none;padding:9px 11px!important;line-height:22px;font-size:13px!important}.ow-workspace.ow-form .crm-field textarea{height:90px;min-height:90px!important;padding:10px 12px!important;font-size:13px!important;line-height:1.6}.ow-workspace.ow-form .ao-grid-3{align-items:start;gap:14px 16px;margin-top:14px}.ow-workspace.ow-form .ao-grid-3>.crm-field:first-child>span{min-height:18px}.ow-workspace.ow-form .ao-remaining{margin-top:14px;padding:10px 12px}.ow-workspace.ow-form .ao-summary{margin-top:10px;line-height:1.6}.ow-workspace.ow-form .ow-section-description{margin-bottom:12px}.ow-workspace.ow-form .ao-vat-check{font-size:12px}.ow-workspace.ow-form .ao-vat{margin-top:14px}
       @media(max-width:800px){.ow-workspace.ow-form .ow-form-layout>.ow-section{height:auto}}
       @media(max-width:540px){.ow-workspace.ow-form .ow-form-layout>.ow-section{padding:16px}.ow-workspace.ow-form .crm-field>span{min-height:0}.ow-workspace.ow-form .crm-field>span small{display:inline;margin-left:5px}.ow-workspace.ow-form .crm-form-grid,.ow-workspace.ow-form .ao-grid-3{gap:12px}.ow-workspace.ow-form .crm-field input:not([type=file]),.ow-workspace.ow-form .crm-field select{height:44px!important;min-height:44px!important;max-height:44px}.ow-workspace.ow-form .ao-grid-3>.crm-field:first-child>span{min-height:0}}
+      .ow-collection .receipt-collection-controls,.ow-collection .receipt-collection-invoice,.ow-collection .receipt-collection-evidence{max-width:740px;width:100%;margin:0 auto 18px}.ow-collection .receipt-collection-evidence{margin-bottom:0}.ow-collection .receipt-collection-evidence>.crm-form-grid{margin-top:16px}.ow-collection .receipt-collection-evidence>.ao-vat-check{margin-top:18px}.ow-collection #receiptFile{font:13px Arial,sans-serif;max-width:100%;padding:10px;border:1px dashed #b8c5d6;background:#f8fafc;border-radius:7px}.ow-collection #receiptFileStatus:empty,.ow-collection #receiptPreview:empty{display:none}.ow-collection #receiptFileStatus{font-size:12px;color:#64748b}.ow-collection #receiptPreview:not(:empty){margin:16px 0}.ow-collection #receiptAmount::-webkit-inner-spin-button,.ow-collection #receiptAmount::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
       .ao-detail-summary{padding:16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px}.ao-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.receipt-images{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}.receipt-images p{white-space:pre-wrap;overflow-wrap:anywhere}.ao-receipt-list{display:grid;gap:14px;margin-top:12px}.ao-receipt{display:grid;grid-template-columns:1fr 180px;gap:16px;padding:16px;border:1px solid #dbe3ec;border-radius:12px}.ao-receipt p{margin:8px 0}.ao-bill-zoom{border:0;background:#f8fafc;cursor:zoom-in;padding:8px;border-radius:8px}.ao-bill-zoom img{width:100%;max-height:200px;object-fit:contain}.ao-bill-zoom span{display:block;font-size:11px;color:#2563eb}@media(max-width:500px){.ao-receipt{grid-template-columns:1fr}.ao-bill-zoom{max-width:240px}}
       #aoDetails,#aoPayment{display:grid;gap:16px}#aoDetails[hidden],#aoPayment[hidden]{display:none!important}
       .ao-card{width:min(680px,calc(100vw - 28px))!important;max-height:min(880px,94dvh)!important}
