@@ -98,19 +98,19 @@ test('Receipt gallery displays per-image notes including supplemental proof',()=
 test('Order detail renders MST, company, sale note and accounting note',()=>{
  const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');let markup='';
  const item={...order(),requireVat:true,taxCode:'0123456789',companyName:'Example Company',saleNote:'Khách cần hóa đơn',reconciliationNote:'Giao dịch đã khớp'};
- const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{role:'ADMIN'}},esc:String,money:String,fmtDate:String,person:String,shortOrderCode:String,ensureAccountingOrderStyles(){},canChangeReceiptOrder:()=>false,receiptHistoryMarkup:()=>'',bindReceiptImages(){},editor:(title,body)=>{markup=body;return {style:{},querySelector:()=>null};}});
+ const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{role:'ADMIN'}},esc:String,money:String,fmtDate:String,person:String,shortOrderCode:String,ensureAccountingOrderStyles(){},canChangeReceiptOrder:()=>false,receiptHistoryMarkup:()=>'',bindReceiptImages(){},editor:(title,body)=>{markup=body;return {style:{},querySelector:selector=>selector==='.modal-card'?{classList:{add(){}}}:null};}});
  vm.runInContext(source.slice(source.indexOf('  function openReceiptOrderDetail('),source.indexOf('  function openReceiptPaymentForm(')),ctx);ctx.openReceiptOrderDetail(item.id);
- for(const value of ['0123456789','Example Company','Khách cần hóa đơn','Giao dịch đã khớp','Thông tin xuất hóa đơn'])assert.ok(markup.includes(value),value);
+ for(const value of ['0123456789','Example Company','Khách cần hóa đơn','Giao dịch đã khớp','Thông tin hóa đơn'])assert.ok(markup.includes(value),value);
 });
 
 test('Reconciliation action is hidden in Orders and shown only in accounting context',()=>{
  const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');let markup='';
  const item={...order(),status:'PAID',paymentMode:'FULL',amountPaid:5500000,depositAmount:5500000,balanceDue:0};
- const modal={style:{},querySelector:()=>null};
+ const modal={style:{},querySelector:selector=>selector==='.modal-card'?{classList:{add(){}}}:null};
  const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{role:'ADMIN'}},esc:String,money:String,fmtDate:String,person:String,shortOrderCode:String,ensureAccountingOrderStyles(){},canChangeReceiptOrder:()=>false,receiptHistoryMarkup:()=>'',bindReceiptImages(){},editor:(title,body)=>{markup=body;return modal;}});
  vm.runInContext(source.slice(source.indexOf('  function openReceiptOrderDetail('),source.indexOf('  function openReceiptPaymentForm(')),ctx);
- ctx.openReceiptOrderDetail(item.id);assert.doesNotMatch(markup,/receiptReconcile|Kế toán kiểm tra & Đối soát đủ/);
- ctx.openReceiptOrderDetail(item.id,false,true);assert.match(markup,/receiptReconcile/);assert.match(markup,/Kế toán kiểm tra & Đối soát đủ/);
+ ctx.openReceiptOrderDetail(item.id);assert.doesNotMatch(markup,/receiptReconcile|Kiểm tra &amp; đối soát/);
+ ctx.openReceiptOrderDetail(item.id,false,true);assert.match(markup,/receiptReconcile/);assert.match(markup,/Kiểm tra &amp; đối soát/);
 });
 
 test('All order-creating roles see Manager, Leader and every active Sale',()=>{
