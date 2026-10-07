@@ -3732,41 +3732,27 @@
     const waitingCount=rows.filter(row=>row.offer?.status==='PENDING').length;
     const acceptedCount=rows.filter(row=>Boolean(row.customer.saleId)&&row.offer?.status!=='PENDING').length;
     const unassignedCount=rows.filter(row=>!row.offer?.saleId&&!row.customer.saleId&&!row.customer.leaderId&&!row.customer.managerId).length;
-    renderDataQueuePagination(table,filtered.length);text('sidebarDataBadge',filtered.length);text('dataTabCountBadge',filtered.length);text('dataPeriodToday',countPeriod(1)+' data');text('dataPeriod3Days',countPeriod(3)+' data');text('dataPeriod7Days',countPeriod(7)+' data');text('dataPeriod30Days',countPeriod(30)+' data');text('dataOverviewTotal',rows.length);text('dataOverviewUnassigned',unassignedCount);text('dataOverviewAccepted',acceptedCount);text('dataOverviewWaiting',waitingCount);
+    renderDataQueuePagination(table,filtered.length);text('sidebarDataBadge',filtered.length);text('dataTabCountBadge',filtered.length);text('dataPeriodToday',countPeriod(1)+' data');text('dataPeriod3Days',countPeriod(3)+' data');text('dataPeriod7Days',countPeriod(7)+' data');text('dataPeriod30Days',countPeriod(30)+' data');text('dataOverviewTotal',rows.length);text('dataOverviewUnassigned',unassignedCount);text('dataOverviewAccepted',acceptedCount);text('dataOverviewWaiting',waitingCount);if(typeof updateDataDateFilterSummary==='function')updateDataDateFilterSummary(filtered.length);
   }
 
   const localDateValue=date=>{const year=date.getFullYear(),month=String(date.getMonth()+1).padStart(2,'0'),day=String(date.getDate()).padStart(2,'0');return `${year}-${month}-${day}`;};
-  const syncDataDatePresetState=()=>{
-    const from=String(q('#dataDateFrom')?.value||'').slice(0,10),to=String(q('#dataDateTo')?.value||'').slice(0,10);
-    const now=new Date(),today=localDateValue(now),last7=localDateValue(new Date(now.getTime()-7*86400000)),last30=localDateValue(new Date(now.getTime()-30*86400000)),monthStart=localDateValue(new Date(now.getFullYear(),now.getMonth(),1));
-    const activePreset=preset=>preset==='today'&&from===to&&from===today||preset==='7days'&&from===last7&&to===today||preset==='30days'&&from===last30&&to===today||preset==='thisMonth'&&from===monthStart&&to===today;
-    qa('[data-date-preset]').forEach(button=>button.classList.toggle('is-active',activePreset(button.dataset.datePreset)));
-  };
-  const setDataDatePreset=preset=>{
-    const now=new Date(),end=localDateValue(now),from=q('#dataDateFrom'),to=q('#dataDateTo');if(!from||!to)return;
-    let start=end;
-    if(preset==='7days')start=localDateValue(new Date(now.getTime()-7*86400000));
-    if(preset==='30days')start=localDateValue(new Date(now.getTime()-30*86400000));
-    if(preset==='thisMonth')start=localDateValue(new Date(now.getFullYear(),now.getMonth(),1));
-    from.value=start;to.value=end;syncDataDatePresetState();
-  };
-  const updateDataDateFilterSummary=()=>{
+  const updateDataDateFilterSummary=(visibleCount=null)=>{
     const summary=q('#dataDateFilterSummary');if(!summary)return;
     const from=String(dataQueueDateFrom||'').slice(0,10),to=String(dataQueueDateTo||'').slice(0,10),applied=Boolean(from||to);
     summary.classList.toggle('is-applied',applied);
-    summary.textContent=!applied?'Chưa áp dụng bộ lọc':from&&to?'Đang áp dụng: '+fmtDate(from)+' đến '+fmtDate(to):'Đang áp dụng: '+fmtDate(from||to);
+    const countText=visibleCount===null?'':' · '+visibleCount+' data';
+    summary.textContent=!applied?'Chưa áp dụng bộ lọc'+countText:from&&to?'Đang áp dụng: '+fmtDate(from)+' đến '+fmtDate(to)+countText:'Đang áp dụng: '+fmtDate(from||to)+countText;
     const headerState=q('#dataManagementDateState');if(headerState){headerState.classList.toggle('is-applied',applied);headerState.textContent=!applied?'Chưa lọc theo ngày':from&&to?fmtDate(from)+' - '+fmtDate(to):fmtDate(from||to);}
   };
   const applyDataDateFilter=()=>{
     const from=String(q('#dataDateFrom')?.value||'').slice(0,10),to=String(q('#dataDateTo')?.value||'').slice(0,10);
+    if(Boolean(from)!==Boolean(to)){referenceNotice('Vui lòng chọn đủ Từ ngày và Đến ngày.','error');return;}
     if(from&&to&&from>to){referenceNotice('Ngày bắt đầu không được sau ngày kết thúc.','error');return;}
     dataQueueDateFrom=from;dataQueueDateTo=to;dataQueuePage=1;updateDataDateFilterSummary();filterDataQueueTable();
   };
   const clearDataDateFilter=()=>{
     const from=q('#dataDateFrom'),to=q('#dataDateTo');if(from)from.value='';if(to)to.value='';dataQueueDateFrom='';dataQueueDateTo='';dataQueuePage=1;updateDataDateFilterSummary();filterDataQueueTable();
   };
-  qa('[data-date-preset]').forEach(button=>button.addEventListener('click',()=>setDataDatePreset(button.dataset.datePreset)));
-  ['#dataDateFrom','#dataDateTo'].forEach(selector=>q(selector)?.addEventListener('input',syncDataDatePresetState));
   q('#dataDateFilterClose')?.addEventListener('click',event=>{
     const panel=q('#dataDateFilterPanel');if(!panel)return;
     if(panel.closest('#tab-data.data-scope-management')){const collapsed=panel.classList.toggle('is-collapsed');event.currentTarget.setAttribute('aria-expanded',String(!collapsed));event.currentTarget.setAttribute('aria-label',collapsed?'Mở bộ lọc':'Thu gọn bộ lọc');return;}
@@ -3774,7 +3760,6 @@
   });
   q('#dataDateApply')?.addEventListener('click',applyDataDateFilter);
   q('#dataDateClear')?.addEventListener('click',clearDataDateFilter);
-  syncDataDatePresetState();
   updateDataDateFilterSummary();
   const ordinaryQueue=renderDataQueue;renderDataQueue=function(){
     const role=data?.user?.actualRole||data?.user?.role;

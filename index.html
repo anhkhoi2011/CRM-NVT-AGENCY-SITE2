@@ -1489,12 +1489,7 @@
       .data-date-filter-subtitle{margin-top:4px;font-size:11px;line-height:1.4;color:#7b8798}
       .data-date-filter-close{display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;padding:0;border:1px solid #d7dee8;border-radius:10px;background:#f8fafc;color:#718096;font-size:22px;font-weight:400;line-height:1;cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease}
       .data-date-filter-close:hover{border-color:#bfd0e4;background:#eef4fb;color:#1f5fae;transform:rotate(90deg)}
-      .data-date-filter-body{padding:18px 20px 20px}
-      .data-date-filter-presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:19px}
-      .data-date-filter-preset{min-height:34px;padding:7px 13px;border:1px solid #e2e8f0;border-radius:999px;background:#f8fafc;color:#596579;font:600 11.5px var(--font-sans,Arial,sans-serif);cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease,transform .15s ease}
-      .data-date-filter-preset:hover{border-color:#b9cbe1;background:#f1f6fc;color:#245b94}
-      .data-date-filter-preset:active{transform:scale(.98)}
-      .data-date-filter-preset.is-active{border-color:#3b82c9;background:#eff6ff;color:#1d5f9f;box-shadow:0 0 0 2px rgba(59,130,201,.12)}
+      .data-date-filter-body{padding:20px}
       .data-date-filter-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
       .data-date-filter-field{display:flex;flex-direction:column;gap:7px;min-width:0}
       .data-date-filter-field span{font-size:11px;font-weight:800;color:#253246}
@@ -1519,7 +1514,7 @@
       .data-date-filter-panel.is-collapsed .data-date-filter-body,.data-date-filter-panel.is-collapsed .data-date-filter-footer{display:none}
       .data-date-filter-panel.is-collapsed .data-date-filter-head{border-bottom:0}
       @media(max-width:860px){.data-date-filter-grid{grid-template-columns:1fr 1fr}.data-date-filter-footer{align-items:flex-start;flex-direction:column}.data-date-filter-actions{width:100%}.data-date-filter-actions button{flex:1}}
-      @media(max-width:480px){.data-date-filter-head,.data-date-filter-body,.data-date-filter-footer{padding-left:15px;padding-right:15px}.data-date-filter-grid{grid-template-columns:1fr}.data-date-filter-presets{gap:6px}.data-date-filter-preset{flex:1 1 calc(50% - 6px);padding-left:8px;padding-right:8px}.data-date-filter-footer{gap:12px}}
+      @media(max-width:480px){.data-date-filter-head,.data-date-filter-body,.data-date-filter-footer{padding-left:15px;padding-right:15px}.data-date-filter-grid{grid-template-columns:1fr}.data-date-filter-footer{gap:12px}}
     </style>
 <link rel="preload" as="script" href="reference-view.js?v=20261001-cleanup-1">
 <link rel="preload" as="script" href="customer-save-queue.js?v=20261003-offline-save-1">
@@ -2444,16 +2439,10 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 
             <div id="dataDateFilterPanel" class="widget-box data-date-filter-panel">
               <div class="data-date-filter-head">
-                <div class="data-date-filter-heading"><div class="data-date-filter-title">Lọc data theo ngày</div><div class="data-date-filter-subtitle">Chọn một ngày hoặc khoảng ngày data về</div></div>
+                <div class="data-date-filter-heading"><div class="data-date-filter-title">Lọc data theo ngày</div><div class="data-date-filter-subtitle">Chọn khoảng ngày data về</div></div>
                 <button type="button" id="dataDateFilterClose" class="data-date-filter-close" aria-label="Thu gọn bộ lọc" aria-expanded="true">×</button>
               </div>
               <div class="data-date-filter-body">
-                <div class="data-date-filter-presets" role="group" aria-label="Khoảng thời gian nhanh">
-                  <button type="button" class="data-date-filter-preset" data-date-preset="today">Hôm nay</button>
-                  <button type="button" class="data-date-filter-preset" data-date-preset="7days">7 ngày qua</button>
-                  <button type="button" class="data-date-filter-preset" data-date-preset="30days">30 ngày qua</button>
-                  <button type="button" class="data-date-filter-preset" data-date-preset="thisMonth">Tháng này</button>
-                </div>
                 <div class="data-date-filter-grid">
                   <label class="data-date-filter-field"><span>Từ ngày</span><div class="data-date-filter-input"><span class="data-date-filter-calendar" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect><path d="M16 2.5v4M8 2.5v4M3 9.5h18"></path><path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01"></path></svg></span><input type="date" id="dataDateFrom" aria-label="Từ ngày"></div></label>
                   <label class="data-date-filter-field"><span>Đến ngày</span><div class="data-date-filter-input"><span class="data-date-filter-calendar" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"></rect><path d="M16 2.5v4M8 2.5v4M3 9.5h18"></path><path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01"></path></svg></span><input type="date" id="dataDateTo" aria-label="Đến ngày"></div></label>
