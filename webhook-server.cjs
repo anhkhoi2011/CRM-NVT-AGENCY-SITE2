@@ -43,7 +43,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261007-process-workspace-33';
+const BUILD_VERSION = '20261007-order-info-save-34';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -492,6 +492,7 @@ async function handleDemoApi(request, response, pathname) {
       for(const change of changes.slice().sort((a,b)=>(a.key==='customers'?0:1)-(b.key==='customers'?0:1))){
         const {key,id}=change;let {value}=change;if(!original[key])throw Object.assign(Error('Collection không hợp lệ'),{status:400});
         const old=original[key].get(id);
+        if(key==='orders'&&old&&value)value=crmData.mergeOrderAssets(old,value);
         // Giống MySQL: khách sửa theo danh sách trường thì gộp vào bản mới nhất.
         if(key==='customers'&&old&&value&&Array.isArray(change.fields)&&change.fields.length<=200)value=crmData.mergeCustomerFields(old,value,change.fields);
         // Sale nhan ban ghi da che thong tin: giu thong tin goc nhu luong MySQL.

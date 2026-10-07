@@ -3000,11 +3000,11 @@
       </div>
       <div class="ao-remaining" role="status" aria-live="polite"><span>Số tiền còn lại khách phải thanh toán:</span><b id="aoRemaining">0 VND</b></div>
       <label class="crm-field crm-field-full"><span>Ghi Chú Của Sale Khi Tạo Đơn</span><input id="aoNote" maxlength="1000" placeholder="Ví dụ: Khách cọc 50%, hẹn 28/09 đóng nốt..."></label>
+        <label class="crm-field crm-field-full"><span>Email khách hàng / nhận hóa đơn <small>Không bắt buộc</small></span><input id="aoEmail" type="email" maxlength="254" placeholder="Ví dụ: tenkhach@gmail.com" value="${esc(editing?.billing?.email||picked?.email||'')}"></label>
       <label class="ao-vat-check"><input type="checkbox" id="aoRequireVat"> Khách hàng yêu cầu xuất hóa đơn VAT (Nhập MST &amp; Công ty)</label>
       <div class="crm-form-grid ao-vat" id="aoVatInputs" hidden>
         <label class="crm-field"><span>Mã số thuế (MST) <em>*</em></span><input id="aoTaxCode" class="ao-mono" inputmode="numeric" maxlength="13" placeholder="10 - 13 chữ số"></label>
         <label class="crm-field"><span>Tên công ty / Đơn vị <em>*</em></span><input id="aoCompany" maxlength="200" placeholder="Tên công ty xuất hóa đơn"></label>
-        <label class="crm-field crm-field-full"><span>Gmail / Email nhận hóa đơn <small>Không bắt buộc</small></span><input id="aoEmail" type="email" maxlength="254" placeholder="Ví dụ: tenkhach@gmail.com" value="${esc(editing?.billing?.email||picked?.email||'')}"></label>
       </div>
       <p class="ao-summary" id="aoSummary"></p></div><div id="aoPayment" hidden><div id="aoInvoice"></div>      <div class="ao-bill">
         <span class="ao-bill-title">Hóa Đơn / Bill Chuyển Khoản Ngân Hàng Đính Kèm <em>*</em></span>

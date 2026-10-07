@@ -175,3 +175,21 @@ test('Direct bill deletion reopens details with server-confirmed images instead 
 
 test('Bill category replaces banks and automatically labels every image',async()=>{const f=form();assert.doesNotMatch(f.markup,/Bill Vietcombank|Bill Techcombank|id="aoBank"/);assert.match(f.markup,/Bill chuyển khoản đủ/);assert.match(f.markup,/Bill cọc/);await f.save();await f.node('#aoBillFile').onchange({target:{files:[{name:'one.jpg'},{name:'two.jpg'}]}});f.node('#aoBillType').value='DEPOSIT';f.node('#aoBillType').onchange();f.node('#aoConfirmed').checked=true;await f.save();assert.equal(f.created[0].images.length,2);assert.ok(f.created[0].images.every(image=>image.note==='Bill cọc'));assert.equal(f.created[0].amountPaid,5500000);assert.equal(f.created[0].bankReference,'');});
 test('Full-payment selection writes full-transfer note for all attached bills',async()=>{const f=form();await f.save();await f.node('#aoBillFile').onchange({target:{files:[{name:'one.jpg'},{name:'two.jpg'}]}});f.node('#aoConfirmed').checked=true;await f.save();assert.ok(f.created[0].images.every(image=>image.note==='Bill chuyển khoản đủ'));});
+
+
+test('Compact order metadata edits restore original bills without changing amounts or history',()=>{
+ const old={...order(),receiptsVersion:1,paymentReceipts:payments.receipts(order())};old.paymentReceipts[0].images=[{id:'image',imageData:'data:image/png;base64,AQ==',note:'Original note'}];
+ const snapshot=crm.snapshot({id:'admin',role:'ADMIN'},{...Object.fromEntries([...crm.LISTS,...crm.OBJECTS].map(key=>[key,new Map()])),...data,orders:new Map([[old.id,old]])},{compact:true}).state.orders[0];
+ assert.equal(snapshot.paymentReceipts[0].billImage,undefined);
+ const next=crm.mergeOrderAssets(old,{...snapshot,billing:{...snapshot.billing,cccd:'012345678901',address:'Địa chỉ mới',email:'new@example.test'},saleNote:'Đã cập nhật'});
+ crm.validate('orders',next,next.id);crm.authorize(sale,'orders',old,next,data);
+ assert.equal(crm.canonical(next.paymentReceipts),crm.canonical(old.paymentReceipts));assert.equal(next.hasBill,undefined);assert.equal(next.billing.cccd,'012345678901');
+ assert.equal(payments.paid(next),payments.paid(old));assert.equal(old.billing.cccd,'');
+});
+test('Asset restoration preserves explicit image deletion and does not authorize altered receipts',()=>{
+ const old={...order(),receiptsVersion:1,paymentReceipts:payments.receipts(order())},snapshot=crm.snapshot({id:'admin',role:'ADMIN'},{...Object.fromEntries([...crm.LISTS,...crm.OBJECTS].map(key=>[key,new Map()])),...data,orders:new Map([[old.id,old]])},{compact:true}).state.orders[0];
+ const changed=structuredClone(snapshot);changed.paymentReceipts[0].images=[];changed.paymentReceipts[0].imageRevisions=[{id:'rev',by:'sale',at:'2026-10-07T10:00:00Z',images:payments.images(old.paymentReceipts[0])}];
+ const restored=crm.mergeOrderAssets(old,changed);crm.authorize(sale,'orders',old,restored,data);assert.equal(payments.images(restored.paymentReceipts[0]).length,0);
+ const tampered=crm.mergeOrderAssets(old,{...snapshot,paymentReceipts:[{...snapshot.paymentReceipts[0],amount:600000}]});assert.throws(()=>crm.authorize(sale,'orders',old,tampered,data));
+ const withoutAudit=crm.mergeOrderAssets(old,{...snapshot,paymentReceipts:[{...snapshot.paymentReceipts[0],images:[]}]});assert.throws(()=>crm.authorize(sale,'orders',old,withoutAudit,data));
+});

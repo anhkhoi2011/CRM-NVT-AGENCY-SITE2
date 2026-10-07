@@ -20,8 +20,9 @@
       if(pendingResult.kind!==kind) throw Error("Hãy lưu lại thao tác trước đó trước khi chuyển sang thao tác khác.");
       if (!await flushServerPersistence({skipAutomatic:kind.startsWith('add-extra-round-turn:')||kind.startsWith('accept-offer:')})) throw persistenceError();
       const changedInput=kind==='accounting-order'&&pendingResult.retryInputKey!==retryInputKey;
-      const result=pendingResult.result;pendingResult=null;
-      if (!kind.startsWith('customer-field:')) return changedInput?{...result,recoveredWithDifferentInput:true}:result;
+      const pendingUpdateKey=pendingResult.retryInputKey,result=pendingResult.result;pendingResult=null;
+      const changedOrderUpdate=kind.startsWith('order-accounting:')&&kind.includes(':UPDATE:')&&pendingUpdateKey!==retryInputKey;
+      if (!kind.startsWith('customer-field:')&&!changedOrderUpdate) return changedInput?{...result,recoveredWithDifferentInput:true}:result;
     }
     const persistenceBlocked=typeof serverPendingRequest!=='undefined'&&(serverPendingRequest||serverConflict||serverSaveRunning);
     if (!persistenceBlocked&&!await flushServerPersistence()) throw Error('Máy chủ chưa xác nhận dữ liệu trước đó.');
@@ -238,14 +239,21 @@
           if(order.status==='PAID')order.paidAt=stamp();order.updatedAt=stamp();
           audit('COLLECT_ORDER_DEBT',id,String(amount));
         }else if(action==='UPDATE'){
-          const customer=state.customers.find(item=>String(item.id)===String(order.customerId));
-          const name=text(input.customerName,160),phone=text(input.customerPhone,30);
-          if(!name||phone.replace(/\D/g,'').length<9)throw Error('Tên và số điện thoại khách hàng không hợp lệ.');
+          const supplied=(key)=>Object.hasOwn(input,key);
+          const field=(keys,fallback,max)=>{for(const key of keys)if(supplied(key))return text(input[key],max);return text(fallback,max);};
+          const billing=input.billing&&typeof input.billing==='object'?input.billing:{};
+          const billingField=(key,aliases,max)=>{for(const alias of aliases)if(supplied(alias))return text(input[alias],max);return Object.hasOwn(billing,key)?text(billing[key],max):text(order.billing?.[key],max);};
+          const name=field(['customerName'],billing.name??order.customerName,160),phone=field(['customerPhone','phone'],billing.phone??order.customerPhone??order.billing?.phone,30);
+          const digits=phone.replace(/\D/g,''),cccd=billingField('cccd',['customerCccd','cccd'],20),email=billingField('email',['customerEmail','email'],254);
+          if(!name||digits.length<9||digits.length>13)throw Error('Tên và số điện thoại khách hàng không hợp lệ.');
+          if(cccd&&!/^(\d{9}|\d{12})$/.test(cccd))throw Error('CMND gồm 9 số hoặc CCCD gồm 12 số; có thể để trống.');
+          if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Email khách hàng không hợp lệ.');
           order.customerName=name;order.customerPhone=phone;
-          order.saleNote=text(input.saleNote,1000);order.requireVat=input.requireVat===true;
-          order.billing={...(order.billing||{}),name,phone,email:text(input.customerEmail||input.email,254),cccd:text(input.customerCccd,20),address:text(input.customerAddress||input.address,240),taxId:text(input.taxCode,20)};
-          order.taxCode=text(input.taxCode,20);order.companyName=text(input.companyName,200);
-          const breakdown=OrderPayments.amounts(input),subtotal=breakdown.subtotal;
+          if(supplied('saleNote'))order.saleNote=text(input.saleNote,1000);
+          if(supplied('requireVat'))order.requireVat=input.requireVat===true;
+          order.billing={...(order.billing||{}),name,phone,email,cccd,address:billingField('address',['customerAddress','address'],240),taxId:billingField('taxId',['taxCode'],20)};
+          order.taxCode=field(['taxCode'],billing.taxId??order.taxCode,20);order.companyName=field(['companyName'],order.companyName,200);
+          const breakdown=OrderPayments.amounts(Object.hasOwn(input,'total')||Object.hasOwn(input,'subtotal')?input:{total:order.total}),subtotal=breakdown.subtotal;
           Object.assign(order,breakdown);
           const amountPaid=OrderPayments.paid(original);
           if(Number(input.amountPaid??input.collected??amountPaid)!==amountPaid)throw Error('Dùng Thêm thanh toán để ghi nhận tiền thu thêm; không sửa đè lịch sử thu.');
@@ -262,7 +270,7 @@
           state.orders=state.orders.filter(item=>item.id!==id);audit('DELETE_ACCOUNTING_ORDER',id,order.code||id);return {ok:true,deleted:true};
         }else throw Error('Thao tác kế toán không hợp lệ.');
         Object.assign(original,order);return {ok:true,order:original};
-      },'order-accounting:'+id+':'+String(input?.action||'')+':'+String(input?.receiptId||''));
+      },'order-accounting:'+id+':'+String(input?.action||'')+':'+String(input?.receiptId||''),input?.action==='UPDATE'?JSON.stringify(input):null);
     },
 
     async closeWorkflow(force=false){

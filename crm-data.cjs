@@ -349,6 +349,20 @@ function publicValue(user,key,r,data){
  }
  return r;
 }
+// Metadata edits from compact snapshots omit bill assets. Restore only omitted
+// fields by receipt ID; explicit image edits still pass the normal audit checks.
+function mergeOrderAssets(old,value){
+ if(!old||!value)return value;
+ const next={...value};delete next.hasBill;
+ for(const field of ['billImage','imageData'])if(!Object.hasOwn(next,field)&&Object.hasOwn(old,field))next[field]=old[field];
+ const previous=new Map((old.paymentReceipts||[]).map(receipt=>[String(receipt.id),receipt]));
+ if(Array.isArray(next.paymentReceipts))next.paymentReceipts=next.paymentReceipts.map(receipt=>{
+  const merged={...receipt},prior=previous.get(String(receipt.id));delete merged.hasBill;delete merged.billCount;
+  if(prior)for(const field of ['billImage','imageData','images','imageRevisions'])if(!Object.hasOwn(merged,field)&&Object.hasOwn(prior,field))merged[field]=prior[field];
+  return merged;
+ });
+ return next;
+}
 function compactAssetValue(key, value) {
  if (!value || typeof value !== 'object') return value;
  if (key === 'processes') {
@@ -380,10 +394,11 @@ function snapshot(user,data,options={compact:false}){
    if(list)state[key]=[];
    for(const [id,r]of data[key]){
     if(!readable(user,key,r,data))continue;
-    const value=options.compact===true?compactAssetValue(key, publicValue(user,key,r,data)):publicValue(user,key,r,data);
+    const publicRecord=publicValue(user,key,r,data);
+    const value=options.compact===true?compactAssetValue(key,publicRecord):publicRecord;
     if(list)state[key].push(value);else state[key]=value;
-    let hash=revisions&&value&&typeof value==='object'?revisions.get(value):undefined;
-    if(hash===undefined){hash=revision(value);if(revisions&&value&&typeof value==='object')revisions.set(value,hash);}
+    let hash=revisions&&publicRecord&&typeof publicRecord==='object'?revisions.get(publicRecord):undefined;
+    if(hash===undefined){hash=revision(publicRecord);if(revisions&&publicRecord&&typeof publicRecord==='object')revisions.set(publicRecord,hash);}
     versions[`${key}/${id}`]=hash;
    }
   }
@@ -1089,6 +1104,7 @@ async function writeLocked(user,requestId,changes,options={}){
    if(key==='customers'&&user.role==='SALE'&&old&&pendingOffer(data,user,old.id)&&value){
      change.value={...old,saleId:user.id,saleAcceptedAt:value.saleAcceptedAt||new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19),updatedAt:value.updatedAt||new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19),status:value.status||old.status,note:value.note!==undefined?value.note:old.note};
    }
+   if(key==='orders'&&old&&value)change.value=value=mergeOrderAssets(old,value);
    validate(key,change.value,id);
    if(key==='members'&&old?.role==='ADMIN'&&old.active!==false&&(!value||value.role!=='ADMIN'||value.active===false)&&[...data.members.values()].filter(r=>r.role==='ADMIN'&&r.active!==false).length<=1)error(400,'Phải giữ ít nhất một Admin hoạt động');
    if(revision(old===undefined?undefined:publicValue(user,key,old,data))!==base)error(409,`Bản ghi ${key}/${id} đã được máy khác cập nhật. Xuất bản nháp rồi tải lại.`);
@@ -1177,4 +1193,4 @@ async function readAuditPage(user, page=1, limit=50) {
  const result = await read(user,{passive:true,full:true}); const all=result.state.audit||[]; const safePage=Math.max(1,Number(page)||1), safeLimit=Math.min(200,Math.max(1,Number(limit)||50));
  return {items:all.slice((safePage-1)*safeLimit,safePage*safeLimit),page:safePage,limit:safeLimit,total:all.length,hasMore:all.length>safePage*safeLimit};
 }
-module.exports={dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};
+module.exports={mergeOrderAssets,dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};

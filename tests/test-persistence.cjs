@@ -2171,3 +2171,51 @@ test('Process titles save uppercase while content, line breaks and existing imag
  stored=vm.runInContext(`state.processes.find(item=>item.id===${JSON.stringify(created.id)})`,c);
  assert.equal(stored.title,'QUY TRÌNH CẬP NHẬT');assert.deepEqual(Array.from(stored.imageData),[image]);assert.equal(vm.runInContext('state.processes.length',c),1);
 });
+
+
+test('SQL saves identity edits from compact order snapshots and retains every original bill after reload',async()=>{
+ const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ const receipt={id:'receipt-identity',amount:100,kind:'DEPOSIT',at:'2026-10-07T08:00:00Z',billImage:'data:image/png;base64,AA==',createdBy:'admin',images:[{id:'original',imageData:'data:image/png;base64,AQ==',note:'Bill gốc'}]};
+ const o={...order,discount:0,subtotal:360,vatAmount:36,total:396,amountPaid:100,depositAmount:100,balanceDue:296,status:'DEPOSIT',receiptsVersion:1,paymentReceipts:[receipt],billImage:'',paymentReference:'Khách thử 0912345678',createdBy:'admin',paymentReconciled:false,vatIssued:false};
+ await f.api.write(admin,'seed-info',[change('customers',customer),change('orders',o)]);
+ const compact=await f.api.read(sale,{passive:true});assert.equal(compact.state.orders[0].paymentReceipts[0].billImage,undefined);
+ const next={...compact.state.orders[0],customerName:'Tên cập nhật',customerPhone:'0901234567',billing:{...compact.state.orders[0].billing,name:'Tên cập nhật',phone:'0901234567',cccd:'098765432109',email:'updated@example.test',address:'Địa chỉ mới'},saleNote:'Ghi chú mới'};
+ await f.api.write(sale,'save-info',[change('orders',next,compact.versions['orders/'+o.id])]);
+ const full=await f.api.read(admin,{passive:true,full:true}),saved=full.state.orders[0];
+ assert.equal(saved.billing.cccd,'098765432109');assert.equal(saved.billing.address,'Địa chỉ mới');assert.equal(saved.billing.email,'updated@example.test');assert.equal(saved.customerName,'Tên cập nhật');
+ assert.equal(f.api.canonical(saved.paymentReceipts),f.api.canonical(o.paymentReceipts));assert.equal(saved.amountPaid,100);assert.equal(saved.saleNote,'Ghi chú mới');
+ const projection=JSON.parse(f.db.orders[0].items_json);assert.equal(projection.billing.cccd,'098765432109');assert.equal(projection.paymentReceipts[0].images[0].note,'Bill gốc');
+});
+test('Order UPDATE accepts form and billing aliases while preserving omitted contact fields',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext("state.members=[{id:'sale',role:'SALE',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:1000,active:true,type:'SALE'}];state.customers=[];",c);
+ const made=await api.createOrder({source:'accounting-iframe',customerName:'Khách',phone:'0901234567',saleId:'sale',productId:'p',total:1100,amountPaid:100,billImage:'data:image/png;base64,AA==',cccd:'012345678901',address:'Địa chỉ gốc',email:'original@example.test'});
+ const receipts=JSON.stringify(made.order.paymentReceipts);
+ const changed=await api.updateOrderAccounting(made.id,{action:'UPDATE',billing:{cccd:'098765432109',email:'new@example.test',address:'Địa chỉ mới'},saleNote:'Ghi chú'});
+ assert.equal(changed.order.billing.cccd,'098765432109');assert.equal(changed.order.billing.email,'new@example.test');assert.equal(changed.order.billing.address,'Địa chỉ mới');
+ const noteOnly=await api.updateOrderAccounting(made.id,{action:'UPDATE',saleNote:'Chỉ sửa ghi chú'});assert.equal(noteOnly.order.billing.cccd,'098765432109');assert.equal(noteOnly.order.billing.address,'Địa chỉ mới');
+ const cleared=await api.updateOrderAccounting(made.id,{action:'UPDATE',customerCccd:'',customerEmail:'',customerAddress:''});assert.equal(cleared.order.billing.cccd,'');assert.equal(cleared.order.billing.address,'');assert.equal(cleared.order.billing.email,'');
+ assert.equal(JSON.stringify(cleared.order.paymentReceipts),receipts);assert.equal(cleared.order.amountPaid,100);
+ await assert.rejects(()=>api.updateOrderAccounting(made.id,{action:'UPDATE',cccd:'123'}),/CCCD/);
+});
+test('Retrying a failed order info save applies the latest draft after confirming the prior write',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;vm.runInContext("state.members=[{id:'sale',role:'SALE',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:1000,active:true,type:'SALE'}];state.customers=[];",c);
+ const made=await api.createOrder({source:'accounting-iframe',customerName:'Khách',phone:'0901234567',saleId:'sale',productId:'p',total:1100,amountPaid:100,billImage:'data:image/png;base64,AA=='});
+ vm.runInContext('let attempts=0;flushServerPersistence=async()=>++attempts!==2',c);
+ await assert.rejects(()=>api.updateOrderAccounting(made.id,{action:'UPDATE',cccd:'012345678901'}),/Chưa lưu/);
+ const latest=await api.updateOrderAccounting(made.id,{action:'UPDATE',cccd:'098765432109',address:'Bản mới nhất'});
+ assert.equal(latest.order.billing.cccd,'098765432109');assert.equal(latest.order.billing.address,'Bản mới nhất');assert.equal(vm.runInContext('state.orders.length',c),1);assert.equal(latest.order.paymentReceipts.length,1);
+});
+
+
+test('Compact and full asset snapshots share revisions and stale order edits still conflict',async()=>{
+ const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ const o={...order,subtotal:360,vatAmount:36,total:396,discount:0,amountPaid:100,depositAmount:100,balanceDue:296,status:'DEPOSIT',billImage:'data:image/png;base64,AA=='};
+ await f.api.write(admin,'asset-seed',[change('customers',customer),change('orders',o),change('processes',{id:'proc-revision',title:'PROCESS',content:'Content',summary:'',link:'',imageData:['data:image/png;base64,AA==']}),change('feedbacks',{id:'feedback-revision',createdAt:'2026-10-07 08:00:00',category:'COURSE',note:'Feedback',authorId:'admin',imageData:'data:image/png;base64,AQ=='})]);
+ const compact=await f.api.read(admin,{passive:true}),full=await f.api.read(admin,{passive:true,full:true});
+ for(const key of ['orders/o1','processes/proc-revision','feedbacks/feedback-revision'])assert.equal(compact.versions[key],full.versions[key],key);
+ const first={...compact.state.orders[0],billing:{...compact.state.orders[0].billing,cccd:'098765432109'}};
+ await f.api.write(admin,'first-update',[change('orders',first,compact.versions['orders/o1'])]);
+ await assert.rejects(()=>f.api.write(admin,'stale-update',[change('orders',{...first,saleNote:'Stale'},compact.versions['orders/o1'])]),error=>error.status===409);
+ assert.equal((await f.api.read(admin,{passive:true,full:true})).state.orders[0].billImage,o.billImage);
+});
