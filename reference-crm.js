@@ -598,8 +598,23 @@
     head.cells[sourceIndex].hidden=!isAdmin;
     Array.from(body.rows).forEach(row=>{if(row.cells[sourceIndex])row.cells[sourceIndex].hidden=!isAdmin;});
   }
+  function positionCustomerAssignmentColumns(head,body,atEnd){
+    const keys=['source','leader','sale'];
+    const position=row=>{
+      if(atEnd){
+        const cells=Array.from(row.cells);if(cells.length<6)return;
+        keys.forEach((key,index)=>{const cell=cells[3+index];cell.dataset.customerAssignmentColumn=key;row.appendChild(cell);});
+      }else{
+        const cells=keys.map(key=>Array.from(row.cells).find(cell=>cell.dataset.customerAssignmentColumn===key));
+        if(cells.some(cell=>!cell))return;
+        const anchor=row.cells[3];cells.forEach(cell=>{row.insertBefore(cell,anchor);delete cell.dataset.customerAssignmentColumn;});
+      }
+    };
+    position(head);Array.from(body.rows).forEach(position);
+  }
   function fillCustomerOptions() {
     const body=q('#customerTableBody'),head=body.closest('table').querySelector('thead tr');
+    positionCustomerAssignmentColumns(head,body,false);
     head.querySelectorAll('[data-extra-field]').forEach(n=>n.remove());
     head.querySelectorAll('[data-reference-amount-column]').forEach(n=>n.remove());
     const fields=data.fields.filter(f=>f.active!==false),extra=fields.filter(f=>!baseFields.includes(f.id)&&f.showInTable);
@@ -678,6 +693,7 @@
     });
     applyCustomerSourceVisibility();
     installCustomerColumnFilters(head);
+    positionCustomerAssignmentColumns(head,body,true);
   }
   if(!q('#referenceCustomerPhoneStyles')){const style=document.createElement('style');style.id='referenceCustomerPhoneStyles';style.textContent='.customer-phone-cell{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--text-main);font-weight:600;font-size:12px}.customer-reference-amount{white-space:nowrap;color:#059669;font-weight:800;font-variant-numeric:tabular-nums}#tab-customers .table-responsive{overflow-x:auto!important;overflow-y:visible!important;position:relative}#tab-customers .customer-data-table,#tab-customers .table-responsive>table{min-width:1420px}#tab-customers .table-responsive>table>thead>tr>th:nth-child(1),#tab-customers .table-responsive>table>tbody>tr>td:nth-child(1){position:sticky;left:0;width:154px;min-width:154px;max-width:154px;background:#fff;z-index:4;box-shadow:1px 0 0 #e2e8f0}#tab-customers .table-responsive>table>thead>tr>th:nth-child(2),#tab-customers .table-responsive>table>tbody>tr>td:nth-child(2){position:sticky;left:154px;width:190px;min-width:190px;max-width:190px;background:#fff;z-index:4;box-shadow:1px 0 0 #e2e8f0}#tab-customers .table-responsive>table>thead>tr>th:nth-child(3),#tab-customers .table-responsive>table>tbody>tr>td:nth-child(3){position:sticky;left:344px;width:142px;min-width:142px;max-width:142px;background:#fff;z-index:4;box-shadow:2px 0 0 #cbd5e1}#tab-customers .table-responsive>table>thead>tr>th:nth-child(-n+3){background:#f1f5f9;z-index:6}#tab-customers .table-responsive>table>tbody>tr:hover>td:nth-child(-n+3){background:#f8fbff}#tab-customers .table-responsive>table>tbody>tr>td:nth-child(-n+3){background:#fff}#tab-customers .table-responsive>table>tbody>tr>td:nth-child(1){font-variant-numeric:tabular-nums;white-space:nowrap}#tab-customers .table-responsive>table>tbody>tr>td:nth-child(2) b{display:block;white-space:normal;overflow-wrap:anywhere}';document.head.appendChild(style);}
   function fieldManager() {
