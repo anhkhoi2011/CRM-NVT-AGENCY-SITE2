@@ -290,6 +290,7 @@ if (DEMO_MODE) {
 function seedDemoWorkspace() {
   if (!DEMO_MODE) return;
   const addOnce = (list, row) => { if (!list.some(item => item.id === row.id)) list.push(row); };
+  const demoNow = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).slice(0, 16);
   const addMember = (row, password) => {
     addOnce(demoState.members, { ...row, initials: row.name.split(/\\s+/).map(part => part[0]).join('').toUpperCase(), loginEnabled: true });
     demoPasswords[row.email] = password;
@@ -352,8 +353,16 @@ function seedDemoWorkspace() {
   demoState.expenses ||= [];
   demoState.courseConfigs ||= [];
 
-  addOnce(demoState.dataOffers, { id: 'DEMO-OFFER-1', customerId: 'DEMO-CUS-6', saleId: 'demo-sale', leaderId: 'demo-leader', teamId: 'DEMO', status: 'PENDING', offeredAt: '2026-09-17 08:00' });
-  addOnce(demoState.dataOffers, { id: 'DEMO-OFFER-2', customerId: 'DEMO-CUS-7', saleId: 'demo-sale-2', leaderId: 'demo-leader-2', teamId: 'DEMO-2', status: 'PENDING', offeredAt: '2026-09-17 08:10' });
+  addOnce(demoState.dataOffers, { id: 'DEMO-OFFER-1', customerId: 'DEMO-CUS-6', saleId: 'demo-sale', leaderId: 'demo-leader', teamId: 'DEMO', status: 'PENDING', offeredAt: demoNow });
+  addOnce(demoState.dataOffers, { id: 'DEMO-OFFER-2', customerId: 'DEMO-CUS-7', saleId: 'demo-sale-2', leaderId: 'demo-leader-2', teamId: 'DEMO-2', status: 'PENDING', offeredAt: demoNow });
+  for (const offerId of ['DEMO-OFFER-1', 'DEMO-OFFER-2']) {
+    const offer = demoState.dataOffers.find(item => item.id === offerId);
+    const offeredAt = Date.parse(String(offer?.offeredAt || '').replace(' ', 'T') + '+07:00');
+    if (offer?.status === 'PENDING' && (!Number.isFinite(offeredAt) || offeredAt + 24 * 3600000 <= Date.now())) {
+      offer.offeredAt = demoNow;
+      delete offer.resolvedAt;
+    }
+  }
   addOnce(demoState.careGroups, { id: 'DEMO-CARE-PREMIUM', name: 'Khach Premium', fieldId: 'customerClass', values: ['Premium'], color: '#ca8a04' });
   addOnce(demoState.careGroups, { id: 'DEMO-CARE-WHALE', name: 'Khach Whale', fieldId: 'customerClass', values: ['Whale'], color: '#0f766e' });
   addOnce(demoState.notifications, { id: 'DEMO-NOTICE-1', title: 'Co data moi can xu ly', text: 'Hai khach demo dang cho nhan va phan cong.', role: 'ALL', at: '2026-09-17 08:15', readBy: [] });

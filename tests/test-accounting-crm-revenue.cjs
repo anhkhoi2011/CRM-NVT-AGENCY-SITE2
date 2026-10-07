@@ -65,6 +65,8 @@ test('Demo startup never creates paid sample orders or accounting configuration'
  ctx.seedDemoWorkspace();
  assert.equal(demoState.orders.length,0);
  assert.equal(demoState.courseConfigs.length,0);
+ assert.equal(demoState.dataOffers.filter(offer=>offer.status==='PENDING').length,2);
+ assert.ok(demoState.dataOffers.every(offer=>Date.parse(offer.offeredAt.replace(' ','T')+'+07:00')+24*3600000>Date.now()));
  demoState.orders.push({id:'user-created-order',status:'PAID',subtotal:500});
  ctx.seedDemoWorkspace();
  assert.equal(demoState.orders.length,1);
