@@ -2995,8 +2995,8 @@
         <label class="crm-field"><span>Họ và tên <em>*</em></span><input id="aoName" maxlength="160" required placeholder="Ví dụ: Nguyễn Văn Hải" value="${esc(picked?.name||'')}"></label>
         <label class="crm-field"><span>Số điện thoại <em>*</em></span><input id="aoPhone" class="ao-mono" list="aoCustomerList" inputmode="tel" maxlength="15" required placeholder="Ví dụ: 0918882345" value="${esc(picked?.phone||'')}"></label>
         <label class="crm-field ow-optional"><span>CCCD / CMND <small>Không bắt buộc</small></span><input id="aoCccd" class="ao-mono" inputmode="numeric" maxlength="12" placeholder="Có thể để trống" value="${esc(picked?.cccd||'')}"></label>
-        <label class="crm-field ow-optional"><span>Địa chỉ <small>Không bắt buộc</small></span><input id="aoAddress" maxlength="240" placeholder="Có thể để trống" value="${esc(picked?.address||'')}"></label>
-        <label class="crm-field crm-field-full"><span>Email khách hàng / nhận hóa đơn <small>Không bắt buộc</small></span><input id="aoEmail" type="email" maxlength="254" placeholder="Ví dụ: tenkhach@gmail.com" value="${esc(editing?.billing?.email||picked?.email||'')}"></label>
+        <label class="crm-field ow-optional"><span>Email khách hàng <small>Không bắt buộc</small></span><input id="aoEmail" type="email" maxlength="254" placeholder="Ví dụ: tenkhach@gmail.com" value="${esc(editing?.billing?.email||picked?.email||'')}"></label>
+        <label class="crm-field crm-field-full"><span>Địa chỉ <small>Không bắt buộc</small></span><input id="aoAddress" maxlength="240" placeholder="Nhập địa chỉ khách hàng" value="${esc(picked?.address||'')}"></label>
       </div></section><section class="ow-section"><div class="ow-section-head"><h3>Sản phẩm &amp; giá trị đơn</h3><span>02</span></div><p class="ow-section-description">Giá theo sản phẩm, gồm VAT 10%. Không chỉnh sửa trực tiếp.</p><div class="crm-form-grid">
         <label class="crm-field"><span>Sản phẩm / dịch vụ <em>*</em></span><select id="aoProduct">${products.map(p=>`<option value="${esc(p.id)}" data-price="${Number(p.price)||0}">${esc(p.name)} (${esc(money(Number(p.price)+Math.round(Number(p.price)*.1)))} · gồm VAT)</option>`).join('')}</select></label>
         <label class="crm-field"><span>Người phụ trách <em>*</em></span><select id="aoSale" ${sales.length===1?'disabled':''}>${sales.map(s=>`<option value="${esc(s.id)}" ${s===preSale?'selected':''}>${esc(s.name||s.accountId||s.id)} · ${esc({MANAGER:'Manager',LEADER:'Leader',SALE:'Sale'}[s.role])}</option>`).join('')}</select></label>
@@ -3007,13 +3007,13 @@
         <label class="crm-field"><span class="ao-green">Số tiền thu lần này <em>*</em></span><input id="aoCollected" class="ao-mono ao-collected" type="number" min="1" step="1" required><small id="aoCollectedHint"></small></label>
       </div>
       <div class="ao-remaining" role="status" aria-live="polite"><span>Số tiền còn lại khách phải thanh toán:</span><b id="aoRemaining">0 VND</b></div>
-      <p class="ao-summary" id="aoSummary"></p></section><section class="ow-section"><div class="ow-section-head"><h3>Thông tin hóa đơn</h3><span>03</span></div><p class="ow-section-description">Bật yêu cầu VAT để bổ sung thông tin công ty.</p>
+      <p class="ao-summary" id="aoSummary"></p></section><section class="ow-section"><div class="ow-section-head"><h3>Thông tin hóa đơn</h3><span>03</span></div>
       <label class="ao-vat-check"><input type="checkbox" id="aoRequireVat"> Khách hàng yêu cầu xuất hóa đơn VAT (Nhập MST &amp; Công ty)</label>
       <div class="crm-form-grid ao-vat" id="aoVatInputs" hidden>
         <label class="crm-field"><span>Mã số thuế (MST) <em>*</em></span><input id="aoTaxCode" class="ao-mono" inputmode="numeric" maxlength="13" placeholder="10 - 13 chữ số"></label>
         <label class="crm-field"><span>Tên công ty / Đơn vị <em>*</em></span><input id="aoCompany" maxlength="200" placeholder="Tên công ty xuất hóa đơn"></label>
       </div>
-      </section><section class="ow-section"><div class="ow-section-head"><h3>Ghi chú đơn hàng</h3><span>04</span></div><p class="ow-section-description">Ghi lại yêu cầu của khách hoặc lịch hẹn thanh toán.</p><label class="crm-field"><span>Nội dung ghi chú</span><textarea id="aoNote" maxlength="1000" placeholder="Ví dụ: Khách cọc 50%, hẹn ngày thanh toán phần còn lại..."></textarea></label></section></div><div id="aoPayment" hidden><div id="aoInvoice"></div>      <div class="ao-bill">
+      </section><section class="ow-section"><div class="ow-section-head"><h3>Ghi chú đơn hàng</h3><span>04</span></div><label class="crm-field"><textarea aria-label="Ghi chú đơn hàng" id="aoNote" maxlength="1000" placeholder="Ví dụ: Khách cọc 50%, hẹn ngày thanh toán phần còn lại..."></textarea></label></section></div><div id="aoPayment" hidden><div id="aoInvoice"></div>      <div class="ao-bill">
         <span class="ao-bill-title">Hóa Đơn / Bill Chuyển Khoản Ngân Hàng Đính Kèm <em>*</em></span>
         <div class="ao-bill-row"><select id="aoBillType" aria-label="Loại bill"><option value="FULL">Bill chuyển khoản đủ</option><option value="DEPOSIT">Bill cọc</option></select>
           <input id="aoBillFile" type="file" accept="image/*" multiple class="ao-file"><label class="crm-file-button" for="aoBillFile">+ Thêm bill</label></div>
