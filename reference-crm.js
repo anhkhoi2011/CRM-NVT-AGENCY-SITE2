@@ -3056,7 +3056,7 @@
           <dl class="ao-slip-totals"><div><dt>VAT <span>(10%)</span></dt><dd>${money(a.vatAmount)}</dd></div><div class="ao-slip-total"><dt>Tổng thanh toán <small>(gồm VAT)</small></dt><dd>${money(a.total)}</dd></div></dl>
           <div class="ao-slip-payment"><div><span>${a.remaining>0?'Thanh toán đặt cọc lần này':'Thanh toán lần này'}</span><strong>${money(a.collected)}</strong></div><div><span>Còn lại sau thanh toán</span><b>${money(a.remaining)}</b></div></div>
           <div class="ao-slip-bank"><div><h4>THÔNG TIN CHUYỂN KHOẢN</h4><p>Ngân hàng <b>MB Bank</b></p><p>Số tài khoản <strong class="ao-slip-account">75725888888</strong></p><p class="ao-slip-owner">CONG TY TNHH NVT AGENCY ACADEMY</p><div class="ao-slip-description"><small>Nội dung chuyển khoản</small><b>${esc(paymentReference)}</b></div></div><div class="ao-slip-qr"><img src="${esc(qr)}" alt="QR chuyển khoản MB theo số tiền thanh toán lần này"><span>Quét mã để thanh toán</span></div></div>
-          <footer><b>Cảm ơn quý khách đã tin tưởng NVT Agency Academy!</b><span>Vui lòng chuyển đúng số tiền và nội dung bên trên.</span><small>Phiếu thanh toán không thay thế hóa đơn VAT.</small></footer>
+          <footer><b>Cảm ơn quý khách đã tin tưởng NVT Agency Academy!</b><span>Vui lòng chuyển đúng số tiền và nội dung bên trên.</span></footer>
         </section>`;
 
         q('#aoBillType').value=a.collected===a.total?'FULL':'DEPOSIT';q('#aoBillType').onchange();
