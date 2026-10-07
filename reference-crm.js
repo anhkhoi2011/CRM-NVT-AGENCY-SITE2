@@ -2994,13 +2994,12 @@
       '<section class="ow-section receipt-collection-evidence"><div class="ow-section-head"><h3>Xác nhận thanh toán</h3></div>'+
       '<input id="receiptBillType" type="hidden" value="'+(full?'FULL':'DEPOSIT')+'">'+
       '<label class="crm-field"><span>Ảnh bill của lần chuyển khoản này <em>*</em></span><input type="file" id="receiptFile" accept="image/*" multiple></label><p id="receiptFileStatus" role="status" aria-live="polite"></p><div id="receiptPreview" class="ao-image-editor"></div>'+
-      '<div class="crm-form-grid"><label class="crm-field"><span>Mã giao dịch / ngân hàng</span><input id="receiptBank" maxlength="240" placeholder="Ví dụ: MB · FT..."></label><label class="crm-field"><span>Ghi chú thanh toán</span><input id="receiptNote" maxlength="500" placeholder="Nhập ghi chú"></label></div>'+
       '<label class="ao-vat-check"><input type="checkbox" id="receiptConfirm" required> Tôi xác nhận đã nhận khoản tiền này</label></section>',async()=>{
         const amount=Number(q('#receiptAmount').value);
         if(!Number.isSafeInteger(amount)||amount<=0||amount>balance)throw Error('Số tiền thanh toán phải lớn hơn 0 và không vượt '+money(balance)+'.');
         if(picker.uploading)throw Error('Đang xử lý ảnh bill, vui lòng chờ.');if(!images.length)throw Error('Tải ảnh bill của lần thanh toán này.');
         if(!q('#receiptConfirm').checked)throw Error('Xác nhận đã nhận tiền trước khi lưu.');
-        const result=await api.updateOrderAccounting(id,{action:'COLLECT',amount,images,billImage:images[0].imageData,bankReference:q('#receiptBank').value,note:q('#receiptNote').value,confirmed:true});
+        const result=await api.updateOrderAccounting(id,{action:'COLLECT',amount,images,billImage:images[0].imageData,confirmed:true});
         Object.assign(order,result?.order||{});referenceNotice('Đã lưu khoản thanh toán và bill.');setTimeout(()=>openReceiptOrderDetail(id,false,accountingContext),0);
       });
     modal.style.zIndex='12000';modal.querySelector('.modal-card').classList.add('ao-card','ow-workspace','ow-form','ow-collection');
