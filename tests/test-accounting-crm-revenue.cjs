@@ -254,3 +254,45 @@ test('Contact copy preserves leading zeroes and escapes saved customer values', 
  assert.equal(button.textContent,'\u0110\u00e3 copy');
  assert.equal(ctx.escapeOrderContact('A "B" <C>'),'A &quot;B&quot; &lt;C&gt;');
 });
+
+function orderFilterContext() {
+ const nodes = {};
+ const ctx = vm.createContext({VAT_ORDERS_DATA:[
+  {id:'deposit',month:'2026-10',type:'COURSE',customerName:'An',collected:40,remaining:60,subtotal:90,vatAmount:10,paymentStatus:'DEPOSIT'},
+  {id:'pending',month:'2026-10',type:'COURSE',collected:0,remaining:100,paymentStatus:'PENDING'},
+  {id:'paid',month:'2026-10',type:'SALE',collected:100,remaining:0,paymentStatus:'PAID'},
+  {id:'reviewed',month:'2026-10',type:'COURSE',collected:100,remaining:0,paymentStatus:'PAID',paymentReconciled:true},
+  {id:'vat',month:'2026-10',type:'COURSE',collected:100,remaining:0,paymentStatus:'PAID',paymentReconciled:true,vatStatus:'ISSUED'},
+  {id:'old',month:'2026-09',type:'COURSE',collected:40,remaining:60,paymentStatus:'DEPOSIT'}
+ ],currentOrderMonth:'2026-10',currentOrderSearchQuery:'',currentOrderStatusFilter:'ALL',currentOrderTypeFilter:'ALL',
+ document:{getElementById:id=>nodes[id]||=( {textContent:'stale',innerHTML:'',setAttribute(){}} )},formatCurrency:String,
+ recalculateAllVatOrdersData(){},renderPaymentNotificationBanner(){},renderVatOrdersTable(){}});
+ vm.runInContext(html.slice(html.indexOf('function isVatOrderDeposit('),html.indexOf('function renderPaymentNotificationBanner(')),ctx);
+ return {ctx,nodes};
+}
+test('Accounting filters combine month, four payment stages, product type and search',()=>{
+ const {ctx:c}=orderFilterContext();const ids=()=>Array.from(c.filteredVatOrders(),o=>o.id);
+ c.currentOrderStatusFilter='DEPOSIT';assert.deepEqual(ids(),['deposit']);
+ c.currentOrderStatusFilter='PAID';assert.deepEqual(ids(),['paid','reviewed','vat']);
+ c.currentOrderStatusFilter='RECONCILED';assert.deepEqual(ids(),['reviewed','vat']);
+ c.currentOrderStatusFilter='VAT_ISSUED';assert.deepEqual(ids(),['vat']);
+ c.currentOrderMonth='2026-09';assert.deepEqual(ids(),[]);
+ c.currentOrderStatusFilter='DEPOSIT';assert.deepEqual(ids(),['old']);
+ c.currentOrderMonth='ALL';assert.deepEqual(ids(),['deposit','old']);
+ c.currentOrderTypeFilter='SALE';assert.deepEqual(ids(),[]);
+ c.currentOrderTypeFilter='COURSE';c.currentOrderSearchQuery=' AN ';assert.deepEqual(ids(),['deposit']);
+ c.currentOrderSearchQuery='';c.currentOrderMonth='2027-01';assert.deepEqual(ids(),[]);
+});
+test('Accounting KPIs reflect selected filters and exclude unpaid orders from deposits',()=>{
+ const {ctx:c,nodes}=orderFilterContext();c.renderVatOrdersView();
+ assert.equal(nodes.kpiOrderTotalCount.textContent,'5 đơn');assert.equal(nodes.kpiOrderDepositCount.textContent,'1 đơn');
+ c.currentOrderStatusFilter='DEPOSIT';c.renderVatOrdersView();assert.equal(nodes.kpiOrderTotalCount.textContent,'1 đơn');assert.equal(nodes.kpiOrderPaidCount.textContent,'0 đơn');assert.equal(nodes.kpiOrderTotalValue.textContent,'90');
+ c.currentOrderMonth='2026-09';c.renderVatOrdersView();assert.equal(nodes.orderFilterMonth.value,'2026-09');
+});
+test('Empty accounting filter resets every table total and count',()=>{
+ const {ctx:c,nodes}=orderFilterContext();
+ vm.runInContext(html.slice(html.indexOf('function renderVatOrdersTable()'),html.indexOf('function openOrderDetailModal(',html.indexOf('function renderVatOrdersTable()'))),c);
+ c.currentOrderStatusFilter='VAT_ISSUED';c.currentOrderMonth='2026-09';c.renderVatOrdersTable();
+ for(const id of ['footOrderTotalRev','footOrderTotalVat','footOrderTotalCollected','footOrderTotalRemaining'])assert.equal(nodes[id].textContent,'0');
+ assert.equal(nodes.badgeOrderTableCount.textContent,'0 đơn');assert.match(nodes.vatOrdersTableBody.innerHTML,/Không tìm thấy/);
+});
