@@ -185,6 +185,12 @@ test('Khach hang tong chi hien mot dong cho moi so dien thoai va uu tien Sale da
  assert.equal((html.match(/data-open-customer=/g)||[]).length,1);
  assert.match(html,/Sale dang phu trach/);
 });
+test('Pending hierarchy does not put Manager-owned customers in unassigned Leader',()=>{
+ const source=fs.readFileSync('reference-crm.js','utf8');
+ assert.match(source,/const managerFor=c=>\{/);
+ assert.match(source,/!hasLeader\(c\)&&!managerFor\(c\)&&!directManagerSaleIds\.has\(saleIdFor\(c\)\)/);
+ assert.match(source,/directRows=rows\.filter\(c=>managerFor\(c\)\?\.id===manager\.id/);
+});
 test('Frontend khởi tạo form đăng nhập không truy cập tài khoản mẫu đã xóa',async()=>{const c=frontend();await c.initialize();assert.equal(vm.runInContext('state.members.length',c),0);});
 test('Frontend lỗi mạng giữ requestId và bản nháp để retry',async()=>{
  const c=frontend();vm.runInContext("currentAccount={id:'admin',role:'ADMIN'};serverSyncToken='token';applyServerSnapshot({state:initialState(),versions:{}});state.notes.push({id:'n1',text:'Bản nháp'});",c);
