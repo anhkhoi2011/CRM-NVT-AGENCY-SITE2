@@ -191,6 +191,12 @@ test('Pending hierarchy does not put Manager-owned customers in unassigned Leade
  assert.match(source,/!hasLeader\(c\)&&!managerFor\(c\)&&!directManagerSaleIds\.has\(saleIdFor\(c\)\)/);
  assert.match(source,/directRows=rows\.filter\(c=>managerFor\(c\)\?\.id===manager\.id/);
 });
+test('Pending data is driven by the selected customer Level value',()=>{
+ const source=fs.readFileSync('reference-crm.js','utf8');
+ assert.match(source,/return !String\(c\.customFields\?\.customerLevel\|\|'\'\)\.trim\(\);/);
+ assert.doesNotMatch(source,/return c\.levelChosen!==true;/);
+ assert.match(source,/pending-data-head small/);
+});
 test('Frontend khởi tạo form đăng nhập không truy cập tài khoản mẫu đã xóa',async()=>{const c=frontend();await c.initialize();assert.equal(vm.runInContext('state.members.length',c),0);});
 test('Frontend lỗi mạng giữ requestId và bản nháp để retry',async()=>{
  const c=frontend();vm.runInContext("currentAccount={id:'admin',role:'ADMIN'};serverSyncToken='token';applyServerSnapshot({state:initialState(),versions:{}});state.notes.push({id:'n1',text:'Bản nháp'});",c);

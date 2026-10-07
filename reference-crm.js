@@ -1103,7 +1103,8 @@
         const rows=source.filter(c=>{
           if(['ARCHIVED','LOST','PAID'].includes(c.status))return false;
           // Chỉ báo khách mà nhân viên chưa chọn Level khách hàng ở Khách hàng tổng.
-          return c.levelChosen!==true;
+          // A non-empty Level value means the Sale has processed the customer.
+          return !String(c.customFields?.customerLevel||'').trim();
         }).sort((a,b)=>String(a.teamId||'').localeCompare(String(b.teamId||''),'vi')||String(a.createdAt||'').localeCompare(String(b.createdAt||''))||a.id.localeCompare(b.id));
         const groupKey=c=>c.teamId||'Chưa phân Team';
         const teams=[...new Set(rows.map(groupKey))];
@@ -1119,6 +1120,7 @@
         }).join('');
         goal.innerHTML='<div class="pending-data-head"><div><b>Data chưa xử lý</b><small>'+esc(scopeLabel)+' · khách chưa được chọn Level</small></div><span class="chip">'+rows.length+' khách</span></div><div class="table-responsive pending-data-table-wrap"><table class="modern-table pending-data-table"><thead><tr><th>Khách hàng</th><th>Team</th><th>Leader</th><th>Sale phụ trách</th><th>Tình trạng</th><th></th></tr></thead><tbody id="pendingDataBody">'+(body||'<tr><td colspan="6"><div class="pending-data-empty"><b>Không có data chưa xử lý</b><span>Tất cả khách trong phạm vi đã được tiếp nhận hoặc hoàn tất.</span></div></td></tr>')+'</tbody></table></div>';
         renderPendingHierarchyV2(goal, source, rows, pendingOffers);
+        goal.querySelector('.pending-data-head small')?.remove();
         goal.querySelectorAll('.pending-root-toggle b').forEach(label=>{const value=label.textContent.trim();if(value.startsWith('Manager: '))label.textContent='Team '+value.slice(9)+' (manager)';else if(value.startsWith('Team ')&&!value.endsWith('(leader)'))label.textContent=value+' (leader)';});
       }
     }
