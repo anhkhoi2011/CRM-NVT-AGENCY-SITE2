@@ -2137,3 +2137,26 @@ test('24-hour data expiry emits one notice, while accepted and manually revoked 
  await f.api.read(admin);const result=await f.api.read(admin),notices=result.state.notifications.filter(n=>n.kind==='DATA_UNRECEIVED_24H');assert.equal(notices.length,1);assert.equal(notices[0].id,'NT-DATA-24H-late');
  assert.equal((await f.api.read(sale)).state.notifications.some(n=>n.id===notices[0].id),true);
 });
+
+
+test('Sale can save with Manager only, preserve assigned customers and later become independent',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.members=[{id:'m',name:'Manager',role:'MANAGER',active:true},{id:'s',name:'Sale',role:'SALE',teamId:'OWN',managerId:'m',leaderId:null,active:true}];STAFF=state.members;state.customers=[{id:'c',name:'Customer',phone:'0900000011',saleId:'s',managerId:'m',leaderId:null,teamId:'OWN',customFields:{}}];state.tasks=[{id:'task',ownerId:'s',leaderId:null,teamId:'OWN',status:'OPEN'}];render=()=>{};`,c);
+ await api.saveMember('s',{name:'Sale edited',role:'SALE',teamId:'OWN',leaderId:'',managerId:'m'});
+ assert.equal(vm.runInContext("state.members.find(m=>m.id==='s').managerId",c),'m');
+ assert.equal(vm.runInContext("state.members.find(m=>m.id==='s').leaderId",c),'m');
+ assert.equal(vm.runInContext("state.customers[0].saleId",c),'s');assert.equal(vm.runInContext("state.customers[0].managerId",c),'m');
+ assert.equal(vm.runInContext("state.customers[0].leaderId",c),'m');assert.equal(vm.runInContext("state.tasks[0].leaderId",c),'m');
+ await api.saveMember('s',{name:'Sale independent',role:'SALE',teamId:'OWN',leaderId:'',managerId:''});
+ assert.equal(vm.runInContext("state.members.find(m=>m.id==='s').leaderId",c),null);assert.equal(vm.runInContext("state.members.find(m=>m.id==='s').managerId",c),null);
+ assert.equal(vm.runInContext("state.customers[0].saleId",c),'s');assert.equal(vm.runInContext("state.customers[0].leaderId",c),null);assert.equal(vm.runInContext("state.customers[0].managerId",c),null);
+ assert.equal(vm.runInContext("state.tasks[0].leaderId",c),null);
+ await assert.rejects(()=>api.saveMember('s',{name:'Sale',role:'SALE',teamId:'OWN',managerId:'unknown'}),/đúng Team/);
+});
+test('New and pending Sale accounts can be saved without a Manager or Leader',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;vm.runInContext("state.members=[];STAFF=state.members;render=()=>{};state.registeredAccounts=[{id:'pending-alone',name:'Pending',role:'UNASSIGNED'}];",c);
+ const created=await api.saveMember(null,{name:'Independent',role:'SALE',teamId:'OWN',leaderId:'',managerId:''});
+ assert.ok(created.id);assert.equal(vm.runInContext(`state.members.find(m=>m.id===${JSON.stringify(created.id)}).leaderId`,c),null);
+ await api.saveMember('pending-alone',{name:'Pending',role:'SALE',teamId:'OWN2',leaderId:'',managerId:''});
+ assert.equal(vm.runInContext("state.members.find(m=>m.id==='pending-alone').leaderId",c),null);assert.equal(vm.runInContext("state.registeredAccounts.length",c),0);
+});

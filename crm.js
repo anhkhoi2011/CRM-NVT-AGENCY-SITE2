@@ -2757,7 +2757,7 @@ function assignRegisteredAccountModal(accountId) {
     const leader = leaderId && activeStaff().find(person => person.id === leaderId && ['LEADER', 'MANAGER'].includes(person.role));
     const name = $('#assignAccountName').value.trim();
     if (!name || !/^[A-Z0-9_-]{1,20}$/.test(teamId)) { toast('Thông tin không hợp lệ'); return; }
-    if (role === 'SALE' && (!leader || (leader.role === 'LEADER' && leader.teamId !== teamId))) { toast('Sale phải thuộc đúng Team của Leader hoặc Manager'); return; }
+    if (role === 'SALE' && leaderId && (!leader || (leader.role === 'LEADER' && leader.teamId !== teamId))) { toast('Sale phải thuộc đúng Team của Leader hoặc Manager'); return; }
     const assignment = { role, teamId, leaderId: role === 'SALE' ? leaderId : null, managerId: role === 'SALE' && leader?.role === 'MANAGER' ? leader.id : null, name, active: true, initials: memberInitials(name) };
     audit('ASSIGN_REGISTERED_ACCOUNT', account.id, name + ' · ' + role + ' · ' + teamId);
     if (!await pushServerRecord('users', 'PUT', account.id, assignment)) { toast('Chưa lưu được phân quyền; xem trạng thái lưu'); return; }
@@ -2804,25 +2804,25 @@ function saveTeamMember(id = null, registrationId = null) {
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Gmail nhân sự không hợp lệ'); return; }
   if (existing?.role === 'LEADER' && role === 'SALE' && STAFF.some(person => person.role === 'SALE' && person.leaderId === existing.id)) { toast('Hãy chuyển các Sale trực thuộc sang Leader khác trước khi đổi chức vụ'); return; }
   const leader = role === 'SALE' ? STAFF.find(person => person.id === leaderId && ['LEADER', 'MANAGER'].includes(person.role) && person.active !== false) : null;
-  if (role === 'SALE' && (!leader || (leader.role === 'LEADER' && leader.teamId !== teamId))) { toast('Sale phải thuộc đúng Team của Leader hoặc Manager trực tiếp'); return; }
+  if (role === 'SALE' && leaderId && (!leader || (leader.role === 'LEADER' && leader.teamId !== teamId))) { toast('Sale phải thuộc đúng Team của Leader hoặc Manager trực tiếp'); return; }
   if (existing) {
     const previous = { ...existing };
     if (previous.role === 'SALE' && role !== 'SALE') {
       state.customers.filter(customer => customer.saleId === previous.id).forEach(customer => { const before = assignmentSnapshot(customer); closeOpenCustomerTasks(customer, 'ROLE_CHANGED'); customer.saleId = null; customer.leaderId = existing.id; customer.teamId = teamId; recordAssignmentChange(customer, before, `${name} đổi chức vụ Sale -> Leader`, 'SYSTEM'); });
     } else if (previous.role === 'LEADER' && role === 'SALE') {
-      state.customers.filter(customer => customer.leaderId === previous.id && !customer.saleId).forEach(customer => { const before = assignmentSnapshot(customer); customer.saleId = existing.id; customer.leaderId = leader.id; customer.teamId = teamId; createInitialTask(customer); recordAssignmentChange(customer, before, `${name} đổi chức vụ Leader -> Sale`, 'SYSTEM'); });
+      state.customers.filter(customer => customer.leaderId === previous.id && !customer.saleId).forEach(customer => { const before = assignmentSnapshot(customer); customer.saleId = existing.id; customer.leaderId = leader?.id || null; customer.managerId = leader?.role === 'MANAGER' ? leader.id : leader?.managerId || null; customer.teamId = teamId; createInitialTask(customer); recordAssignmentChange(customer, before, `${name} đổi chức vụ Leader -> Sale`, 'SYSTEM'); });
     } else if (previous.role === 'SALE') {
-      state.customers.filter(customer => customer.saleId === previous.id).forEach(customer => { const before = assignmentSnapshot(customer); customer.leaderId = leader.id; customer.teamId = teamId; recordAssignmentChange(customer, before, `${name} chuyển tuyến quản lý`, 'SYSTEM'); });
-      state.tasks.filter(task => task.ownerId === previous.id && task.status !== 'DONE').forEach(task => { task.leaderId = leader.id; task.teamId = teamId; });
+      state.customers.filter(customer => customer.saleId === previous.id).forEach(customer => { const before = assignmentSnapshot(customer); customer.leaderId = leader?.id || null; customer.managerId = leader?.role === 'MANAGER' ? leader.id : leader?.managerId || null; customer.teamId = teamId; recordAssignmentChange(customer, before, `${name} chuyển tuyến quản lý`, 'SYSTEM'); });
+      state.tasks.filter(task => task.ownerId === previous.id && task.status !== 'DONE').forEach(task => { task.leaderId = leader?.id || null; task.teamId = teamId; });
     }
     if (previous.role === 'LEADER' && role === 'LEADER' && previous.teamId !== teamId) {
       STAFF.filter(person => person.role === 'SALE' && person.leaderId === previous.id).forEach(sale => { sale.teamId = teamId; state.customers.filter(customer => customer.saleId === sale.id).forEach(customer => { const before = assignmentSnapshot(customer); customer.teamId = teamId; recordAssignmentChange(customer, before, `Team của Leader ${name} thay đổi`, 'SYSTEM'); }); state.tasks.filter(task => task.ownerId === sale.id && task.status !== 'DONE').forEach(task => { task.teamId = teamId; }); });
       state.customers.filter(customer => customer.leaderId === previous.id).forEach(customer => { const before = assignmentSnapshot(customer); customer.teamId = teamId; recordAssignmentChange(customer, before, `Team của Leader ${name} thay đổi`, 'SYSTEM'); });
     }
-    Object.assign(existing, { name, email, role, teamId, leaderId: role === 'SALE' ? leader.id : null, managerId: role === 'SALE' && leader.role === 'MANAGER' ? leader.id : null, initials: memberInitials(name), active: true });
+    Object.assign(existing, { name, email, role, teamId, leaderId: role === 'SALE' ? leader?.id || null : null, managerId: role === 'SALE' ? (leader?.role === 'MANAGER' ? leader.id : leader?.managerId || null) : null, initials: memberInitials(name), active: true });
   } else {
     const memberId = `${role === 'LEADER' ? 'l' : 's'}-${Date.now()}`;
-    state.members.push({ id: memberId, name, email, role, teamId, leaderId: role === 'SALE' ? leader.id : null, managerId: role === 'SALE' && leader.role === 'MANAGER' ? leader.id : null, initials: memberInitials(name), createdBy: currentAccount.name, active: true });
+    state.members.push({ id: memberId, name, email, role, teamId, leaderId: role === 'SALE' ? leader?.id || null : null, managerId: role === 'SALE' ? (leader?.role === 'MANAGER' ? leader.id : leader?.managerId || null) : null, initials: memberInitials(name), createdBy: currentAccount.name, active: true });
   }
   const registration = state.registrations.find(item => item.id === registrationId);
   if (registration) registration.status = 'APPROVED';

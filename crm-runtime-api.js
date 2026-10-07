@@ -637,7 +637,7 @@
       requireRole(['ADMIN']);return persist(()=>{
         const member=state.members.find(m=>m.id===id),pending=state.registeredAccounts.find(m=>m.id===id);
         if(id&&!member&&!pending)throw Error('Tài khoản không còn tồn tại.');
-        const name=String(input.name||'').trim(),accountId=String(input.accountId||'').trim().toUpperCase(),email=String(input.email||'').trim().toLowerCase(),phone=String(input.phone||'').trim(),role=input.role,leader=state.members.find(m=>m.id===input.leaderId&&['LEADER','MANAGER'].includes(m.role)&&m.active!==false);
+        const name=String(input.name||'').trim(),accountId=String(input.accountId||'').trim().toUpperCase(),email=String(input.email||'').trim().toLowerCase(),phone=String(input.phone||'').trim(),role=input.role,leader=state.members.find(m=>m.id===(input.leaderId||(role==='SALE'?input.managerId:''))&&['LEADER','MANAGER'].includes(m.role)&&m.active!==false);
         const requestedTeamId=String(input.teamId||'').trim().toUpperCase();
         let teamId=requestedTeamId;
         // Sale dùng Team của Leader trực tiếp; nếu form gửi Team khác thì báo lỗi thay vì âm thầm đổi dữ liệu.
@@ -653,11 +653,11 @@
           Object.assign(member,{name,accountId,email,phone,initials:memberInitials(name)});audit('UPDATE_MEMBER',id,name);return {id};
         }
         if(!['SALE','LEADER','MANAGER','HRM'].includes(role)||(role!=='MANAGER'&&role!=='HRM'&&!/^[A-Z0-9_-]{1,20}$/.test(teamId)))throw Error('Chọn chức vụ và Team hợp lệ.');
-        if(role==='SALE'&&(!leader||leader.id===id||leader.role==='LEADER'&&leader.teamId!==teamId))throw Error('Sale phải thuộc đúng Team của Leader hoặc Manager.');
+        if(role==='SALE'&&(input.leaderId||input.managerId)&&(!leader||leader.id===id||leader.role==='LEADER'&&leader.teamId!==teamId))throw Error('Sale phải thuộc đúng Team của Leader hoặc Manager.');
         // Leader có thể được nâng lên Manager mà không cần chuyển Sale.
         // Sale vẫn giữ nguyên leaderId/teamId; Manager chỉ nhận thêm phạm vi quản lý.
         if(member?.role==='LEADER'&&role!=='LEADER'&&role!=='MANAGER'&&state.members.some(m=>m.active!==false&&m.leaderId===id))throw Error('Chuyển Sale trực thuộc trước khi đổi Leader.');
-        const managerId=role==='LEADER'?String(input.managerId||''):role==='SALE'&&leader?.role==='MANAGER'?leader.id:null;
+        const managerId=role==='LEADER'?String(input.managerId||''):role==='SALE'?(leader?.role==='MANAGER'?leader.id:leader?.managerId||null):null;
         if(role==='HRM'){
           if(member&&state.members.some(item=>item.active!==false&&(item.leaderId===id||item.managerId===id)))throw Error('Chuyển nhân sự trực thuộc trước khi gán quyền HRM.');
           const source=member||pending||{};
@@ -679,10 +679,10 @@
           state.customers.filter(customer=>customer.managerId===id||customer.ownerId===id||customer.leaderId===id||customer.saleId===id||inheritedSales.some(sale=>sale.id===customer.saleId)).forEach(customer=>{customer.managerId=id;});
           state.registeredAccounts=state.registeredAccounts.filter(m=>m.id!==id);STAFF=state.members.filter(m=>m.active!==false);audit('UPDATE_MANAGER',next.id,name);return {id:next.id};
         }
-        if(pending){const next={...pending,name,accountId,email,phone,role,teamId,managerId,leaderId:role==='SALE'?leader.id:null,managerId,active:true,initials:memberInitials(name)};state.members.push(next);state.registeredAccounts=state.registeredAccounts.filter(m=>m.id!==id);STAFF=state.members.filter(m=>m.active!==false);audit('ASSIGN_REGISTERED_ACCOUNT',id,name);return {id};}
+        if(pending){const next={...pending,name,accountId,email,phone,role,teamId,managerId,leaderId:role==='SALE'?leader?.id||null:null,managerId,active:true,initials:memberInitials(name)};state.members.push(next);state.registeredAccounts=state.registeredAccounts.filter(m=>m.id!==id);STAFF=state.members.filter(m=>m.active!==false);audit('ASSIGN_REGISTERED_ACCOUNT',id,name);return {id};}
         // Gọi nghiệp vụ cũ để chuyển khách và công việc đúng khi đổi Team/Leader.
         const before=new Set(state.members.map(m=>m.id));teamMemberModal(id);
-        Object.entries({memberName:name,memberEmail:email,memberRole:role,memberTeam:teamId,memberLeader:input.leaderId||''}).forEach(([key,value])=>$('#'+key).value=value);
+        Object.entries({memberName:name,memberEmail:email,memberRole:role,memberTeam:teamId,memberLeader:role==='SALE'?leader?.id||'':''}).forEach(([key,value])=>$('#'+key).value=value);
         saveTeamMember(id);const saved=id?state.members.find(m=>m.id===id):state.members.find(m=>!before.has(m.id));
         if(!saved)throw Error('Chưa tạo được thành viên.');saved.accountId=accountId;saved.phone=phone;saved.managerId=managerId;return {id:saved.id};
       },'member:'+(id||'new'));
