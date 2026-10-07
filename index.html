@@ -1518,12 +1518,12 @@
     </style>
 <link rel="preload" as="script" href="reference-view.js?v=20261001-cleanup-1">
 <link rel="preload" as="script" href="customer-save-queue.js?v=20261003-offline-save-1">
-<link rel="preload" as="script" href="reference-crm.js?v=20261007-notifications-29">
+<link rel="preload" as="script" href="reference-crm.js?v=20261007-settings-display-30">
 <style id="crm-startup-guard">
 body:not(.reference-ready) > .app-shell,
 body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 </style>
-<script src="order-payments.js?v=20261007-notifications-29"></script>
+<script src="order-payments.js?v=20261007-settings-display-30"></script>
 
 <style id="crm-notifications-style">
 .notice-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}.notice-heading h1{margin:0}.notice-heading p{color:var(--text-muted);font-size:12px;margin:6px 0 0}
@@ -1566,7 +1566,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 })();
 </script>
 <!-- Ẩn lớp đăng nhập trong lúc khôi phục phiên để F5 không nhấp nháy về form login. -->
-<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261007-notifications-29" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
+<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261007-settings-display-30" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
 
 
 <div class="bg-aura"></div>
@@ -3924,6 +3924,9 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
                 <input id="referenceContentFontSize" type="range" min="11" max="20" value="14" style="width: 100%; accent-color: #ea580c;">
               </div>
             </div>
+            <div class="settings-actions" style="display: flex; justify-content: flex-end; margin-top: 20px;">
+            <button id="referenceSettingsSaveButton" class="btn-action btn-primary" type="button" style="padding: 10px 28px; font-size: 13.5px; font-weight: 800;">Lưu cấu hình</button>
+            </div>
           </div>
 
           <!-- Card 2: Email nội bộ -->
@@ -3951,38 +3954,6 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
             </div>
           </div>
 
-          <!-- Card 3: Telegram -->
-          <div class="table-container" style="padding: 20px 22px;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
-              <span style="width: 28px; height: 28px; border-radius: 6px; background: #e0f2fe; color: #0284c7; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px;">TG</span>
-              <div>
-                <b style="font-size: 13.5px;">Telegram</b>
-                <div style="font-size: 11px; color: var(--text-muted);">Dùng cho thông báo nội bộ hệ thống đã kết nối bot.</div>
-              </div>
-            </div>
-            <div class="grid-2-col" style="gap: 16px; margin-bottom: 12px;">
-              <div class="form-group">
-                <label style="font-size: 10.5px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">BOT BÁO DATA - TOKEN</label>
-                <input id="referenceDataBotToken" type="password" value="" autocomplete="off" style="padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 13px;">
-              </div>
-              <div class="form-group">
-                <label style="font-size: 10.5px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">BOT BÁO DATA - CHAT ID</label>
-                <input id="referenceDataBotChatId" type="text" value="" autocomplete="off" style="padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 13px;">
-              </div>
-            </div>
-            <div class="grid-2-col" style="gap: 16px; margin-bottom: 12px;">
-              <div class="form-group">
-                <label style="font-size: 10.5px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">BOT BÁO THÀNH VIÊN - TOKEN</label>
-                <input id="referenceMemberBotToken" type="password" value="" autocomplete="off" style="padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 13px;">
-              </div>
-              <div class="form-group">
-                <label style="font-size: 10.5px; font-weight: 800; color: var(--text-muted); text-transform: uppercase;">BOT BÁO THÀNH VIÊN - CHAT ID</label>
-                <input id="referenceMemberBotChatId" type="text" value="" autocomplete="off" style="padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 13px;">
-              </div>
-            </div>
-            <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">Telegram chỉ dùng cho thông báo nội bộ. Email nhận thông báo được cài riêng cho từng nhân sự trong mục Đội ngũ.</div>
-          </div>
-
           <!-- Card 4: Leader bắt buộc điểm danh & Nút Lưu -->
           <div class="table-container" style="padding: 16px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
             <label style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 12.5px; cursor: pointer;">
@@ -3992,7 +3963,6 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
                 <div style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Áp dụng quy định điểm danh cho tài khoản Leader.</div>
               </div>
             </label>
-            <button id="referenceSettingsSaveButton" class="btn-action btn-primary" type="button" style="padding: 10px 28px; font-size: 13.5px; font-weight: 800;">Lưu cấu hình</button>
           </div>
         </div>
       </section>
@@ -4508,8 +4478,8 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 <script src="reference-view.js?v=20261001-cleanup-1"></script>
 <script src="customer-save-queue.js?v=20261003-offline-save-1"></script>
 <script src="hr-profiles.js?v=20261005-hrm-24" ></script>
-<script src="crm-notifications.js?v=20261007-notifications-29"></script>
-<script src="reference-crm.js?v=20261007-notifications-29"></script>
+<script src="crm-notifications.js?v=20261007-settings-display-30"></script>
+<script src="reference-crm.js?v=20261007-settings-display-30"></script>
 <script src="support-chat-widget.js?v=20261001-no-sse-1"></script>
 <script>
   (() => {

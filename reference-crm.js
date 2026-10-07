@@ -3158,10 +3158,6 @@
     const navigationRange=q('#referenceNavigationFontSize');
     const contentRange=q('#referenceContentFontSize');
     const emailEnabled=q('#referenceEmailNotificationsEnabled');
-    const dataToken=q('#referenceDataBotToken');
-    const dataChatId=q('#referenceDataBotChatId');
-    const memberToken=q('#referenceMemberBotToken');
-    const memberChatId=q('#referenceMemberBotChatId');
     const leaderAttendance=q('#leaderAttendanceRequired');
     let colorPicker=q('#referenceAccentPicker');
     const fonts=Object.fromEntries(data.fonts||[]);
@@ -3176,10 +3172,6 @@
     navigationRange.value=settings.navigationFontSize||12;
     contentRange.value=settings.contentFontSize||14;
     if(emailEnabled)emailEnabled.checked=settings.emailNotificationsEnabled!==false;
-    if(dataToken)dataToken.value=settings.dataBotToken||'';
-    if(dataChatId)dataChatId.value=settings.dataBotChatId||'';
-    if(memberToken)memberToken.value=settings.memberBotToken||'';
-    if(memberChatId)memberChatId.value=settings.memberBotChatId||'';
     if(leaderAttendance)leaderAttendance.checked=settings.leaderAttendanceRequired!==false;
 
     if(!colorPicker){
@@ -3238,10 +3230,6 @@
         contentFontSize:Number(contentRange.value),
         emailNotificationsEnabled:emailEnabled?emailEnabled.checked:true,
         leaderAttendanceRequired:leaderAttendance?leaderAttendance.checked:true,
-        dataBotToken:dataToken?.value.trim()||'',
-        dataBotChatId:dataChatId?.value.trim()||'',
-        memberBotToken:memberToken?.value.trim()||'',
-        memberBotChatId:memberChatId?.value.trim()||'',
         referenceAppearance:true
       };
       try{
