@@ -75,3 +75,23 @@ test('Throwing destroy on a late connection cannot strand the next lease',async(
  resolve({destroy(){throw Error('already closed');}});await new Promise(setImmediate);
  assert.equal(pool.stats().active,0);
 });
+
+
+test('Every local UI script and stylesheet is included in both deployment roots',()=>{
+ const fs=require('node:fs'),deployment=fs.readFileSync(ROOT+'/.cpanel.yml','utf8');
+ const copyLines=deployment.split('\n').filter(line=>line.includes('/bin/cp -R'));
+ for(const destination of ['$PUBLICPATH','$CRMPATH']){
+  const line=copyLines.find(line=>line.trim().endsWith(destination));
+  assert.ok(line,'Missing deployment destination '+destination);
+  const files=new Set(line.trim().split(/\s+/));
+  for(const page of ['index.html','crm-runtime.html','commission_tree_demo.html']){
+   const html=fs.readFileSync(ROOT+'/'+page,'utf8');
+   for(const match of html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/g)){
+    const file=match[1].split(/[?#]/)[0].replace(/^\.\//,'');
+    if(/^(?:[a-z]+:|\/\/)/i.test(file)||! /\.(?:js|css)$/.test(file))continue;
+    assert.ok(fs.existsSync(ROOT+'/'+file),page+' references missing file '+file);
+    assert.ok(files.has(file),destination+' is missing '+file+' referenced by '+page);
+   }
+  }
+ }
+});

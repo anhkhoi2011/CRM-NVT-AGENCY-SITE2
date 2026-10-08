@@ -359,9 +359,9 @@
   const person=id=>data?.members.find(m=>m.id===id)?.name||'— Chưa phân Sale —';
   const teamLabel=(teamId,leaderId)=>{const leader=data?.members.find(m=>m.id===leaderId&&m.role==='LEADER');return leader?.name?'Team '+leader.name:(teamId?'Team '+teamId:'Ch\u01b0a ph\u00e2n Team');};
   const teamIdFromName=name=>{const slug=String(name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\u0110/g,'D').replace(/\u0111/g,'d').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,15);return 'TEAM-'+(slug||Date.now().toString().slice(-6));};
-  const internalCode=(value)=>((data?.user?.actualRole||data?.user?.role)==='ADMIN'?value:'Đơn hàng');
+  const internalCode=(value)=>((data?.user?.actualRole||data?.user?.role)==='ADMIN'?shortOrderCode(value):'Đơn hàng');
   // Chỉ rút gọn mã ở lớp hiển thị; mã đầy đủ trong API/MySQL vẫn được giữ nguyên.
-  const shortOrderCode=value=>{const raw=String(value||'').trim();if(!raw)return 'NVT-—';const normalized=raw.replace(/^NVT[-_]?/i,'').replace(/[^a-z0-9]/gi,'');return 'NVT-'+(normalized.slice(-8)||raw.slice(-8));};
+  const shortOrderCode=value=>CrmNotifications.shortOrderCode(value);
   const fmtDate=v=>{const d=String(v||'');const m=d.match(/^(\d{4})-(\d{2})-(\d{2})(.*)$/);return m?`${m[3]}/${m[2]}/${m[1]}${m[4]}`:d;};
   const fromDay=days=>{const d=new Date(data.today+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-days+1);return d.toISOString().slice(0,10);};
   const renders={customers:renderCustomerTable,care:renderCareView,queue:renderDataQueue,orders:renderOrdersTable,drawer:openDrawerForCust,careOpen:openCareGroupModal,careOptions:updateCareGroupOptions,switchTab};
@@ -600,10 +600,12 @@
   }
   function positionCustomerAssignmentColumns(head,body,atEnd){
     const keys=['source','leader','sale'];
+    const actionIndex=Array.from(head.cells).findIndex(cell=>/THAO T\u00c1C|H\u1ed2 S\u01a0|X\u00d3A DATA/i.test(cell.textContent||''));
     const position=row=>{
       if(atEnd){
         const cells=Array.from(row.cells);if(cells.length<6)return;
-        keys.forEach((key,index)=>{const cell=cells[3+index];cell.dataset.customerAssignmentColumn=key;row.appendChild(cell);});
+        const anchor=actionIndex>=0?cells[actionIndex]:null;
+        keys.forEach((key,index)=>{const cell=cells[3+index];cell.dataset.customerAssignmentColumn=key;row.insertBefore(cell,anchor);});
       }else{
         const cells=keys.map(key=>Array.from(row.cells).find(cell=>cell.dataset.customerAssignmentColumn===key));
         if(cells.some(cell=>!cell))return;
@@ -969,7 +971,7 @@
     if(!data)return;
     // Lưu cả cuộn ngang của bảng và cuộn dọc của trang trước khi thay các dòng.
     const parents=[];for(let node=q('#customerTableBody')?.parentElement;node;node=node.parentElement)parents.push([node,node.scrollLeft,node.scrollTop]);
-    prepareCustomerColumnFilters();syncCustomerOwnerFilter();renders.customers();fillCustomerOptions();dashboard();
+    prepareCustomerColumnFilters();syncCustomerOwnerFilter();renders.customers();fillCustomerOptions();window.crmMobile?.prepareCustomerTable();dashboard();
     parents.forEach(([node,left,top])=>{node.scrollLeft=left;node.scrollTop=top;});
     bindReferenceDeleteButtons();
   };
@@ -1457,7 +1459,17 @@
     ensureProductImageStyles();
     const body=q('#tab-products tbody');
     table(body,data.products.map(p=>[p.name,p.sku,PRODUCT_KINDS.find(([kind])=>kind===productKind(p))?.[1]||'Khác',p.type==='RENTAL'?p.rentalMonths+' tháng':'Vĩnh viễn',money(p.price),(Number(p.vatRate??.1)*100).toFixed(2).replace(/\.00$/,'')+'% ('+money(Math.round(p.price*Number(p.vatRate??.1)))+')',p.active===false?'Tạm dừng':p.type==='RENTAL'?'Đang cho thuê':'Đang bán','']));
-    Array.from(body.rows).forEach((row,i)=>{const p=data.products[i],button=row.querySelector('button');if(button){button.removeAttribute('onclick');button.onclick=()=>productModal(p.id);button.disabled=data.user.role!=='ADMIN';}const chip=row.cells[6]?.querySelector('.chip');if(chip)chip.className='chip '+(p.active===false?'chip-warm':'chip-green');});
+    Array.from(body.rows).forEach((row,i)=>{
+      const p=data.products[i],actions=row.cells[7];
+      if(row.cells[1])row.cells[1].hidden=true;
+      if(actions){
+        actions.replaceChildren();actions.style.whiteSpace='nowrap';
+        const edit=document.createElement('button');edit.type='button';edit.className='btn-action btn-secondary';edit.textContent='Sửa';edit.disabled=data.user.role!=='ADMIN';edit.onclick=()=>productModal(p.id);
+        const remove=document.createElement('button');remove.type='button';remove.className='btn-action btn-danger';remove.textContent='Xóa';remove.dataset.productDelete=p.id;remove.style.cssText='margin-left:8px;color:#b91c1c;border:1px solid #fecaca;background:#fff;padding:5px 12px;border-radius:6px';remove.disabled=data.user.role!=='ADMIN';remove.onclick=()=>{if(confirm('Xóa sản phẩm "'+p.name+'"? Các đơn hàng cũ vẫn giữ nguyên thông tin đã ghi nhận.'))run(()=>api.removeProduct(p.id),()=>referenceNotice('Đã xóa sản phẩm.'));};
+        actions.append(edit,remove);
+      }
+      const chip=row.cells[6]?.querySelector('.chip');if(chip)chip.className='chip '+(p.active===false?'chip-warm':'chip-green');
+    });
     Array.from(body.rows).forEach((row,i)=>{const p=data.products[i],productCell=row.cells[0],nameHost=productCell?.querySelector('.cell-main')||productCell,heading=nameHost?.querySelector('b')||nameHost?.querySelector('strong')||nameHost;if(!p||!heading||heading.querySelector('.reference-product-thumb'))return;const label=document.createElement('span');label.textContent=p.name||'';const thumb=document.createElement(p.imageData?'img':'span');thumb.className='reference-product-thumb';if(p.imageData){thumb.src=p.imageData;thumb.alt='';}else thumb.textContent=String(p.name||'?').trim().slice(0,1).toUpperCase()||'?';const entry=document.createElement('div');entry.className='reference-product-name';entry.append(thumb,label);if(heading===nameHost)nameHost.replaceChildren(entry);else heading.replaceWith(entry);});
     const buttons=qa('#tab-products .headline-row button');buttons.forEach(n=>n.removeAttribute('onclick'));
     buttons[1].onclick=()=>productModal();buttons[1].disabled=data.user.role!=='ADMIN';
@@ -2054,7 +2066,7 @@
   const noticeKind=n=>CrmNotifications.kind(n);
   function noticeRow(n){
     const kind=noticeKind(n),read=(n.readBy||[]).includes(data.user.id);
-    return `<article class="notice-row ${read?'notice-read':'notice-unread'}" data-notice-id="${esc(n.id)}" style="--notice-color:${noticeColors[kind]}"><div class="notice-icon" aria-hidden="true">${noticeIcons[kind]}</div><div class="notice-content"><div class="notice-title">${read?'':'<span class="notice-dot" aria-label="Chưa đọc"></span>'}<b>${esc(n.title||CrmNotifications.labels[kind])}</b></div><p>${esc(n.text||'')}</p><div class="notice-meta"><span>${esc(CrmNotifications.labels[kind])}</span><span>·</span><time>${esc(CrmNotifications.formatTime(n.at||n.createdAt))}</time><span>· ${read?'Đã đọc':'Chưa đọc'}</span></div></div><div class="notice-actions"><button type="button" class="btn-secondary" data-notice-read="${esc(n.id)}" ${read?'disabled':''}>${read?'Đã đọc':'Đánh dấu đã đọc'}</button><button type="button" class="btn-secondary notice-delete" data-notice-delete="${esc(n.id)}" aria-label="Xóa thông báo">Xóa</button></div></article>`;
+    return `<article class="notice-row ${read?'notice-read':'notice-unread'}" data-notice-id="${esc(n.id)}" style="--notice-color:${noticeColors[kind]}"><div class="notice-icon" aria-hidden="true">${noticeIcons[kind]}</div><div class="notice-content"><div class="notice-title">${read?'':'<span class="notice-dot" aria-label="Chưa đọc"></span>'}<b>${esc(CrmNotifications.displayText(n,n.title||CrmNotifications.labels[kind]))}</b></div><p>${esc(CrmNotifications.displayText(n))}</p><div class="notice-meta"><span>${esc(CrmNotifications.labels[kind])}</span><span>·</span><time>${esc(CrmNotifications.formatTime(n.at||n.createdAt))}</time><span>· ${read?'Đã đọc':'Chưa đọc'}</span></div></div><div class="notice-actions"><button type="button" class="btn-secondary" data-notice-read="${esc(n.id)}" ${read?'disabled':''}>${read?'Đã đọc':'Đánh dấu đã đọc'}</button><button type="button" class="btn-secondary notice-delete" data-notice-delete="${esc(n.id)}" aria-label="Xóa thông báo">Xóa</button></div></article>`;
   }
   function notices(){
     const tab=q('#tab-notifications'),dropdown=q('#notificationDropdown');
@@ -2530,7 +2542,7 @@
 
     let iframe = host.querySelector('#accountingIframe');
     if (!iframe) {
-      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261007-accounting-month-filters-50" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
+      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261008-mobile-customers-58" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
       iframe = host.querySelector('#accountingIframe');
       iframe?.addEventListener('load',()=>{host.classList.add('is-ready');syncMembersToAccountingMindmap();},{once:true});
     } else {
@@ -3221,13 +3233,14 @@
   filterTeamPeriod=(period,button)=>{q('#teamStartDate').value=fromDay(parseInt(period)||30);q('#teamEndDate').value=data.today;if(button){qa('.team-period-btn').forEach(b=>b.className='btn-secondary team-period-btn');button.className='btn-primary team-period-btn';}updateTeamDateLabel();};
   updateTeamDateLabel=()=>text('teamDateRangeLabel',fmtDate(q('#teamStartDate').value)+' - '+fmtDate(q('#teamEndDate').value));
   let revenuePeriod=30;
-  function renderRevenue(){if(!data)return;const actualRole=data.user.actualRole||data.user.role;const subtitle=q('#tab-revenue .headline-row > div:first-child > div');if(subtitle)subtitle.textContent=actualRole==='MANAGER'?`Chỉ hiển thị doanh thu Team ${data.user.teamId||'được chọn'} thuộc tuyến Manager`:actualRole==='LEADER'?`Chỉ hiển thị doanh thu Team ${data.user.teamId||''} do bạn quản lý`:actualRole==='SALE'?'Chỉ hiển thị doanh thu từ khách hàng bạn phụ trách':'Báo cáo doanh thu toàn hệ thống';const start=q('#revStartDate').value,end=q('#revEndDate').value;const events=data.financialEvents.filter(e=>(!start||e.occurredAt?.slice(0,10)>=start)&&(!end||e.occurredAt?.slice(0,10)<=end));const total=events.reduce((s,e)=>s+Number(e.amount||0),0);const rentalIds=new Set(data.orders.filter(o=>o.rentalMonths).map(o=>o.id));const rent=events.filter(e=>rentalIds.has(e.orderId)).reduce((s,e)=>s+Number(e.amount||0),0),sale=total-rent;const pct=total?Math.max(0,Math.min(100,sale/total*100)):0;const circle=q('#revSvgSaleCircle'),rentCircle=q('#revSvgRentCircle');circle?.setAttribute('stroke-dasharray',`${pct/100*326.73} 326.73`);rentCircle?.setAttribute('stroke-dasharray',`${total?(100-pct)/100*326.73:0} 326.73`);rentCircle?.setAttribute('transform',`rotate(${-90+pct*3.6} 80 80)`);text('revSvgSaleText',pct.toFixed(1)+'%');text('revSvgRentText',(total?100-pct:0).toFixed(1)+'%');text('revDonutCenterAmount',money(total));text('revDonutCenterPeriod',revenuePeriod+' NGÀY');text('revDonutTotalAmount',money(total));text('revStatSoldAmount',money(total));text('revDonutSalePercent',pct.toFixed(1)+'%');text('revDonutRentPercent',(total?100-pct:0).toFixed(1)+'%');text('revDonutSaleDetail',money(sale));text('revDonutRentDetail',money(rent));text('revDonutVatAmount',money(events.reduce((sum,event)=>sum+Number(event.vatAmount||0),0)));table(q('#revenueSalesTableBody'),events.map(e=>{const o=data.orders.find(o=>o.id===e.orderId)||{};return [internalCode(e.code),fmtDate(e.occurredAt),e.customerName,o.productName,e.label,o.source||'—',person(o.saleId),money(e.netAmount),money(e.vatAmount),money(e.amount),o.status,''];}));Array.from(q('#revenueSalesTableBody')?.rows||[]).forEach((r,i)=>r.querySelectorAll('button').forEach(b=>{b.removeAttribute('onclick');b.onclick=()=>workflow('order',events[i].orderId);}));table(q('#rentalCustomersTableBody'),data.orders.filter(o=>o.rentalMonths).map(o=>[o.customerName,o.productName,fmtDate(o.rentalEndsAt),money(o.total),o.status,'']));Array.from(q('#rentalCustomersTableBody')?.rows||[]).forEach((r,i)=>r.querySelectorAll('button').forEach(b=>{b.removeAttribute('onclick');b.onclick=()=>workflow('order',data.orders.filter(o=>o.rentalMonths)[i].id);}));}
+  function renderRevenue(){if(!data)return;const actualRole=data.user.actualRole||data.user.role;const subtitle=q('#tab-revenue .headline-row > div:first-child > div');if(subtitle)subtitle.textContent=actualRole==='MANAGER'?`Chỉ hiển thị doanh thu Team ${data.user.teamId||'được chọn'} thuộc tuyến Manager`:actualRole==='LEADER'?`Chỉ hiển thị doanh thu Team ${data.user.teamId||''} do bạn quản lý`:actualRole==='SALE'?'Chỉ hiển thị doanh thu từ khách hàng bạn phụ trách':'Báo cáo doanh thu toàn hệ thống';const start=q('#revStartDate').value,end=q('#revEndDate').value;const events=data.financialEvents.filter(e=>(!start||e.occurredAt?.slice(0,10)>=start)&&(!end||e.occurredAt?.slice(0,10)<=end));const total=events.reduce((s,e)=>s+Number(e.amount||0),0);const rentalIds=new Set(data.orders.filter(o=>o.rentalMonths).map(o=>o.id));const rent=events.filter(e=>rentalIds.has(e.orderId)).reduce((s,e)=>s+Number(e.amount||0),0),sale=total-rent;const pct=total?Math.max(0,Math.min(100,sale/total*100)):0;const circle=q('#revSvgSaleCircle'),rentCircle=q('#revSvgRentCircle');circle?.setAttribute('stroke-dasharray',`${pct/100*326.73} 326.73`);rentCircle?.setAttribute('stroke-dasharray',`${total?(100-pct)/100*326.73:0} 326.73`);rentCircle?.setAttribute('transform',`rotate(${-90+pct*3.6} 80 80)`);text('revSvgSaleText',pct.toFixed(1)+'%');text('revSvgRentText',(total?100-pct:0).toFixed(1)+'%');text('revDonutCenterAmount',money(total));text('revDonutCenterPeriod',revenuePeriod+' NGÀY');text('revDonutTotalAmount',money(total));text('revStatSoldAmount',money(total));text('revDonutSalePercent',pct.toFixed(1)+'%');text('revDonutRentPercent',(total?100-pct:0).toFixed(1)+'%');text('revDonutSaleDetail',money(sale));text('revDonutRentDetail',money(rent));text('revDonutVatAmount',money(events.reduce((sum,event)=>sum+Number(event.vatAmount||0),0)));table(q('#revenueSalesTableBody'),events.map(e=>{const o=data.orders.find(o=>o.id===e.orderId)||{};return [internalCode(o.code||e.code||e.orderId),fmtDate(e.occurredAt),e.customerName,o.productName,e.label,o.source||'—',person(o.saleId),money(e.netAmount),money(e.vatAmount),money(e.amount),o.status,''];}));Array.from(q('#revenueSalesTableBody')?.rows||[]).forEach((r,i)=>r.querySelectorAll('button').forEach(b=>{b.removeAttribute('onclick');b.onclick=()=>workflow('order',events[i].orderId);}));table(q('#rentalCustomersTableBody'),data.orders.filter(o=>o.rentalMonths).map(o=>[o.customerName,o.productName,fmtDate(o.rentalEndsAt),money(o.total),o.status,'']));Array.from(q('#rentalCustomersTableBody')?.rows||[]).forEach((r,i)=>r.querySelectorAll('button').forEach(b=>{b.removeAttribute('onclick');b.onclick=()=>workflow('order',data.orders.filter(o=>o.rentalMonths)[i].id);}));}
   // Bổ sung URL Landing Page sau khi renderer cũ dựng bảng, để dữ liệu hiển thị
   // luôn truy ngược được về đúng website đã nạp khách và không dùng dữ liệu mẫu.
   const baseRenderRevenue=renderRevenue;
   renderRevenue=function(){
     baseRenderRevenue();
     const start=q('#revStartDate')?.value,end=q('#revEndDate')?.value;
+    text('revLedgerRange',start&&end?`Phạm vi: ${fmtDate(start)} – ${fmtDate(end)}`:start?`Từ ngày ${fmtDate(start)}`:end?`Đến ngày ${fmtDate(end)}`:'Phạm vi: Tất cả ngày');
     const events=(data?.financialEvents||[]).filter(e=>(!start||e.occurredAt?.slice(0,10)>=start)&&(!end||e.occurredAt?.slice(0,10)<=end));
     qa('#revenueSalesTableBody tr').forEach((row,index)=>{const event=events[index],order=data?.orders?.find(item=>item.id===event?.orderId),customer=data?.customers?.find(item=>item.id===order?.customerId),website=data?.websites?.find(item=>item.id===(order?.websiteId||customer?.websiteId));if(row.cells[5])row.cells[5].textContent=website?.sourceUrl||customer?.landingPageUrl||order?.source||'—';});
     const startDate=start||data?.today,endDate=end||data?.today;
@@ -3246,10 +3259,10 @@
       return {course,rental,total,tax,afterTax:total-tax,courseCount:courseOrders.length,rentalCustomers:activeRentalCustomers.size};
     };
     const current=metrics(startDate,endDate),previous=metrics(previousStart,previousEnd),change=(value,old)=>{if(!old)return value?100:0;return (value-old)/Math.abs(old)*100;},badge=value=>`${value>=0?'+':''}${value.toFixed(1)}%`;
-    const updateCard=(id,title,value,sub,deltaValue)=>{const valueNode=q(`#${id}`);if(!valueNode)return;valueNode.textContent=money(value);const card=valueNode.closest('.bento-card');if(!card)return;const titleNode=card.querySelector('div:first-child span:first-child');if(titleNode)titleNode.textContent=title;const footer=card.querySelector('div[style*="margin-top: 10px"]');if(footer){const parts=footer.querySelectorAll('span,b');if(parts[0])parts[0].textContent=sub||'';if(parts[1])parts[1].textContent='';}const chip=card.querySelector('div:first-child span:last-child');if(chip){chip.textContent=badge(deltaValue);chip.style.background=deltaValue>=0?'#dcfce7':'#fee2e2';chip.style.color=deltaValue>=0?'#15803d':'#b91c1c';}};
+    const updateCard=(id,title,value,sub,deltaValue)=>{const valueNode=q(`#${id}`);if(!valueNode)return;valueNode.textContent=money(Math.round(value));const card=valueNode.closest('.bento-card');if(!card)return;const titleNode=card.querySelector('div:first-child span:first-child');if(titleNode)titleNode.textContent=title;const footer=card.querySelector('div[style*="margin-top: 10px"]');if(footer){const parts=footer.querySelectorAll('span,b');if(parts[0])parts[0].textContent=sub||'';if(parts[1])parts[1].textContent='';}const chip=card.querySelector('div:first-child span:last-child');if(chip){chip.textContent=badge(deltaValue);chip.style.background=deltaValue>=0?'#dcfce7':'#fee2e2';chip.style.color=deltaValue>=0?'#15803d':'#b91c1c';}};
     updateCard('revStatSoldAmount','DOANH THU KHÓA HỌC',current.course,`${current.courseCount} khóa bán`,change(current.course,previous.course));
     updateCard('revStatRentingCust','DOANH THU THUÊ CHỈ BÁO',current.rental,`${current.rentalCustomers} khách đang thuê`,change(current.rental,previous.rental));
-    updateCard('revStatMrr','Tá»"NG DOANH THU',current.total,'',change(current.total,previous.total));
+    updateCard('revStatMrr','TỔNG DOANH THU',current.total,'',change(current.total,previous.total));
     updateCard('revStatAov','DOANH THU SAU THUẾ',current.afterTax,'',change(current.afterTax,previous.afterTax));
     text('revRentalCountFooter',`${current.rentalCustomers} khách`);
     text('revRentalAmountFooter',money(current.rental));

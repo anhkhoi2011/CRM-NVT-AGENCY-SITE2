@@ -654,6 +654,31 @@
  border-color: #0f172a;
  }
 
+
+ /* Order review: calm colors, clear actions and a pinned action column. */
+ #vatOrdersTable { border-collapse:separate; border-spacing:0; font-size:13px; }
+ #vatOrdersTable th { padding:14px 16px; background:#f8fafc; color:#475569 !important; border-right:0; font-size:11px; }
+ #vatOrdersTable td { padding:16px; border-right:0; background:#fff !important; color:#334155 !important; line-height:1.5; }
+ #vatOrdersTable tbody tr:hover td { background:#f8fafc !important; }
+ #vatOrdersTable th:first-child, #vatOrdersTable tbody td:first-child { position:sticky; left:0; z-index:2; min-width:200px; border-right:1px solid #e2e8f0; }
+ #vatOrdersTable th:first-child { z-index:3; }
+ #vatOrdersTable tbody td:first-child { box-shadow:5px 0 8px -7px #64748b; }
+ #vatOrdersTable .order-actions { display:grid; gap:6px; width:200px; }
+ #vatOrdersTable .order-actions .btn-action, #vatOrdersTable .order-actions .chip { box-sizing:border-box; display:flex; align-items:center; justify-content:center; min-height:32px; padding:6px 10px !important; border:1px solid #dbe3ed; border-radius:7px; font-family:inherit; font-weight:600; font-size:12px !important; line-height:1.4; background:#fff; color:#334155; white-space:nowrap; }
+ #vatOrdersTable .order-actions .btn-primary { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; cursor:pointer; }
+ #vatOrdersTable .order-actions .btn-secondary { cursor:pointer; }
+ #vatOrdersTable .order-actions .btn-danger { color:#b91c1c; cursor:pointer; }
+ #vatOrdersTable .order-actions button:hover:not(:disabled) { border-color:#94a3b8; filter:brightness(.97); }
+ #vatOrdersTable .order-actions button:disabled { background:#f8fafc; color:#94a3b8; cursor:not-allowed; }
+ #vatOrdersTable .order-actions .chip-green { background:#f0fdf4; color:#15803d; border-color:#dcfce7; }
+ #vatOrdersTable .order-actions .chip-yellow { background:#f8fafc; color:#64748b; }
+ #vatOrdersTable .order-action-edit { display:grid; grid-template-columns:1fr 34px; gap:6px; }
+ #vatOrdersTable .chip { border-radius:6px; font-size:11px; font-weight:600; }
+ #vatOrdersTable td:nth-child(3), #vatOrdersTable td:nth-child(8) { min-width:150px; max-width:230px; white-space:normal; overflow-wrap:anywhere; }
+ #vatOrdersTable td:nth-child(n+11):nth-child(-n+14) { font-variant-numeric:tabular-nums; white-space:nowrap; }
+ #vatOrdersTable tfoot td { background:#f8fafc !important; font-size:12px; border-top:1px solid #cbd5e1; }
+ #vatOrdersTable .order-copy-field { padding:5px 0; font-size:12px; }
+
  /* Table styling */
  .table-responsive {
  width: 100%;
@@ -667,7 +692,7 @@
  white-space: nowrap;
  }
  .order-copy-field { display:block; width:100%; padding:5px 6px; border:1px solid transparent; border-radius:6px; background:transparent; color:#334155; font:600 11px 'JetBrains Mono',monospace; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:copy; }
- #vatOrdersTable td:nth-child(6) .order-copy-field { min-width:190px; max-width:280px; white-space:normal; overflow-wrap:anywhere; font-family:inherit; }
+ #vatOrdersTable td:nth-child(7) .order-copy-field { min-width:190px; max-width:280px; white-space:normal; overflow-wrap:anywhere; font-family:inherit; }
  .order-copy-field:hover { border-color:#bfdbfe; background:#eff6ff; color:#1d4ed8; }
  .order-copy-field.is-copied { border-color:#86efac; background:#f0fdf4; color:#15803d; }
  .crm-table th {
@@ -1342,6 +1367,7 @@ body.accounting-modal-open { overflow: hidden; }
 </script>
 <script src="order-payments.js?v=20261003-bill-types-6"></script>
 <script src="accounting-detail.js?v=20261007-accounting-details-31"></script>
+<link rel="stylesheet" href="crm-mobile.css?v=20261008-mobile-customers-58">
 </head>
 <body>
 
@@ -1823,22 +1849,21 @@ body.accounting-modal-open { overflow: hidden; }
           <table class="crm-table" id="vatOrdersTable" style="margin-bottom:0;">
             <thead>
               <tr>
-                <th style="width:110px;">MÃ ĐƠN</th>
+                <th>THAO TÁC</th>
                 <th style="width:115px; text-align:center;">NGÀY GIỜ</th>
+                <th style="width:180px;">TÊN KHÁCH HÀNG</th>
+                <th style="width:120px;">SĐT KH</th>
                 <th style="width:105px;">PHÂN LOẠI</th>
-                <th style="width:130px;">KHÁCH HÀNG</th>
                 <th style="width:125px;">CCCD</th>
                 <th style="min-width:190px;">ĐỊA CHỈ</th>
-                <th style="width:110px;">SĐT KH</th>
                 <th>SẢN PHẨM / DỊCH VỤ</th>
                 <th style="width:110px;">GÓI / THỜI HẠN</th>
                 <th style="width:140px;">SALE PHỤ TRÁCH</th>
-                <th style="text-align:right; width:115px;">TIỀN CẦN THU<br><small>(trước VAT)</small></th>
+                <th style="text-align:right; width:115px;">TIỀN HÀNG<br><small>(trước VAT)</small></th>
                 <th style="text-align:right; width:100px;">VAT</th>
-                <th style="text-align:right; width:115px; color:#059669;">THỰC THU</th>
-                <th style="text-align:right; width:130px; background:#fef2f2; color:#dc2626;">CÒN LẠI</th>
+                <th style="text-align:right; width:115px;">ĐÃ THU</th>
+                <th style="text-align:right; width:130px;">CÒN LẠI</th>
                 <th style="text-align:center; width:125px;">TRẠNG THÁI</th>
-                <th style="text-align:center; width:165px;">THAO TÁC</th>
               </tr>
             </thead>
             <tbody id="vatOrdersTableBody">
@@ -1851,7 +1876,7 @@ body.accounting-modal-open { overflow: hidden; }
                 <td id="footOrderTotalVat" style="text-align:right; font-family:'JetBrains Mono'; color:#64748b;">0 đ</td>
                 <td id="footOrderTotalCollected" style="text-align:right; font-family:'JetBrains Mono'; color:#059669;">0 đ</td>
                 <td id="footOrderTotalRemaining" style="text-align:right; font-family:'JetBrains Mono'; color:#dc2626; background:#fff1f2;">0 đ</td>
-                <td colspan="2" style="font-size:11px; color:#64748b; font-weight:600; text-align:center;">(Khách cọc cần thu nốt để xuất VAT)</td>
+                <td style="text-align:center; color:#64748b;">—</td>
               </tr>
             </tfoot>
           </table>
@@ -5818,7 +5843,7 @@ function renderVatOrdersTable() {
   if (footRem) footRem.textContent = formatCurrency(totalRemaining);
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center; padding:30px; color:#94a3b8; font-weight:700;">Không tìm thấy đơn hàng nào phù hợp với bộ lọc</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; padding:30px; color:#94a3b8; font-weight:700;">Không tìm thấy đơn hàng nào phù hợp với bộ lọc</td></tr>`;
     return;
   }
 
@@ -5857,8 +5882,8 @@ function renderVatOrdersTable() {
       <div style="text-align:right;">
         <span style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a;">${formatCurrency(order.vatAmount)}</span>
         <div>
-          <small style="font-size:9.5px; color:${isVatIssued ? '#059669' : '#7c3aed'}; font-weight:800;">
-            ${isVatIssued ? '✓ Đã xuất HĐ' : 'Thuế 10% (Chờ xuất)'}
+          <small style="font-size:9.5px; color:${isVatIssued ? '#15803d' : '#64748b'}; font-weight:800;">
+            ${isVatIssued ? '✓ Đã xuất HĐ' : 'Chưa xuất VAT'}
           </small>
         </div>
       </div>
@@ -5885,29 +5910,24 @@ function renderVatOrdersTable() {
       return `<button type="button" class="order-copy-field" data-copy-value="${escapeOrderContact(text)}" onclick="event.stopPropagation(); copyOrderField(this)" title="B\u1ea5m \u0111\u1ec3 copy ${label}">${escapeOrderContact(text || '\u2014')}</button>`;
     };
 
-    // Thumbnail bill nhỏ clickable
-    const billThumbHtml = ''; // Bỏ icon ảnh vỡ trước mã đơn theo yêu cầu
-
-    // Xử lý ngày giờ chuẩn format DD/MM/YYYY HH:mm
     let dateDisplay = '—';
     let timeDisplay = '';
     if (order.billDate) {
-      const parts = order.billDate.split(' ');
-      if (parts[0]) {
-        const dParts = parts[0].split('-');
-        if (dParts.length === 3) dateDisplay = `${dParts[2]}/${dParts[1]}/${dParts[0]}`;
-        else dateDisplay = parts[0];
+      const timestamp = new Date(String(order.billDate).replace(' ', 'T'));
+      if (!Number.isNaN(timestamp.getTime())) {
+        dateDisplay = timestamp.toLocaleDateString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric'});
+        timeDisplay = timestamp.toLocaleTimeString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit'});
       }
-      if (parts[1]) timeDisplay = parts[1];
     }
 
     tr.innerHTML = `
       <td>
-        <div style="display:flex; align-items:center;">
-          ${billThumbHtml}
-          <div>
-            <b style="font-family:'JetBrains Mono'; color:#2563eb; text-decoration:underline;" onclick="openOrderDetailModal('${order.id}')">${order.id}</b>
-            ${isPaid ? '<span style="display:block; font-size:9px; color:#059669; font-weight:800;">✓ Thành công</span>' : ''}
+        <div class="order-actions">
+          ${confirmBtnHtml}
+          ${vatBtnHtml}
+          <div class="order-action-edit">
+            <button type="button" class="btn-action btn-secondary" onclick="event.stopPropagation(); openOrderDetailModal('${order.id}')" title="Xem và chỉnh sửa đơn hàng">Sửa / Xem</button>
+            <button type="button" class="btn-action btn-danger" onclick="event.stopPropagation(); deleteOrder('${order.id}')" title="Xóa đơn hàng" aria-label="Xóa đơn hàng">✕</button>
           </div>
         </div>
       </td>
@@ -5915,30 +5935,22 @@ function renderVatOrdersTable() {
         <div style="font-weight:700; color:#1e293b;">${dateDisplay}</div>
         <small style="color:#64748b; font-size:10px;">${timeDisplay}</small>
       </td>
-      <td><span class="chip ${typeChipClass}">${order.typeLabel}</span></td>
       <td><b style="color:#0f172a; font-size:13px;">${order.customerName}</b></td>
+      <td>${copyField(order.customerPhone, 's\u1ed1 \u0111i\u1ec7n tho\u1ea1i')}</td>
+      <td><span class="chip ${typeChipClass}">${order.typeLabel}</span></td>
       <td>${copyField(order.customerCccd, 'CCCD')}</td>
       <td>${copyField(order.customerAddress, '\u0111\u1ecba ch\u1ec9')}</td>
-      <td>${copyField(order.customerPhone, 's\u1ed1 \u0111i\u1ec7n tho\u1ea1i')}</td>
       <td>
         <b style="color:#1e293b;">${order.productName}</b>
         <div><small style="color:#94a3b8; font-family:'JetBrains Mono';">${order.productSku}</small></div>
       </td>
       <td><span class="chip chip-warm">${order.term}</span></td>
-      <td style="color:#7c3aed; font-weight:700;">${order.saleName}</td>
+      <td style="font-weight:600;">${order.saleName}</td>
       <td style="text-align:right; font-weight:800; font-family:'JetBrains Mono';">${formatCurrency(order.subtotal)}</td>
       <td>${vatCellHtml}</td>
       <td style="text-align:right; font-weight:800; color:#059669; font-family:'JetBrains Mono';">${formatCurrency(order.collected)}</td>
       <td style="text-align:right; background:#fef2f2;">${remainingCellHtml}</td>
       <td style="text-align:center;"><span class="chip ${payBadgeClass}">${payBadgeText}</span></td>
-      <td style="text-align:center; white-space:nowrap;">
-        <div style="display:inline-flex; align-items:center; gap:4px;">
-          ${confirmBtnHtml}
-          ${vatBtnHtml}
-          <button type="button" class="btn-action btn-secondary" onclick="event.stopPropagation(); openOrderDetailModal('${order.id}')" style="font-size:11px; padding:3px 7px; white-space:nowrap;" title="Xem và chỉnh sửa toàn diện">Sửa / Xem</button>
-          <button type="button" class="btn-action btn-danger" onclick="event.stopPropagation(); deleteOrder('${order.id}')" style="font-size:11px; padding:3px 6px;">✕</button>
-        </div>
-      </td>
     `;
 
     tbody.appendChild(tr);
@@ -8028,5 +8040,6 @@ window.printOrderInvoice = printOrderInvoice;
     } catch (e) {}
   })();
 </script>
+<script src="crm-mobile.js?v=20261008-mobile-customers-58"></script>
 </body>
 </html>

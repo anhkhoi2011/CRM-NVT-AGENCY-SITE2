@@ -20,5 +20,18 @@
  function list(notices,userId){
   return (notices||[]).filter(n=>kind(n)&&!(n.deletedBy||[]).includes(userId)).slice().sort((a,b)=>time(b.at||b.createdAt)-time(a.at||a.createdAt)||String(b.id||'').localeCompare(String(a.id||'')));
  }
- return {labels,kind,time,formatTime,list};
+ function shortOrderCode(value){
+  const raw=String(value||'').trim();
+  if(!raw)return '—';
+  if(/^\d{1,8}$/.test(raw))return raw;
+  let hash=2166136261;
+  for(let i=0;i<raw.length;i++){hash^=raw.charCodeAt(i);hash=Math.imul(hash,16777619);}
+  return String((hash>>>0)%100000000).padStart(8,'0');
+ }
+ function displayText(notice,value=notice.text){
+  const text=String(value||'');
+  if(!['PAYMENT_REVIEW','PAYMENT_CONFIRMED'].includes(kind(notice)))return text;
+  return text.replace(/\bNVT[-_][a-z0-9]+(?:[-_][a-z0-9]+)*\b/gi,shortOrderCode);
+ }
+ return {labels,kind,time,formatTime,list,shortOrderCode,displayText};
 });

@@ -2219,3 +2219,15 @@ test('Compact and full asset snapshots share revisions and stale order edits sti
  await assert.rejects(()=>f.api.write(admin,'stale-update',[change('orders',{...first,saleNote:'Stale'},compact.versions['orders/o1'])]),error=>error.status===409);
  assert.equal((await f.api.read(admin,{passive:true,full:true})).state.orders[0].billImage,o.billImage);
 });
+
+test('Reference product deletion preserves existing orders, requires Admin and retries once',async()=>{
+ const c=referenceBridge();
+ vm.runInContext(`state.products=[{id:'p',name:'Course',sku:'COURSE',price:100,type:'SALE'}];PRODUCTS=state.products;state.orders=[{id:'o',productId:'p',productName:'Course',sku:'COURSE',total:110}];let deleteAttempts=0;flushServerPersistence=async()=>++deleteAttempts!==2;`,c);
+ await assert.rejects(()=>c.window.crmApi.removeProduct('p'),/Chưa lưu/);
+ assert.equal((await c.window.crmApi.removeProduct('p')).ok,true);
+ assert.equal(vm.runInContext('state.products.length',c),0);assert.equal(vm.runInContext('PRODUCTS.length',c),0);
+ assert.equal(vm.runInContext('state.orders[0].productName',c),'Course');assert.equal(vm.runInContext('state.orders[0].total',c),110);
+ assert.equal(vm.runInContext("state.audit.filter(item=>item.action==='DELETE_PRODUCT').length",c),1);
+ vm.runInContext(`currentAccount={id:'sale',role:'SALE'}`,c);
+ await assert.rejects(()=>c.window.crmApi.removeProduct('p'),/không có quyền/);
+});

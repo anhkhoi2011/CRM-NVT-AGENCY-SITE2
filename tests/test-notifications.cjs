@@ -16,3 +16,13 @@ test('Notification display uses Vietnam time for both local and UTC timestamps',
  assert.match(model.formatTime('2026-10-07T03:47:24Z'),/10:47/);assert.match(model.formatTime('2026-10-07T03:47:24Z'),/07\/10\/2026/);
  assert.equal(model.formatTime('invalid'),'—');
 });
+
+test('Order display codes are eight stable digits and payment notices replace only the code',()=>{
+ const code='NVT-1791367330699-59e2b54c532f123ec80a90ae';
+ const short=model.shortOrderCode(code);assert.match(short,/^\d{8}$/);assert.equal(model.shortOrderCode(code),short);
+ assert.notEqual(model.shortOrderCode(code+'1'),short);assert.equal(model.shortOrderCode('123456'),'123456');assert.equal(model.shortOrderCode(''),'—');
+ const notice={kind:'PAYMENT_REVIEW',text:code+' · Nguyễn An · đã thu 500.000 đ'};
+ assert.equal(model.displayText(notice),short+' · Nguyễn An · đã thu 500.000 đ');assert.equal(notice.text,code+' · Nguyễn An · đã thu 500.000 đ');
+ assert.equal(model.displayText({kind:'PAYMENT_CONFIRMED',text:code}),short);
+ assert.equal(model.displayText({kind:'DATA_ARRIVAL',text:code}),code);
+});

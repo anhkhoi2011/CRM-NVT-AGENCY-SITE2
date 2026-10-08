@@ -501,6 +501,17 @@
         return {id:product.id};
       },'product:'+ (id||'new'));
     },
+    async removeProduct(id) {
+      requireRole(['ADMIN']);
+      return persist(()=>{
+        const product=state.products.find(item=>item.id===id);
+        if(!product)throw Error('Sản phẩm không còn tồn tại.');
+        state.products=state.products.filter(item=>item.id!==id);
+        PRODUCTS=state.products;
+        audit('DELETE_PRODUCT',id,product.name);
+        return {ok:true,id};
+      },'remove-product:'+id);
+    },
     // Các thao tác quản trị dùng chung giao dịch và kiểm tra quyền của runtime.
     async updateField(customerId, fieldId, value) {
       return persist(()=>{
