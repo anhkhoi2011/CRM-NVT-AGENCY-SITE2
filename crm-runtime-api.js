@@ -199,8 +199,18 @@
           if(!['ADMIN','ACCOUNTING'].includes(role))throw Error('Chỉ Kế toán hoặc Admin được xác nhận đối soát.');
           if(order.paymentReconciled)throw Error('Đơn đã được đối soát.');
           if(!['PAID','COURSE_GRANTED'].includes(order.status)||OrderPayments.balance(order)!==0||OrderPayments.paid(order)!==order.total)throw Error('Sale cần ghi nhận đủ tiền trước khi Kế toán đối soát.');
-          if(input.confirmed!==true)throw Error('Xác nhận đã kiểm tra các bill và giao dịch ngân hàng.');
-          if(OrderPayments.receipts(order).some(r=>!OrderPayments.images(r).length))throw Error('Cần bổ sung ảnh bill cho từng lần thu trước khi đối soát.');
+          if(input.confirmed!==true)throw Error('\u0058\u00e1c nh\u1eadn \u0111\u00e3 ki\u1ec3m tra c\u00e1c bill v\u00e0 giao d\u1ecbch ng\u00e2n h\u00e0ng.');
+          if(Array.isArray(input.receiptImages)){
+            const receipts=OrderPayments.receipts(order),byId=new Map(input.receiptImages.map(item=>[String(item?.id||''),item]));
+            for(const receipt of receipts){
+              const supplied=byId.get(String(receipt.id));if(!supplied)continue;
+              const images=Array.isArray(supplied.images)?supplied.images.map((image,index)=>({id:text(image?.id,120)||'IMG-'+(index+1),imageData:String(image?.imageData??''),note:text(image?.note,500)})):[];
+              if(images.length>10||images.some(image=>!/^data:image\/(jpeg|png|webp);base64,/.test(image.imageData))||new Set(images.map(image=>image.id)).size!==images.length)throw Error('\u1ea2nh bill kh\u00f4ng h\u1ee3p l\u1ec7.');
+              receipt.images=images;
+            }
+            order.receiptsVersion=1;order.paymentReceipts=receipts;
+          }
+          if(OrderPayments.receipts(order).some(r=>!OrderPayments.images(r).length))throw Error('C\u1ea7n b\u1ed5 sung \u1ea3nh bill cho t\u1eebng l\u1ea7n thu tr\u01b0\u1edbc khi \u0111\u1ed1i so\u00e1t.');
           order.paymentReconciled=true;order.paymentReconciledAt=stamp();order.paymentReconciledBy=currentAccount.id;order.reconciliationNote=text(input.note,1000);
           audit('RECONCILE_ORDER',id,order.code);
         }else if(action==='SAVE_RECEIPT_IMAGES'){

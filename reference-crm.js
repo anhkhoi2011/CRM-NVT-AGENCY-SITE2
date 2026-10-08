@@ -2542,7 +2542,7 @@
 
     let iframe = host.querySelector('#accountingIframe');
     if (!iframe) {
-      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261008-mobile-customers-58" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
+      host.innerHTML = `<iframe id="accountingIframe" src="commission_tree_demo.html?embedded=1&tab=${encodeURIComponent(targetTab)}&v=20261008-reconcile-bills-59" title="Kế toán & Hoa hồng APEX" loading="eager"></iframe>`;
       iframe = host.querySelector('#accountingIframe');
       iframe?.addEventListener('load',()=>{host.classList.add('is-ready');syncMembersToAccountingMindmap();},{once:true});
     } else {
@@ -2938,6 +2938,7 @@
       }catch(error){imageLoads.delete(receiptIndex);setAction(button,'Tai loi - bam de thu lai');referenceNotice(error.message);}
     });
     receipts.forEach((receipt,index)=>{if(Number(receipt.billCount)>0||receipt.hasBill)load(index).catch(()=>{const button=modal.querySelector('[data-receipt-image="'+index+':0"]');setAction(button,'Tai loi - bam de thu lai');imageLoads.delete(index);});});
+    return {loadAll:()=>Promise.all(receipts.map((receipt,index)=>OrderPayments.images(receipt).length||receipt.hasBill||Number(receipt.billCount)>0?load(index):[])),receipts};
   }
   function openReceiptImageEditor(orderId,receiptId,accountingContext=false){
     const order=data.orders.find(o=>o.id===orderId);if(!order||!canChangeReceiptOrder(order))return;
@@ -2958,8 +2959,9 @@
   function openOrderReconciliation(id){
     const order=data.orders.find(o=>o.id===id);if(!order||!['ADMIN','ACCOUNTING'].includes(data.user.actualRole||data.user.role))return;
     const modal=editor('Kế toán kiểm tra & Đối soát', '<p><b>'+esc(order.customerName)+'</b> · '+esc(order.productName)+'</p><p>Sale đã ghi nhận: <b>'+money(OrderPayments.paid(order))+'</b> / Tổng đơn: <b>'+money(order.total)+'</b></p><p>Đối soát xác nhận bill khớp tiền vào ngân hàng. Thao tác này không cộng thêm tiền và không tạo bill mới.</p>'+receiptHistoryMarkup(order)+'<label class="crm-field"><span>Ghi chú đối soát</span><textarea id="reconcileNote" maxlength="1000"></textarea></label><label class="ao-vat-check"><input type="checkbox" id="reconcileConfirm" required> Tôi đã kiểm tra tất cả bill và xác nhận đủ tiền vào ngân hàng</label>',async()=>{
-      await api.updateOrderAccounting(id,{action:'RECONCILE',confirmed:q('#reconcileConfirm').checked,note:q('#reconcileNote').value});referenceNotice('Đã đối soát đủ. Tổng thực thu và doanh thu giữ nguyên.');
-    });modal.style.zIndex='12000';bindReceiptImages(modal,order);modal.querySelector('.modal-footer [type=submit]').textContent='Kế toán xác nhận đối soát đủ';
+      const images=await receiptImages.loadAll();if(images.some(list=>!list.length))throw Error('C\u1ea7n b\u1ed5 sung \u1ea3nh bill cho t\u1eebng l\u1ea7n thu tr\u01b0\u1edbc khi \u0111\u1ed1i so\u00e1t.');
+      await api.updateOrderAccounting(id,{action:'RECONCILE',confirmed:q('#reconcileConfirm').checked,note:q('#reconcileNote').value,receiptImages:receiptImages.receipts.map((receipt,index)=>({id:receipt.id,images:images[index]}))});referenceNotice('Đã đối soát đủ. Tổng thực thu và doanh thu giữ nguyên.');
+    });modal.style.zIndex='12000';const receiptImages=bindReceiptImages(modal,order);modal.querySelector('.modal-footer [type=submit]').textContent='Kế toán xác nhận đối soát đủ';
   }
   function openReceiptOrderDetail(id,editing=false,accountingContext=false){
     const order=data.orders.find(o=>o.id===id);if(!order)return;ensureAccountingOrderStyles();

@@ -264,8 +264,8 @@ function orderFilterContext() {
   {id:'reviewed',month:'2026-10',type:'COURSE',collected:100,remaining:0,paymentStatus:'PAID',paymentReconciled:true},
   {id:'vat',month:'2026-10',type:'COURSE',collected:100,remaining:0,paymentStatus:'PAID',paymentReconciled:true,vatStatus:'ISSUED'},
   {id:'old',month:'2026-09',type:'COURSE',collected:40,remaining:60,paymentStatus:'DEPOSIT'}
- ],currentOrderMonth:'2026-10',currentOrderSearchQuery:'',currentOrderStatusFilter:'ALL',currentOrderTypeFilter:'ALL',
- document:{getElementById:id=>nodes[id]||=( {textContent:'stale',innerHTML:'',setAttribute(){}} )},formatCurrency:String,
+ ],currentOrderMonth:'2026-10',currentOrderSearchQuery:'',currentOrderStatusFilter:'ALL',currentOrderTypeFilter:'ALL',currentOrderPage:1,currentOrderPageSize:10,
+ document:{getElementById:id=>nodes[id]||=( {textContent:'stale',innerHTML:'',setAttribute(){},querySelectorAll(){return [];},focus(){}} )},formatCurrency:String,
  recalculateAllVatOrdersData(){},renderPaymentNotificationBanner(){},renderVatOrdersTable(){}});
  vm.runInContext(html.slice(html.indexOf('function isVatOrderDeposit('),html.indexOf('function renderPaymentNotificationBanner(')),ctx);
  return {ctx,nodes};
@@ -295,4 +295,41 @@ test('Empty accounting filter resets every table total and count',()=>{
  c.currentOrderStatusFilter='VAT_ISSUED';c.currentOrderMonth='2026-09';c.renderVatOrdersTable();
  for(const id of ['footOrderTotalRev','footOrderTotalVat','footOrderTotalCollected','footOrderTotalRemaining'])assert.equal(nodes[id].textContent,'0');
  assert.equal(nodes.badgeOrderTableCount.textContent,'0 đơn');assert.match(nodes.vatOrdersTableBody.innerHTML,/Không tìm thấy/);
+});
+
+
+test('Accounting renders 10 or 20 rows per page while retaining full filtered totals',()=>{
+ const {ctx:c,nodes}=orderFilterContext();
+ const body={rows:[],set innerHTML(value){this.rows=[];this.markup=value;},get innerHTML(){return this.markup;},appendChild(row){this.rows.push(row);}};
+ nodes.vatOrdersTableBody=body;c.escapeOrderContact=String;c.document.createElement=()=>({style:{},innerHTML:''});
+ c.VAT_ORDERS_DATA=Array.from({length:25},(_,i)=>({id:'page-'+i,crmOrderId:'page-'+i,month:'2026-10',type:'COURSE',customerName:'Customer '+i,collected:110,remaining:0,subtotal:100,vatAmount:10,paymentStatus:'PAID'}));
+ vm.runInContext(html.slice(html.indexOf('function renderVatOrdersTable()'),html.indexOf('function openOrderDetailModal(',html.indexOf('function renderVatOrdersTable()'))),c);
+ c.renderVatOrdersTable();assert.equal(body.rows.length,10);assert.equal(c.currentOrderPage,1);assert.match(body.rows[0].innerHTML,/Customer 0</);assert.match(nodes.vatOrdersPagination.innerHTML,/1&ndash;10 \/ 25/);assert.equal(nodes.footOrderTotalCollected.textContent,'2750');
+ c.changeOrderPage(1);assert.equal(body.rows.length,10);assert.match(body.rows[0].innerHTML,/Customer 10</);assert.match(nodes.vatOrdersPagination.innerHTML,/11&ndash;20 \/ 25/);assert.equal(nodes.footOrderTotalCollected.textContent,'2750');
+ c.changeOrderPage(1);assert.equal(body.rows.length,5);assert.match(body.rows[0].innerHTML,/Customer 20</);assert.match(nodes.vatOrdersPagination.innerHTML,/21&ndash;25 \/ 25/);assert.match(nodes.vatOrdersPagination.innerHTML,/id="orderPageNext"[^>]*disabled/);
+ c.changeOrderPage(1);assert.equal(c.currentOrderPage,3);
+ c.setOrderPageSize('20');assert.equal(c.currentOrderPage,1);assert.equal(body.rows.length,20);assert.equal(c.currentOrderPageSize,20);
+ c.changeOrderPage(1);assert.equal(body.rows.length,5);
+ c.VAT_ORDERS_DATA=c.VAT_ORDERS_DATA.slice(0,11);c.renderVatOrdersTable();assert.equal(c.currentOrderPage,1);assert.equal(body.rows.length,11);
+ c.setOrderPageSize('999');assert.equal(c.currentOrderPageSize,10);assert.equal(body.rows.length,10);
+});
+
+test('Status buttons show counts within the chosen month, product and search independently of the active status',()=>{
+ const {ctx:c,nodes}=orderFilterContext(),buttons=new Map();
+ for(const status of ['ALL','PAID','DEPOSIT'])buttons.set(status,{dataset:{orderStatus:status},count:{textContent:''},classList:{toggle(key,value){this[key]=value;}},setAttribute(key,value){this[key]=value;},querySelector(){return this.count;}});
+ nodes.orderStatusFilterStrip={querySelectorAll:()=>Array.from(buttons.values())};
+ c.currentOrderStatusFilter='DEPOSIT';c.renderVatOrdersView();
+ assert.deepEqual(Array.from(buttons.values(),button=>button.count.textContent),['5','3','1']);
+ assert.equal(buttons.get('DEPOSIT')['aria-pressed'],'true');assert.equal(buttons.get('PAID')['aria-pressed'],'false');
+ c.currentOrderTypeFilter='COURSE';c.renderVatOrdersView();assert.equal(buttons.get('ALL').count.textContent,'4');assert.equal(buttons.get('PAID').count.textContent,'2');
+ c.currentOrderSearchQuery='An';c.renderVatOrdersView();assert.equal(buttons.get('ALL').count.textContent,'1');assert.equal(buttons.get('PAID').count.textContent,'0');
+});
+
+test('Changing order filters resets pagination and empty results retain the row-size control',()=>{
+ const {ctx:c,nodes}=orderFilterContext();
+ vm.runInContext(html.slice(html.indexOf('function handleOrderSearch('),html.indexOf('function exportVatOrdersToCSV()')),c);
+ for(const [handler,value] of [['handleOrderSearch','An'],['handleOrderStatusFilter','DEPOSIT'],['handleOrderTypeFilter','COURSE']]){
+  c.currentOrderPage=3;c[handler](value);assert.equal(c.currentOrderPage,1);
+ }
+ c.currentOrderPage=3;c.renderVatOrdersPagination(0);assert.equal(c.currentOrderPage,1);assert.equal(nodes.vatOrdersPagination.hidden,false);assert.match(nodes.vatOrdersPagination.innerHTML,/0&ndash;0 \/ 0/);assert.match(nodes.vatOrdersPagination.innerHTML,/id="orderPageSizeSelect"/);assert.match(nodes.vatOrdersPagination.innerHTML,/id="orderPageNext"[^>]*disabled/);
 });

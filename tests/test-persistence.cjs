@@ -2231,3 +2231,38 @@ test('Reference product deletion preserves existing orders, requires Admin and r
  vm.runInContext(`currentAccount={id:'sale',role:'SALE'}`,c);
  await assert.rejects(()=>c.window.crmApi.removeProduct('p'),/không có quyền/);
 });
+
+
+for(const role of ['ADMIN','ACCOUNTING'])test(role+' reconciles compact paid orders and SQL preserves all receipt assets',async()=>{
+ const f=fixture(),actor={id:role==='ADMIN'?'admin':'accountant',role};
+ f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ const receipts=[{id:'deposit-review',amount:100,kind:'DEPOSIT',at:'2026-10-08T08:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AA==',images:[{id:'deposit-image',imageData:'data:image/png;base64,AA==',note:'Deposit'}]},{id:'full-review',amount:296,kind:'FULL',at:'2026-10-08T09:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AQ==',images:[{id:'full-image',imageData:'data:image/png;base64,AQ==',note:'Balance'},{id:'extra-image',imageData:'data:image/png;base64,Ag==',note:'Statement'}]}];
+ const o={...order,subtotal:360,vatAmount:36,total:396,discount:0,status:'PAID',paymentMode:'FULL',amountPaid:396,depositAmount:100,balanceDue:0,receiptsVersion:1,paymentReceipts:receipts,billImage:'',paymentReconciled:false,vatIssued:false};
+ await f.api.write(admin,'review-seed',[change('customers',customer),change('orders',o)]);
+ const snapshot=await f.api.read(actor,{passive:true}),compact=snapshot.state.orders[0];
+ assert.equal(compact.paymentReceipts[0].images,undefined);assert.equal(compact.paymentReceipts[0].hasBill,true);assert.equal(compact.paymentReceipts[1].billCount,2);
+ const c=referenceBridge();c.reviewOrder=compact;c.reviewActor=actor;
+ vm.runInContext('state.orders=[reviewOrder];currentAccount={...reviewActor,scope:"ALL"};',c);
+ await assert.rejects(()=>c.window.crmApi.updateOrderAccounting(o.id,{action:'RECONCILE',confirmed:false}),/X\u00e1c nh\u1eadn/);
+ const result=await c.window.crmApi.updateOrderAccounting(o.id,{action:'RECONCILE',confirmed:true,note:'Matched statement',receiptImages:receipts.map(receipt=>({id:receipt.id,images:receipt.images}))});
+ assert.equal(result.order.paymentReceipts[0].images.length,1);
+ await f.api.write(actor,'review-confirm',[change('orders',result.order,snapshot.versions['orders/'+o.id])]);
+ const saved=(await f.api.read(actor,{passive:true,full:true})).state.orders[0];
+ assert.equal(saved.paymentReconciled,true);assert.equal(saved.paymentReconciledBy,actor.id);assert.equal(saved.reconciliationNote,'Matched statement');
+ assert.equal(saved.amountPaid,396);assert.equal(saved.vatIssued,false);
+ assert.equal(f.api.canonical(saved.paymentReceipts),f.api.canonical(receipts));
+ assert.equal(f.api.canonical(require('./order-payments.js').events(saved).map(e=>({amount:e.amount,at:e.occurredAt}))),f.api.canonical(require('./order-payments.js').events(o).map(e=>({amount:e.amount,at:e.occurredAt}))));
+ c.reviewOrder=(await f.api.read(actor,{passive:true})).state.orders[0];vm.runInContext('state.orders=[reviewOrder]',c);
+ await assert.rejects(()=>c.window.crmApi.updateOrderAccounting(o.id,{action:'RECONCILE',confirmed:true}),/\u0111\u00e3 \u0111\u01b0\u1ee3c \u0111\u1ed1i so\u00e1t/);
+});
+
+test('Reconciliation still rejects each missing bill and explicit empty images despite compact metadata',async()=>{
+ const c=referenceBridge();vm.runInContext('currentAccount={id:"accountant",role:"ACCOUNTING",scope:"ALL"}',c);
+ const good={id:'deposit',amount:100,kind:'DEPOSIT',hasBill:true,billCount:1};
+ for(const bad of [{hasBill:false,billCount:0},{hasBill:true,billCount:0},{hasBill:false,billCount:1},{hasBill:true,billCount:1,images:[]},{hasBill:true,billCount:1,billImage:''},{hasBill:true,billCount:1,imageData:''}]){
+  c.reviewOrder={...order,status:'PAID',total:396,amountPaid:396,balanceDue:0,paymentReconciled:false,receiptsVersion:1,paymentReceipts:[good,{id:'balance',amount:296,kind:'FULL',...bad}]};
+  vm.runInContext('state.orders=[reviewOrder]',c);
+  await assert.rejects(()=>c.window.crmApi.updateOrderAccounting(order.id,{action:'RECONCILE',confirmed:true}),/b\u1ed5 sung \u1ea3nh bill/);
+  assert.equal(vm.runInContext('state.orders[0].paymentReconciled',c),false);
+ }
+});

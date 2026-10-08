@@ -656,6 +656,30 @@
 
 
  /* Order review: calm colors, clear actions and a pinned action column. */
+ .order-status-filter-strip { display:flex; align-items:center; gap:7px; margin:12px 0 10px; padding:5px; overflow-x:auto; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; scrollbar-width:thin; }
+ .order-status-filter-btn { flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; min-height:34px; padding:7px 13px; border:1px solid transparent; border-radius:7px; background:transparent; color:#64748b; font-family:inherit; font-size:12px; font-weight:700; line-height:1.2; cursor:pointer; white-space:nowrap; transition:all .15s ease; }
+ .order-status-filter-btn:hover { background:#fff; color:#1e293b; border-color:#dbe3ed; }
+ .order-status-filter-btn.active { background:#fff; color:#2563eb; border-color:#bfdbfe; box-shadow:0 1px 3px rgba(37,99,235,.12); }
+ .order-status-filter-btn span { min-width:20px; padding:2px 6px; border-radius:999px; background:#e2e8f0; color:#64748b; font-size:10px; text-align:center; }
+ .order-status-filter-btn.active span { background:#dbeafe; color:#1d4ed8; }
+ .order-pagination { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-height:52px; padding:12px 2px 0; color:#64748b; font-size:12px; }
+ .order-pagination-summary { margin-right:auto; font-weight:600; }
+ .order-pagination-size { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+ .order-pagination-size select { min-height:32px; padding:5px 8px; border:1px solid #cbd5e1; border-radius:7px; background:#fff; color:#334155; font:inherit; }
+ .order-pagination-button { min-width:34px; min-height:32px; padding:5px 10px; border:1px solid #cbd5e1; border-radius:7px; background:#fff; color:#334155; font-family:inherit; font-size:12px; font-weight:700; line-height:1.2; cursor:pointer; }
+ .order-pagination-button:hover:not(:disabled) { border-color:#93c5fd; background:#eff6ff; color:#1d4ed8; }
+ .order-pagination-button:disabled { color:#cbd5e1; background:#f8fafc; cursor:not-allowed; }
+ .order-pagination-controls { display:flex; align-items:center; gap:6px; }
+ .order-pagination-current { min-width:60px; text-align:center; font-weight:800; color:#334155; }
+ @media (max-width:768px) {
+  .order-status-filter-strip { max-width:100%; box-sizing:border-box; }
+  .order-status-filter-btn { min-height:44px; padding:9px 12px; }
+  .order-pagination { gap:10px; }
+  .order-pagination-summary { flex-basis:100%; }
+  .order-pagination-size { margin-right:auto; }
+  .order-pagination-size select, .order-pagination-button { min-height:44px; }
+  .order-pagination-button { min-width:44px; }
+ }
  #vatOrdersTable { border-collapse:separate; border-spacing:0; font-size:13px; }
  #vatOrdersTable th { padding:14px 16px; background:#f8fafc; color:#475569 !important; border-right:0; font-size:11px; }
  #vatOrdersTable td { padding:16px; border-right:0; background:#fff !important; color:#334155 !important; line-height:1.5; }
@@ -1367,7 +1391,7 @@ body.accounting-modal-open { overflow: hidden; }
 </script>
 <script src="order-payments.js?v=20261003-bill-types-6"></script>
 <script src="accounting-detail.js?v=20261007-accounting-details-31"></script>
-<link rel="stylesheet" href="crm-mobile.css?v=20261008-mobile-customers-58">
+<link rel="stylesheet" href="crm-mobile.css?v=20261008-reconcile-bills-59">
 </head>
 <body>
 
@@ -1826,13 +1850,6 @@ body.accounting-modal-open { overflow: hidden; }
             </label>
             <button type="button" id="orderAllMonthsButton" class="tool-btn" onclick="onOrderMonthSelectChange('ALL')" aria-pressed="false" style="font-size:12px;">Tất cả tháng</button>
             <input type="text" id="orderSearchInput" placeholder="Tìm mã đơn, KH, SĐT, Sale..." oninput="handleOrderSearch(this.value)" style="font-size:12px; padding:6px 12px; border:1px solid #cbd5e1; border-radius:6px; width:220px;">
-            <select id="orderStatusFilterSelect" onchange="handleOrderStatusFilter(this.value)" style="font-size:12px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; font-weight:600;">
-              <option value="ALL">Tất cả trạng thái</option>
-              <option value="DEPOSIT">Khách cọc</option>
-              <option value="PAID">Khách đã thanh toán đủ</option>
-              <option value="RECONCILED">Khách đã kiểm tra và đối soát</option>
-              <option value="VAT_ISSUED">Khách đã xuất VAT</option>
-            </select>
             <select id="orderTypeFilterSelect" onchange="handleOrderTypeFilter(this.value)" style="font-size:12px; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; font-weight:600;">
               <option value="ALL">Tất cả phân loại</option>
               <option value="SALE">BÊN BÁN</option>
@@ -1843,6 +1860,12 @@ body.accounting-modal-open { overflow: hidden; }
               Làm mới
             </button>
           </div>
+        </div>
+
+        <div id="orderStatusFilterStrip" class="order-status-filter-strip" role="group" aria-label="Lọc trạng thái đơn hàng">
+          <button type="button" class="order-status-filter-btn active" data-order-status="ALL" aria-pressed="true" onclick="handleOrderStatusFilter('ALL')">T&#7845;t c&#7843; &#273;&#417;n <span data-order-status-count="ALL">0</span></button>
+          <button type="button" class="order-status-filter-btn" data-order-status="PAID" aria-pressed="false" onclick="handleOrderStatusFilter('PAID')">&#272;&#417;n thanh to&#225;n &#273;&#7911; <span data-order-status-count="PAID">0</span></button>
+          <button type="button" class="order-status-filter-btn" data-order-status="DEPOSIT" aria-pressed="false" onclick="handleOrderStatusFilter('DEPOSIT')">&#272;&#417;n c&#7885;c <span data-order-status-count="DEPOSIT">0</span></button>
         </div>
 
         <div class="table-responsive">
@@ -1881,6 +1904,7 @@ body.accounting-modal-open { overflow: hidden; }
             </tfoot>
           </table>
         </div>
+        <div id="vatOrdersPagination" class="order-pagination" aria-label="Phân trang danh sách đơn hàng"></div>
       </div>
     </div>
 
@@ -2671,6 +2695,7 @@ Tổng gửi: <span id="sendSelectedTotalMoney" style="color:#059669; font-size:
   const GLOBAL_MONTH_LIST = ['2026-10', '2026-09', '2026-08', '2026-07', '2026-06', 'ALL'];
 
   function setGlobalMonth(m) {
+    if (typeof currentOrderPage !== 'undefined' && currentGlobalMonth !== m) currentOrderPage = 1;
     currentGlobalMonth = m;
     if (typeof currentAccountingMonth !== 'undefined') currentAccountingMonth = m;
     if (typeof currentOrderMonth !== 'undefined') currentOrderMonth = m;
@@ -5653,6 +5678,8 @@ let currentOrderMonth = currentGlobalMonth;
 let currentOrderSearchQuery = '';
 let currentOrderStatusFilter = 'ALL';
 let currentOrderTypeFilter = 'ALL';
+let currentOrderPage = 1;
+let currentOrderPageSize = 10;
 let currentViewingOrderId = null;
 
 function navigateOrderMonth(direction) { return navigateGlobalMonth(direction); }
@@ -5674,6 +5701,7 @@ function _old_navigateOrderMonth(direction) {
 }
 
 function onOrderMonthSelectChange(val) {
+  currentOrderPage = 1;
   setGlobalMonth(val);
 }
 
@@ -5696,25 +5724,69 @@ function isVatOrderDeposit(order) {
   return Number(order.collected) > 0 && Number(order.remaining) > 0 && order.paymentStatus !== 'PAID';
 }
 
-function filteredVatOrders() {
+function filteredVatOrders(statusOverride = currentOrderStatusFilter) {
   const query = String(currentOrderSearchQuery || '').toLowerCase().trim();
   return VAT_ORDERS_DATA.filter(order => {
     const month = order.month || String(order.billDate || '').slice(0, 7);
     if (currentOrderMonth !== 'ALL' && month !== currentOrderMonth) return false;
     if (query && !['id','customerName','customerPhone','customerCccd','customerAddress','customerEmail','saleName','productName']
       .some(key => String(order[key] || '').toLowerCase().includes(query))) return false;
-    if (currentOrderStatusFilter === 'DEPOSIT' && !isVatOrderDeposit(order)) return false;
-    if (currentOrderStatusFilter === 'PAID' && order.paymentStatus !== 'PAID') return false;
-    if (currentOrderStatusFilter === 'RECONCILED' && order.paymentReconciled !== true) return false;
-    if (currentOrderStatusFilter === 'VAT_ISSUED' && order.vatStatus !== 'ISSUED') return false;
+    if (statusOverride === 'DEPOSIT' && !isVatOrderDeposit(order)) return false;
+    if (statusOverride === 'PAID' && order.paymentStatus !== 'PAID') return false;
+    if (statusOverride === 'RECONCILED' && order.paymentReconciled !== true) return false;
+    if (statusOverride === 'VAT_ISSUED' && order.vatStatus !== 'ISSUED') return false;
     if (currentOrderTypeFilter !== 'ALL' && order.type !== currentOrderTypeFilter) return false;
     return true;
   });
 }
 
+function syncOrderStatusFilterButtons() {
+  const host = document.getElementById('orderStatusFilterStrip');
+  if (!host) return;
+  const rows = filteredVatOrders('ALL');
+  const counts = {ALL:rows.length, PAID:0, DEPOSIT:0};
+  for (const order of rows) {
+    if (order.paymentStatus === 'PAID') counts.PAID++;
+    if (isVatOrderDeposit(order)) counts.DEPOSIT++;
+  }
+  host.querySelectorAll('[data-order-status]').forEach(button => {
+    const status = button.dataset.orderStatus;
+    const active = status === currentOrderStatusFilter;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+    const count = button.querySelector('[data-order-status-count]');
+    if (count) count.textContent = String(counts[status] || 0);
+  });
+}
+
+function renderVatOrdersPagination(total) {
+  const pageCount = Math.max(1, Math.ceil(total / currentOrderPageSize));
+  currentOrderPage = Math.min(Math.max(1, currentOrderPage), pageCount);
+  const host = document.getElementById('vatOrdersPagination');
+  if (!host) return;
+  host.hidden = false;
+  const from = total ? (currentOrderPage - 1) * currentOrderPageSize + 1 : 0;
+  const to = Math.min(total, currentOrderPage * currentOrderPageSize);
+  host.innerHTML = `<span class="order-pagination-summary" role="status">Hi&#7875;n th&#7883; ${from}&ndash;${to} / ${total} &#273;&#417;n</span><label class="order-pagination-size">Hi&#7875;n th&#7883; <select id="orderPageSizeSelect" aria-label="S&#7889; d&#242;ng m&#7895;i trang" onchange="setOrderPageSize(this.value)"><option value="10" ${currentOrderPageSize===10?'selected':''}>10</option><option value="20" ${currentOrderPageSize===20?'selected':''}>20</option></select> d&#242;ng/trang</label><div class="order-pagination-controls"><button type="button" id="orderPagePrevious" class="order-pagination-button" onclick="changeOrderPage(-1)" ${currentOrderPage<=1?'disabled':''} aria-label="Trang tr&#432;&#7899;c">&#8249;</button><span class="order-pagination-current">Trang ${currentOrderPage} / ${pageCount}</span><button type="button" id="orderPageNext" class="order-pagination-button" onclick="changeOrderPage(1)" ${currentOrderPage>=pageCount?'disabled':''} aria-label="Trang sau">&#8250;</button></div>`;
+}
+
+function setOrderPageSize(value) {
+  currentOrderPageSize = Number(value) === 20 ? 20 : 10;
+  currentOrderPage = 1;
+  renderVatOrdersTable();
+}
+
+function changeOrderPage(direction) {
+  const pageCount = Math.max(1, Math.ceil(filteredVatOrders().length / currentOrderPageSize));
+  currentOrderPage = Math.min(pageCount, Math.max(1, currentOrderPage + Number(direction || 0)));
+  renderVatOrdersTable();
+  document.getElementById(direction < 0 ? 'orderPagePrevious' : 'orderPageNext')?.focus({preventScroll:true});
+}
+
 function renderVatOrdersView() {
   recalculateAllVatOrdersData();
   const listByMonth = filteredVatOrders();
+  syncOrderStatusFilterButtons();
   const monthInput = document.getElementById('orderFilterMonth');
   if (monthInput) monthInput.value = currentOrderMonth === 'ALL' ? '' : currentOrderMonth;
   const allMonthsButton = document.getElementById('orderAllMonthsButton');
@@ -5824,6 +5896,9 @@ function renderVatOrdersTable() {
   tbody.innerHTML = '';
 
   const filtered = filteredVatOrders();
+  renderVatOrdersPagination(filtered.length);
+  const pageStart = (currentOrderPage - 1) * currentOrderPageSize;
+  const visibleOrders = filtered.slice(pageStart, pageStart + currentOrderPageSize);
 
   const badgeCount = document.getElementById('badgeOrderTableCount');
   if (badgeCount) badgeCount.textContent = `${filtered.length} đơn`;
@@ -5847,7 +5922,7 @@ function renderVatOrdersTable() {
     return;
   }
 
-  filtered.forEach(order => {
+  visibleOrders.forEach(order => {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
 
@@ -6571,16 +6646,19 @@ function deleteOrder(orderId) {
 }
 
 function handleOrderSearch(val) {
+  currentOrderPage = 1;
   currentOrderSearchQuery = val;
   renderVatOrdersView();
 }
 
 function handleOrderStatusFilter(val) {
+  currentOrderPage = 1;
   currentOrderStatusFilter = val;
   renderVatOrdersView();
 }
 
 function handleOrderTypeFilter(val) {
+  currentOrderPage = 1;
   currentOrderTypeFilter = val;
   renderVatOrdersView();
 }
@@ -6649,6 +6727,8 @@ window.exportVatOrdersToCSV = exportVatOrdersToCSV;
 window.handleOrderSearch = handleOrderSearch;
 window.handleOrderStatusFilter = handleOrderStatusFilter;
 window.handleOrderTypeFilter = handleOrderTypeFilter;
+window.setOrderPageSize = setOrderPageSize;
+window.changeOrderPage = changeOrderPage;
 window.onNewOrderProductChange = onNewOrderProductChange;
 window.onNewOrderPayTypeChange = onNewOrderPayTypeChange;
 window.recalcNewOrderAmounts = recalcNewOrderAmounts;
@@ -8040,6 +8120,6 @@ window.printOrderInvoice = printOrderInvoice;
     } catch (e) {}
   })();
 </script>
-<script src="crm-mobile.js?v=20261008-mobile-customers-58"></script>
+<script src="crm-mobile.js?v=20261008-reconcile-bills-59"></script>
 </body>
 </html>

@@ -219,3 +219,16 @@ test('Partial collection regenerates QR, resets confirmation and rejects invalid
  f.node('#receiptPayMode').value='CUSTOM';f.node('#receiptPayMode').onchange();assert.equal(f.node('#receiptAmount').readOnly,false);assert.equal(f.node('#receiptAmount').value,'');
  f.node('#receiptAmount').value='1000000';f.node('#receiptAmount').oninput();f.node('#receiptConfirm').checked=true;await f.save();assert.equal(f.calls.length,1);assert.equal(f.calls[0].input.amount,1000000);
 });
+
+
+test('Accounting reconciliation loads lazy bill assets before confirming compact order',async()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');let save,requested=[];
+ const item={...order(),status:'PAID',paymentMode:'FULL',amountPaid:5500000,depositAmount:500000,balanceDue:0,receiptsVersion:1,paymentReceipts:[{id:'deposit',amount:500000,kind:'DEPOSIT',hasBill:true,billCount:1},{id:'full',amount:5000000,kind:'FULL',hasBill:true,billCount:1}]};
+ const nodes=new Map([['#reconcileConfirm',{checked:true}],['#reconcileNote',{value:'Matched'}]]);
+ const q=selector=>nodes.get(selector)||{checked:false,value:''};
+ const submit={textContent:''},modal={style:{},querySelector:selector=>selector==='.modal-footer [type=submit]'?submit:null,querySelectorAll:()=>[]};
+ const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{id:'accountant',role:'ACCOUNTING'}},esc:String,money:String,fmtDate:String,person:String,q,receiptHistoryMarkup:()=>'',lazyAssetUrl:(kind,id,child)=>{requested.push([kind,id,child]);return '/asset';},lazyAsset:async()=>({images:[{id:'img',imageData:'data:image/png;base64,AA==',note:'Bill'}]}),api:{updateOrderAccounting:async(id,input)=>{save={id,input};return {order:item};}},referenceNotice(){},editor:(title,body,callback)=>{save={callback};return modal;},document:{createElement:()=>({})}});
+ vm.runInContext(source.slice(source.indexOf('  async function loadReceiptImages('),source.indexOf('  function openReceiptOrderDetail(')),ctx);
+ ctx.openOrderReconciliation(item.id);await save.callback();
+ assert.equal(requested.length,2);assert.equal(item.paymentReceipts[0].images,undefined);assert.equal(item.paymentReceipts[1].images,undefined);assert.equal(save.input.action,'RECONCILE');assert.equal(save.input.confirmed,true);assert.equal(save.input.note,'Matched');assert.equal(save.input.receiptImages.length,2);
+});
