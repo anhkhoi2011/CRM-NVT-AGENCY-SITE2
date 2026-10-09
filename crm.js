@@ -259,7 +259,7 @@ const NAVIGATION = {
     ['Cá nhân', [['attendance', 'Điểm danh', '✓'], ['notifications', 'Thông báo', '●']]]
   ],
   ACCOUNTING: [
-    ['Kế toán & Hoa hồng', [['accounting', 'Kế toán & Hoa hồng', '₫'], ['notifications', 'Thông báo', '●']]]
+    ['Kế toán & Hoa hồng', [['accounting', 'Kế toán & Hoa hồng', '₫'], ['audit', 'User log', '≡'], ['notifications', 'Thông báo', '●']]]
   ],
   LEADER: [
     ['Vận hành', [['dashboard', 'Tổng quan đội', '◫'], ['customers', 'Khách hàng Team', '♙'], ['pool', 'Chia data cho Sale', '↔']] ],
@@ -3263,7 +3263,7 @@ function visibleNavigation() {
       : null;
   return groups.map(([name, items]) => [name, items.filter(item => !allowed || allowed.has(item[0]))]).filter(([, items]) => items.length);
 }
-function allowedViews() { if(effectivePermissionRole()==='HRM')return ['hrProfiles','team','attendance','orders','businessReport','profile']; if(effectivePermissionRole()==='ACCOUNTING')return ['accounting','notifications','profile'];return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
+function allowedViews() { if(effectivePermissionRole()==='HRM')return ['hrProfiles','team','attendance','orders','businessReport','profile']; if(effectivePermissionRole()==='ACCOUNTING')return ['accounting','audit','notifications','profile'];return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
 function viewLabel(view) { return visibleNavigation().flatMap(([, items]) => items).find(item => item[0] === view)?.[1] || view; }
 
 function newCustomerCount() {

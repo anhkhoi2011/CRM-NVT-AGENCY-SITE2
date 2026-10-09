@@ -232,3 +232,70 @@ test('Accounting reconciliation loads lazy bill assets before confirming compact
  ctx.openOrderReconciliation(item.id);await save.callback();
  assert.equal(requested.length,2);assert.equal(item.paymentReceipts[0].images,undefined);assert.equal(item.paymentReceipts[1].images,undefined);assert.equal(save.input.action,'RECONCILE');assert.equal(save.input.confirmed,true);assert.equal(save.input.note,'Matched');assert.equal(save.input.receiptImages.length,2);
 });
+
+
+function reconciliationForm(item,asset){
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
+ let submit,save;const requested=[];
+ const modal={style:{},querySelector:selector=>selector==='.modal-footer [type=submit]'?{textContent:''}:null,querySelectorAll:()=>[]};
+ const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{id:'accountant',role:'ACCOUNTING'}},esc:String,money:String,fmtDate:String,
+ q:selector=>selector==='#reconcileConfirm'?{checked:true}:{value:'Checked'},receiptHistoryMarkup:()=>'',
+ lazyAssetUrl:(kind,id,child)=>child,lazyAsset:async id=>{requested.push(id);return asset(id);},
+ api:{updateOrderAccounting:async(id,input)=>{save={id,input};return {order:item};}},referenceNotice(){},
+ editor:(title,body,callback)=>{submit=callback;return modal;},document:{createElement:()=>({})}});
+ vm.runInContext(source.slice(source.indexOf('  async function loadReceiptImages('),source.indexOf('  function openReceiptOrderDetail(')),ctx);
+ ctx.openOrderReconciliation(item.id);
+ return {submit:()=>submit(),requested,get saved(){return save;}};
+}
+test('Reconciliation checks server bills even when a receipt has no compact image metadata',async()=>{
+ const item={...order(),status:'PAID',amountPaid:5500000,balanceDue:0,receiptsVersion:1,paymentReceipts:[
+  {id:'deposit-without-metadata',amount:500000,kind:'DEPOSIT'},
+  {id:'full',amount:5000000,kind:'FULL',hasBill:true,billCount:1}
+ ]};
+ const f=reconciliationForm(item,id=>({images:[{id:'img-'+id,imageData:'data:image/png;base64,AA==',note:'Saved bill'}]}));
+ await f.submit();assert.equal(f.requested.length,2);assert.equal(f.saved.input.receiptImages.length,2);
+ assert.ok(f.saved.input.receiptImages.every(receipt=>receipt.images.length===1));
+});
+test('A truly missing deposit bill identifies the missing receipt and prevents reconciliation',async()=>{
+ const item={...order(),status:'PAID',amountPaid:5500000,balanceDue:0,receiptsVersion:1,paymentReceipts:[
+  {id:'missing',amount:500000,kind:'DEPOSIT',hasBill:false,billCount:0},
+  {id:'full',amount:5000000,kind:'FULL',hasBill:true,billCount:1}
+ ]};
+ const f=reconciliationForm(item,id=>({images:id==='missing'?[]:[{id:'full-image',imageData:'data:image/png;base64,AA=='}]}));
+ await assert.rejects(f.submit(),/lần thu 1.*500000/);assert.equal(f.saved,undefined);
+});
+test('A transient bill download failure can be retried without reopening reconciliation',async()=>{
+ const item={...order(),status:'PAID',amountPaid:5500000,balanceDue:0,receiptsVersion:1,paymentReceipts:[{id:'full',amount:5500000,kind:'FULL'}]};
+ let attempts=0;const f=reconciliationForm(item,()=>{if(++attempts===1)throw Error('Connection lost');return {images:[{id:'image',imageData:'data:image/png;base64,AA=='}]};});
+ await assert.rejects(f.submit(),/Connection lost/);await f.submit();assert.equal(attempts,2);assert.equal(f.saved.input.action,'RECONCILE');
+});
+test('Reconciliation preserves explicit empty bill images instead of restoring deleted proof',async()=>{
+ const item={...order(),status:'PAID',amountPaid:5500000,balanceDue:0,receiptsVersion:1,paymentReceipts:[{id:'full',amount:5500000,kind:'FULL',images:[],billImage:'data:image/png;base64,AA==',hasBill:true,billCount:1}]};
+ const f=reconciliationForm(item,()=>assert.fail('An explicit image deletion must not load old proof'));
+ await assert.rejects(f.submit(),/lần thu 1/);assert.equal(f.saved,undefined);assert.equal(f.requested.length,0);
+});
+
+
+test('Lazy bill endpoint resolves the original bill of an order without a receipt ledger',()=>{
+ const item={...order(),status:'PAID',amountPaid:5500000,balanceDue:0};
+ const receipt=payments.receipts(item)[0];
+ const asset=crm.assetFromData({id:'accountant',role:'ACCOUNTING'},{orders:new Map([[item.id,item]])},'order',item.id,receipt.id);
+ assert.equal(asset.images[0].imageData,item.billImage);assert.equal(asset.receiptId,receipt.id);
+});
+
+
+test('Bill gallery displays every downloaded image and note even without a stored image count',async()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
+ const item={id:'o',receiptsVersion:1,paymentReceipts:[{id:'r',kind:'FULL',amount:5500000}]};
+ let buttons=[],viewer;
+ const host={dataset:{receiptEditable:'false'},get innerHTML(){return this.markup;},set innerHTML(value){this.markup=value;buttons=Array.from(value.matchAll(/data-receipt-image="([^"]+)"/g),match=>({dataset:{receiptImage:match[1]},querySelector:()=>({textContent:''})}));},querySelectorAll:selector=>selector==='[data-receipt-image]'?buttons:[]};
+ const modal={querySelector:()=>host,querySelectorAll:()=>[]};
+ const ctx=vm.createContext({OrderPayments:payments,esc:String,money:String,fmtDate:String,lazyAssetUrl:()=>'/asset',
+ lazyAsset:async()=>({images:[{id:'one',imageData:'data:image/png;base64,AA==',note:'Bill ngân hàng'},{id:'two',imageData:'data:image/png;base64,AQ==',note:'Sao kê bổ sung'}]}),
+ document:{createElement:()=>({style:{},querySelector:()=>({})}),body:{appendChild:node=>{viewer=node;}}}});
+ vm.runInContext(source.slice(source.indexOf('  function receiptHistoryMarkup('),source.indexOf('  function openReceiptImageEditor(')),ctx);
+ const binding=ctx.bindReceiptImages(modal,item);await binding.loadAll();
+ assert.equal(buttons.length,2);assert.match(host.innerHTML,/Bill ngân hàng/);assert.match(host.innerHTML,/Sao kê bổ sung/);
+ await buttons[1].onclick();assert.match(viewer.innerHTML,/base64,AQ==/);assert.match(viewer.innerHTML,/Sao kê bổ sung/);
+ assert.equal(item.paymentReceipts[0].images,undefined);
+});

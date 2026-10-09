@@ -25,6 +25,7 @@ const zlib = require('node:zlib');
 const bcrypt = require('bcryptjs');
 const passwordService = require('./password-service.cjs');
 const crmData = require('./crm-data.cjs');
+const orderAudit = require('./order-audit.cjs');
 const { dbConfigured, dbQuery, authQuery, dbHealth, pool, authPool } = require('./db.js');
 const { provisionSystemAccounts } = require('./system-accounts.cjs');
 const { persistWebhook } = require('./webhook-store.cjs');
@@ -43,7 +44,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261008-reconcile-bills-59';
+const BUILD_VERSION = '20261009-order-user-log-62';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -470,8 +471,9 @@ async function handleDemoApi(request, response, pathname) {
   }
   if(pathname==='/api/audit'&&request.method==='GET'){
     const query=new URL(request.url,`http://${request.headers.host||'localhost'}`).searchParams;
-    const all=demoState.audit.slice().sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')));const page=Math.max(1,Number(query.get('page'))||1),limit=Math.min(200,Math.max(1,Number(query.get('limit'))||50));
-    return dbJson(request,response,200,{items:all.slice((page-1)*limit,page*limit),page,limit,total:all.length,hasMore:all.length>page*limit});
+    const source=demoData(),filters={orderId:query.get('orderId'),search:query.get('search'),actorId:query.get('actorId'),action:query.get('action'),ordersOnly:query.get('ordersOnly')==='1'};
+    const all=demoState.audit.filter(row=>crmData.readable(user,'audit',row,source)&&(!filters.ordersOnly&&!filters.orderId||orderAudit.isOrder(row,source)));
+    return dbJson(request,response,200,orderAudit.page(all,query.get('page'),query.get('limit'),filters));
   }
   if(pathname==='/api/user-activity'&&request.method==='POST'){const body=await readDbBody(request),detail=activityLabel(body.view),token=demoToken(request),old=demoSessionActivity.get(token)?.activity;demoTouchSession(request,detail);if(old!==detail)demoRecordActivity(user,request,'OPEN_SCREEN',detail);return dbJson(request,response,200,{ok:true,activity:detail});}
   if(pathname==='/api/admin/user-activity'&&request.method==='GET'){if(user.role!=='ADMIN')return dbJson(request,response,403,{error:'Chỉ Admin được xem User log'});return dbJson(request,response,200,demoAdminUserActivity());}
@@ -493,6 +495,7 @@ async function handleDemoApi(request, response, pathname) {
         const {key,id}=change;let {value}=change;if(!original[key])throw Object.assign(Error('Collection không hợp lệ'),{status:400});
         const old=original[key].get(id);
         if(key==='orders'&&old&&value)value=crmData.mergeOrderAssets(old,value);
+        if(key==='audit'&&!old&&value)value={...value,requestId:body.requestId};
         // Giống MySQL: khách sửa theo danh sách trường thì gộp vào bản mới nhất.
         if(key==='customers'&&old&&value&&Array.isArray(change.fields)&&change.fields.length<=200)value=crmData.mergeCustomerFields(old,value,change.fields);
         // Sale nhan ban ghi da che thong tin: giu thong tin goc nhu luong MySQL.
@@ -506,6 +509,8 @@ async function handleDemoApi(request, response, pathname) {
         const notice=crmData.dataArrivalNotice(change.value);if(!next.notifications.some(item=>item.id===notice.id))next.notifications.unshift(notice);
       }
       for(const change of changes.filter(item=>item.key==='orders')){
+        const saved=next.orders.find(row=>row.id===change.id)||null;
+        const events=orderAudit.events(user,original.orders.get(change.id)||null,saved,body.requestId);if(events.length){const eventIds=new Set(events.map(event=>event.id));next.audit=next.audit.filter(event=>!eventIds.has(event.id));next.audit.unshift(...events);}
         for(const notice of crmData.orderNotices(original.orders.get(change.id),change.value)){
           if(!next.notifications.some(item=>item.id===notice.id))next.notifications.unshift(notice);
         }
@@ -660,7 +665,7 @@ async function handleDbApi(request, response, pathname) {
       catch(error){return dbJson(request,response,error.status||404,{error:error.message});}
     }
     if(pathname==='/api/audit'&&request.method==='GET'){
-      const query=new URL(request.url,`http://${request.headers.host||'localhost'}`).searchParams;return dbJson(request,response,200,await crmData.readAuditPage(user,query.get('page'),query.get('limit')));
+      const query=new URL(request.url,`http://${request.headers.host||'localhost'}`).searchParams;return dbJson(request,response,200,await crmData.readAuditPage(user,query.get('page'),query.get('limit'),{orderId:query.get('orderId'),search:query.get('search'),actorId:query.get('actorId'),action:query.get('action'),ordersOnly:query.get('ordersOnly')==='1'}));
     }
     if(pathname==='/api/state/version'&&request.method==='GET'){
       const rows=await dbQuery('SELECT MAX(id) AS version FROM crm_changes');

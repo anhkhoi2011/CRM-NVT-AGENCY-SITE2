@@ -1391,7 +1391,7 @@ body.accounting-modal-open { overflow: hidden; }
 </script>
 <script src="order-payments.js?v=20261003-bill-types-6"></script>
 <script src="accounting-detail.js?v=20261007-accounting-details-31"></script>
-<link rel="stylesheet" href="crm-mobile.css?v=20261008-reconcile-bills-59">
+<link rel="stylesheet" href="crm-mobile.css?v=20261009-reconcile-proof-61">
 </head>
 <body>
 
@@ -1873,6 +1873,7 @@ body.accounting-modal-open { overflow: hidden; }
             <thead>
               <tr>
                 <th>THAO TÁC</th>
+                <th style="width:105px; text-align:center;">XEM BILL</th>
                 <th style="width:115px; text-align:center;">NGÀY GIỜ</th>
                 <th style="width:180px;">TÊN KHÁCH HÀNG</th>
                 <th style="width:120px;">SĐT KH</th>
@@ -1894,7 +1895,7 @@ body.accounting-modal-open { overflow: hidden; }
             </tbody>
             <tfoot>
               <tr style="background:#f8fafc; font-weight:900;">
-                <td colspan="10" style="text-align:right;">TỔNG CỘNG ĐỐI SOÁT:</td>
+                <td colspan="11" style="text-align:right;">TỔNG CỘNG ĐỐI SOÁT:</td>
                 <td id="footOrderTotalRev" style="text-align:right; font-family:'JetBrains Mono'; color:#0f172a;">0 đ</td>
                 <td id="footOrderTotalVat" style="text-align:right; font-family:'JetBrains Mono'; color:#64748b;">0 đ</td>
                 <td id="footOrderTotalCollected" style="text-align:right; font-family:'JetBrains Mono'; color:#059669;">0 đ</td>
@@ -5918,7 +5919,7 @@ function renderVatOrdersTable() {
   if (footRem) footRem.textContent = formatCurrency(totalRemaining);
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; padding:30px; color:#94a3b8; font-weight:700;">Không tìm thấy đơn hàng nào phù hợp với bộ lọc</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center; padding:30px; color:#94a3b8; font-weight:700;">Không tìm thấy đơn hàng nào phù hợp với bộ lọc</td></tr>`;
     return;
   }
 
@@ -5965,6 +5966,10 @@ function renderVatOrdersTable() {
     `;
 
     // Cột Thao tác: Nút Xác Nhận Đủ kế bên nút Xuất VAT (chỉ bấm được Xuất VAT khi đã xác nhận đủ 100%)
+    const billCount = Number(order.billCount) || 0;
+    const billButtonHtml = billCount > 0
+      ? '<button type="button" class="btn-action btn-secondary" onclick="event.stopPropagation(); openOrderBills(\'' + order.id + '\')" title="Xem tất cả ảnh bill của đơn">Xem bill' + (billCount > 1 ? ' (' + billCount + ')' : '') + '</button>'
+      : '<button type="button" class="btn-action btn-secondary" disabled title="Đơn hàng chưa có ảnh bill">Chưa có bill</button>';
     let confirmBtnHtml = '';
     let vatBtnHtml = '';
 
@@ -6006,6 +6011,9 @@ function renderVatOrdersTable() {
           </div>
         </div>
       </td>
+      <td style="text-align:center; white-space:nowrap;">
+        ${billButtonHtml}
+      </td>
       <td style="text-align:center; font-family:'JetBrains Mono'; font-size:11px; white-space:nowrap;">
         <div style="font-weight:700; color:#1e293b;">${dateDisplay}</div>
         <small style="color:#64748b; font-size:10px;">${timeDisplay}</small>
@@ -6035,6 +6043,16 @@ function renderVatOrdersTable() {
 // ====================================================================
 // MODAL CHI TIẾT & CHỈNH SỬA TOÀN BỘ ĐƠN HÀNG (TẤT CẢ ĐỀU CHỈNH SỬA ĐƯỢC)
 // ====================================================================
+function openOrderBills(orderId) {
+  const order = VAT_ORDERS_DATA.find(item => item.id === orderId);
+  if (!order) return;
+  if (order.crmOrderId && window.parent !== window) {
+    postAccountingMessage('OPEN_CRM_ORDER', { orderId: order.crmOrderId });
+    return;
+  }
+  openOrderDetailModal(orderId);
+}
+
 function openOrderDetailModal(orderId) {
   const crmOrder=VAT_ORDERS_DATA.find(o=>o.id===orderId);if(crmOrder?.crmOrderId&&window.parent!==window){postAccountingMessage('OPEN_CRM_ORDER',{orderId:crmOrder.crmOrderId});return;}
   const order = VAT_ORDERS_DATA.find(o => o.id === orderId);
@@ -6686,6 +6704,7 @@ window.VAT_ORDERS_DATA = VAT_ORDERS_DATA;
 window.renderVatOrdersView = renderVatOrdersView;
 window.renderVatOrdersTable = renderVatOrdersTable;
 window.openOrderDetailModal = openOrderDetailModal;
+window.openOrderBills = openOrderBills;
 window.openEditPersonnelModal = openEditPersonnelModal;
   window.currentGlobalMonth = currentGlobalMonth;
   window.setGlobalMonth = setGlobalMonth;
@@ -7986,6 +8005,11 @@ window.printOrderInvoice = printOrderInvoice;
       const paid = ['PAID','COURSE_GRANTED'].includes(order.status);
       const createdAt = order.createdAt || order.paidAt || new Date().toISOString();
       const billing = order.billing || {};
+      const receiptBillCount = OrderPayments.receipts(order).reduce((count, receipt) => {
+        const images = OrderPayments.images(receipt);
+        return count + Math.max(images.length, Number(receipt.billCount) || 0, receipt.hasBill ? 1 : 0);
+      }, 0);
+      const billCount = Math.max(receiptBillCount, order.hasBill ? 1 : 0);
       const label = String(product.category || product.name || order.productName || '').toLowerCase();
       const type = product.type === 'RENTAL' || label.includes('indicator') || label.includes('chỉ báo')
         ? 'INDICATOR' : (label.includes('khóa') || label.includes('khoa hoc') || label.includes('course') ? 'COURSE' : 'SALE');
@@ -8020,6 +8044,7 @@ window.printOrderInvoice = printOrderInvoice;
         address: billing.address || customer.address || '',
         invoiceEmail: billing.email || customer.email || '',
         billImage: OrderPayments.receipts(order).flatMap(receipt=>OrderPayments.images(receipt))[0]?.imageData || '',
+        billCount,
         billDate: order.paidAt || order.depositAt || createdAt,
         saleNote: order.saleNote || ''
       };
@@ -8120,6 +8145,6 @@ window.printOrderInvoice = printOrderInvoice;
     } catch (e) {}
   })();
 </script>
-<script src="crm-mobile.js?v=20261008-reconcile-bills-59"></script>
+<script src="crm-mobile.js?v=20261009-reconcile-proof-61"></script>
 </body>
 </html>

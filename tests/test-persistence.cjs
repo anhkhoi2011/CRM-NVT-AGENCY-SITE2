@@ -5,7 +5,7 @@ require=require('node:module').createRequire(ROOT+'/');
 const test=require('node:test'), assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
 // CSDL giả lập giao dịch để kiểm tra logic; không thay thế thử nghiệm MySQL trên hosting.
 function fixture(){
- let db={docs:[],customers:[],orders:[],products:[{id:'p1',sku:'TEST',name:'Test product',category:'Test',price:120,type:'RENTAL',rental_months:3,active:1,created_at:'2026-08-01 08:00:00'}],users:[],history:[],webhookEvents:[],staffAttendance:[]};let backup,fail=false;
+ let db={docs:[],customers:[],orders:[],products:[{id:'p1',sku:'TEST',name:'Test product',category:'Test',price:120,type:'RENTAL',rental_months:3,active:1,created_at:'2026-08-01 08:00:00'}],users:[],history:[],webhookEvents:[],staffAttendance:[]};let backup,fail=false,failAudit=false;
  const events=[],queries=[];
  const c={async beginTransaction(){backup=structuredClone(db);events.push('begin');},async commit(){events.push('commit');},async rollback(){db=backup;events.push('rollback');},release(){events.push('release');},
  async query(sql){return this.execute(sql,[]);},
@@ -30,6 +30,7 @@ function fixture(){
   if(sql.startsWith('INSERT INTO crm_changes')){db.history.push({request_id:v[0],actor_id:v[1],changes_json:JSON.parse(v[2])});return [{}];}
   if(sql.startsWith('INSERT INTO crm_documents')){
    if(fail)throw new Error('Disk/database failure');
+   if(failAudit&&v[0]==='audit')throw new Error('Audit database failure');
    if(sql.includes('VALUES (?,?,?,0)')){
     for(let i=0;i<v.length;i+=3){
      const row={collection:v[i],id:v[i+1],body:JSON.parse(v[i+2]),deleted:0};
@@ -44,6 +45,7 @@ function fixture(){
    upsert('customers',keys,v);return [{}];
   }
   if(sql.startsWith('INSERT INTO orders')){upsert('orders',['id','code','customer_id','sale_id','leader_id','team_id','total_amount','status','items_json','note','created_at'],v);return [{}];}
+  if(sql.startsWith('DELETE FROM orders WHERE id=')){db.orders=db.orders.filter(row=>row.id!==v[0]);return [{}];}
   if(sql.startsWith('INSERT INTO products')){upsert('products',['id','sku','name','category','price','type','rental_months','active','created_at'],v);return [{}];}
   if(sql.startsWith('UPDATE users SET name')){const row=db.users.find(x=>x.id===v[6]);if(row)Object.assign(row,{name:v[0],role:v[1],team_id:v[2],leader_id:v[3],active:v[4],email:v[5]||row.email});return [{}];}
   if(sql.startsWith('UPDATE users SET active')){const row=db.users.find(x=>x.id===v[0]);if(row)row.active=0;return [{}];}
@@ -55,7 +57,7 @@ function fixture(){
  vm.runInNewContext(fs.readFileSync('crm-data.cjs','utf8'),{module,require:name=>name==='./db.js'?{pool:{query:async()=>[{}],getConnection:async()=>c}}:require(name),Buffer,console});
  const webhook={exports:{}};
  vm.runInNewContext(fs.readFileSync('webhook-store.cjs','utf8'),{module:webhook,URL,require:name=>name==='./db.js'?{dbConfigured:true,pool:{query:async()=>[{}],getConnection:async()=>c}}:name==='./crm-data.cjs'?module.exports:require(name)});
- return {api:module.exports,webhook:webhook.exports,events,queries,get db(){return db;},fail(){fail=true;}};
+ return {api:module.exports,webhook:webhook.exports,events,queries,get db(){return db;},fail(){fail=true;},failAudit(){failAudit=true;}};
 }
 const admin={id:'admin',role:'ADMIN'},sale={id:'sale',role:'SALE',teamId:'T',leaderId:'lead'};
 const customer={id:'c1',name:'Khách thử',phone:'0912345678',saleId:'sale',teamId:'T',leaderId:'lead',status:'NEW',createdAt:'2026-08-01 09:00:00',customFields:{level:'L3'}};
@@ -1940,7 +1942,7 @@ test('Accountant reads and writes the four accounting collections without changi
  await assert.rejects(()=>f.api.write(actor,'acct-escalate',[{key:'settings',id:'$',base:r.versions['settings/$'],value:{...r.state.settings,dataBotToken:'tamper'}}]),e=>e.status===403);
  await f.api.write(actor,'acct-delete',[{key:'expenses',id:'acct-exp',base:r.versions['expenses/acct-exp'],value:null}]);assert.equal((await f.api.read(actor)).state.expenses.length,0);assert.equal(f.db.history.at(-1).changes_json[0].before.amount,100000);
 });
-test('Accounting runtime opens accounting and notifications and can manage expense, course and lot configuration',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`currentAccount={id:'accountant',name:'Kế toán',role:'ACCOUNTING',scope:'ALL'};state.members=[{id:'sale',name:'Sale',role:'SALE',active:true}];`,c);assert.deepEqual(Array.from(vm.runInContext('allowedViews()',c)),['accounting','notifications','profile']);const expense=await api.saveExpense({date:'2026-10-03',title:'Office',amount:1000});await api.saveCourseConfig({courseKey:'p1'});await api.saveBrokerageMetric({memberId:'sale',period:'2026-10',basicLots:2});await api.settings({accountingLotConfig:{rateApex:90000}});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('state.courseConfigs.length',c),1);assert.equal(vm.runInContext('state.brokerageMetrics[0].basicLots',c),2);await api.removeExpense(expense.id);assert.equal(vm.runInContext('state.expenses.length',c),0);await assert.rejects(()=>api.settings({dataBotToken:'tamper'}),/Kế toán/);await assert.rejects(()=>api.saveMember(null,{}),/quyền/);});
+test('Accounting runtime opens accounting and notifications and can manage expense, course and lot configuration',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`currentAccount={id:'accountant',name:'Kế toán',role:'ACCOUNTING',scope:'ALL'};state.members=[{id:'sale',name:'Sale',role:'SALE',active:true}];`,c);assert.deepEqual(Array.from(vm.runInContext('allowedViews()',c)),['accounting','audit','notifications','profile']);const expense=await api.saveExpense({date:'2026-10-03',title:'Office',amount:1000});await api.saveCourseConfig({courseKey:'p1'});await api.saveBrokerageMetric({memberId:'sale',period:'2026-10',basicLots:2});await api.settings({accountingLotConfig:{rateApex:90000}});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('state.courseConfigs.length',c),1);assert.equal(vm.runInContext('state.brokerageMetrics[0].basicLots',c),2);await api.removeExpense(expense.id);assert.equal(vm.runInContext('state.expenses.length',c),0);await assert.rejects(()=>api.settings({dataBotToken:'tamper'}),/Kế toán/);await assert.rejects(()=>api.saveMember(null,{}),/quyền/);});
 test('Image deletion commits to SQL projection and rereads without altering receipts or original images',async()=>{const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'},payments=require('./order-payments.js');f.db.users.push({id:'sale',name:'Sale',role:'SALE',leader_id:'lead',team_id:'T',active:1});const o={...order,subtotal:5000000,total:5500000,vatAmount:500000,discount:0,amountPaid:500000,depositAmount:500000,balanceDue:5000000,status:'DEPOSIT',receiptsVersion:1,paymentReceipts:[{id:'r',kind:'DEPOSIT',amount:500000,at:'2026-10-03T10:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AA=='}]};await f.api.write(admin,'bill-seed',[change('customers',customer),change('orders',o)]);let r=await f.api.read(actor);const next=structuredClone(r.state.orders[0]),receipt=next.paymentReceipts[0];const beforeImages=payments.images(receipt);receipt.images=[];receipt.imageRevisions=[{id:'rev',by:actor.id,at:'2026-10-03T11:00:00Z',images:beforeImages}];await f.api.write(actor,'bill-delete',[change('orders',next,r.versions['orders/o1'])]);r=await f.api.read(actor);assert.equal(payments.images(r.state.orders[0].paymentReceipts[0]).length,0);assert.equal(r.state.orders[0].amountPaid,500000);const projection=JSON.parse(f.db.orders[0].items_json);assert.equal(projection.paymentReceipts[0].images.length,0);assert.equal(projection.paymentReceipts[0].imageRevisions[0].images[0].imageData,'data:image/png;base64,AA==');});
 test('Retry after server update clears old rejection and preserves pending bill edit exactly once',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`let tries=0;flushServerPersistence=async()=>{tries++;if(tries===2){serverConflict=true;serverSaveError='Máy chủ từ chối ảnh bill';return false;}return true;};resolveServerConflict=async()=>{serverConflict=false;return true;};`,c);await assert.rejects(()=>api.saveExpense({date:'2026-10-03',title:'Retry',amount:1000}),/Máy chủ từ chối ảnh bill/);await api.saveExpense({date:'2026-10-03',title:'Retry',amount:1000});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('serverConflict',c),false);});
 
@@ -2245,7 +2247,7 @@ for(const role of ['ADMIN','ACCOUNTING'])test(role+' reconciles compact paid ord
  vm.runInContext('state.orders=[reviewOrder];currentAccount={...reviewActor,scope:"ALL"};',c);
  await assert.rejects(()=>c.window.crmApi.updateOrderAccounting(o.id,{action:'RECONCILE',confirmed:false}),/X\u00e1c nh\u1eadn/);
  const result=await c.window.crmApi.updateOrderAccounting(o.id,{action:'RECONCILE',confirmed:true,note:'Matched statement',receiptImages:receipts.map(receipt=>({id:receipt.id,images:receipt.images}))});
- assert.equal(result.order.paymentReceipts[0].images.length,1);
+ assert.equal(result.order.paymentReceipts[0].images,undefined);
  await f.api.write(actor,'review-confirm',[change('orders',result.order,snapshot.versions['orders/'+o.id])]);
  const saved=(await f.api.read(actor,{passive:true,full:true})).state.orders[0];
  assert.equal(saved.paymentReconciled,true);assert.equal(saved.paymentReconciledBy,actor.id);assert.equal(saved.reconciliationNote,'Matched statement');
@@ -2265,4 +2267,77 @@ test('Reconciliation still rejects each missing bill and explicit empty images d
   await assert.rejects(()=>c.window.crmApi.updateOrderAccounting(order.id,{action:'RECONCILE',confirmed:true}),/b\u1ed5 sung \u1ea3nh bill/);
   assert.equal(vm.runInContext('state.orders[0].paymentReconciled',c),false);
  }
+});
+
+
+for(const ledger of ['legacy-order','receipt-billImage'])test('Reconciliation preserves saved bill structure: '+ledger,async()=>{
+ const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'},payments=require('./order-payments.js');
+ const bill='data:image/png;base64,AA==';
+ const receipt={id:'original-payment',amount:396,kind:'FULL',at:'2026-10-09T01:00:00Z',createdBy:'admin',billImage:bill};
+ const original={...order,discount:0,subtotal:360,vatAmount:36,total:396,status:'PAID',paymentMode:'FULL',amountPaid:396,balanceDue:0,depositAmount:0,billImage:ledger==='legacy-order'?bill:'',paymentReconciled:false,vatIssued:false,...(ledger==='receipt-billImage'?{receiptsVersion:1,paymentReceipts:[receipt]}:{})};
+ await f.api.write(admin,'reconcile-structure-seed',[change('customers',customer),change('orders',original)]);
+ const snapshot=await f.api.read(actor,{passive:true}),compact=snapshot.state.orders.find(o=>o.id===original.id),full=(await f.api.read(actor,{passive:true,full:true})).state.orders.find(o=>o.id===original.id);
+ const before=structuredClone(compact);
+ const c=referenceBridge();c.reviewOrder=compact;c.reviewActor=actor;
+ vm.runInContext('state.orders=[reviewOrder];currentAccount={...reviewActor,scope:"ALL"};',c);
+ const verified=payments.receipts(full).map(receipt=>({id:receipt.id,images:payments.images(receipt)}));
+ const result=await c.window.crmApi.updateOrderAccounting(original.id,{action:'RECONCILE',confirmed:true,note:'Original bill checked',receiptImages:verified});
+ assert.equal(result.order.receiptsVersion,before.receiptsVersion);
+ assert.equal(f.api.canonical(result.order.paymentReceipts),f.api.canonical(before.paymentReceipts));
+ await f.api.write(actor,'reconcile-structure-confirm',[change('orders',result.order,snapshot.versions['orders/'+original.id])]);
+ const saved=(await f.api.read(actor,{passive:true,full:true})).state.orders.find(o=>o.id===original.id);
+ assert.equal(saved.paymentReconciled,true);assert.equal(saved.amountPaid,full.amountPaid);assert.equal(saved.total,full.total);
+ assert.equal(saved.billImage,full.billImage);assert.equal(saved.receiptsVersion,full.receiptsVersion);
+ assert.equal(f.api.canonical(saved.paymentReceipts),f.api.canonical(full.paymentReceipts));
+});
+
+
+test('Reconciliation cannot use supplied proof to restore a bill deleted on the server',async()=>{
+ const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'},bill='data:image/png;base64,AA==';
+ const receipt={id:'deleted-bill',amount:396,kind:'FULL',at:'2026-10-09T01:00:00Z',createdBy:'admin',billImage:bill,images:[]};
+ const original={...order,discount:0,subtotal:360,vatAmount:36,total:396,status:'PAID',paymentMode:'FULL',amountPaid:396,balanceDue:0,receiptsVersion:1,paymentReceipts:[receipt],paymentReconciled:false,vatIssued:false};
+ await f.api.write(admin,'reconcile-missing-seed',[change('customers',customer),change('orders',original)]);
+ const snapshot=await f.api.read(actor,{passive:true}),c=referenceBridge();c.reviewOrder=snapshot.state.orders[0];c.reviewActor=actor;
+ vm.runInContext('state.orders=[reviewOrder];currentAccount={...reviewActor,scope:"ALL"};',c);
+ const result=await c.window.crmApi.updateOrderAccounting(original.id,{action:'RECONCILE',confirmed:true,receiptImages:[{id:receipt.id,images:[{id:'fake-proof',imageData:bill}]}]});
+ await assert.rejects(()=>f.api.write(actor,'reconcile-missing-confirm',[change('orders',result.order,snapshot.versions['orders/'+original.id])]),/Đối soát chỉ xác nhận/);
+ const saved=(await f.api.read(actor,{passive:true,full:true})).state.orders[0];
+ assert.equal(saved.paymentReconciled,false);assert.equal(saved.paymentReceipts[0].images.length,0);assert.equal(saved.amountPaid,396);
+});
+
+test('Order changes create trusted SQL history visible to Accounting and reject forged history',async()=>{
+ const f=fixture(),accounting={id:'accountant',name:'Kế toán',role:'ACCOUNTING'};
+ f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ const original={...order,total:396,discount:0,createdBy:admin.id,billImage:'data:image/png;base64,AA==',paymentReceipts:[{id:'receipt-1',amount:100,kind:'DEPOSIT',at:'2026-10-09T01:00:00Z',createdBy:admin.id,billImage:'data:image/png;base64,AA==',images:[{id:'image-1',imageData:'data:image/png;base64,AA==',note:'Ảnh gốc'}]}],receiptsVersion:1,amountPaid:100,status:'DEPOSIT',balanceDue:296};
+ await f.api.write(admin,'order-audit-create',[change('customers',customer),change('orders',original)]);
+ const created=(await f.api.read(accounting,{passive:true,full:true})).state.audit.filter(item=>item.source==='ORDER_SQL'&&item.orderId===order.id);
+ assert.ok(created.some(item=>item.action==='CREATE_ORDER'));
+ const first=await f.api.read(accounting,{passive:true,full:true}),current=first.state.orders.find(item=>item.id===order.id),saved={...current,saleNote:'Đã cập nhật bill',paymentReceipts:[{...current.paymentReceipts[0],imageRevisions:[{id:'rev-1',at:'2026-10-09T02:00:00Z',by:accounting.id,images:current.paymentReceipts[0].images}],images:[{id:'image-1',imageData:'data:image/png;base64,AA==',note:'Ảnh đã sửa'}]}]};
+ await f.api.write(accounting,'order-audit-update',[change('orders',saved,first.versions['orders/'+order.id])]);
+ const audit=(await f.api.read(accounting,{passive:true,full:true})).state.audit.filter(item=>item.source==='ORDER_SQL'&&item.orderId===order.id);
+ assert.ok(audit.some(item=>item.action==='UPDATE_ORDER'));
+ assert.ok(audit.some(item=>item.action==='UPDATE_BILL'));
+ assert.equal(f.db.docs.filter(row=>row.collection==='audit'&&row.body.orderId===order.id).length,audit.length);
+ assert.ok(audit.every(item=>item.actorId===(item.requestId==='order-audit-create'?admin.id:accounting.id)&&Number.isFinite(Date.parse(item.at))));
+ const page=await f.api.readAuditPage(accounting,1,50,{ordersOnly:true,orderId:order.id,action:'UPDATE_BILL'});
+ assert.equal(page.total,1);assert.equal(page.items[0].actor,'Kế toán');assert.equal(page.items[0].changes[0].before,'Ảnh gốc');assert.equal(page.items[0].changes[0].after,'Ảnh đã sửa');
+ await f.api.write(accounting,'order-audit-update',[change('orders',saved,first.versions['orders/'+order.id])]);
+ assert.equal((await f.api.readAuditPage(accounting,1,50,{ordersOnly:true,orderId:order.id})).total,audit.length);
+ await assert.rejects(()=>f.api.write(accounting,'order-audit-forge',[change('audit',{id:'fake-audit',source:'ORDER_SQL',orderId:order.id,actorId:accounting.id})]),/không được sửa hoặc giả mạo/i);
+ const event=audit[0],full=await f.api.read(admin,{passive:true,full:true});
+ await assert.rejects(()=>f.api.write(admin,'order-audit-delete',[{key:'audit',id:event.id,base:full.versions['audit/'+event.id],value:null}]),/không được sửa hoặc giả mạo/i);
+});
+
+test('Failure writing order audit rolls back order projection and documents together',async()=>{
+ const f=fixture();await f.api.write(admin,'audit-rollback-seed',[change('customers',customer),change('orders',order)]);
+ const snapshot=await f.api.read(admin,{passive:true,full:true}),current=snapshot.state.orders[0],before=structuredClone(f.db);
+ f.failAudit();await assert.rejects(()=>f.api.write(admin,'audit-rollback-update',[change('orders',{...current,saleNote:'Failed draft'},snapshot.versions['orders/'+current.id])]),/Audit database failure/);
+ assert.deepEqual(f.db,before);assert.ok(f.events.includes('rollback'));
+});
+
+test('Accounting sees order history after deletion but cannot read unrelated personnel logs',async()=>{
+ const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'};await f.api.write(admin,'audit-delete-seed',[change('customers',customer),change('orders',order),change('audit',{id:'personnel-event',actorId:admin.id,action:'CREATE_MEMBER',entity:'staff',detail:'Private personnel event',at:'2026-10-09 09:00:00'})]);
+ const snapshot=await f.api.read(admin,{passive:true,full:true});await f.api.write(admin,'audit-delete-order',[{key:'orders',id:order.id,base:snapshot.versions['orders/'+order.id],value:null}]);
+ const page=await f.api.readAuditPage(actor,1,50,{ordersOnly:true,orderId:order.id});assert.ok(page.items.some(item=>item.action==='DELETE_ORDER'));assert.ok(page.items.every(item=>item.orderId===order.id));
+ assert.equal((await f.api.readAuditPage(actor)).items.some(item=>item.id==='personnel-event'),false);
 });

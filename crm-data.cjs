@@ -1,6 +1,7 @@
 "use strict";
 const HrProfiles = require('./hr-profiles.js');
 const OrderPayments = require('./order-payments.js');
+const OrderAudit = require('./order-audit.cjs');
 // Kho dữ liệu nghiệp vụ: một giao dịch cho cả khách/đơn và lịch sử liên quan.
 const crypto = require('node:crypto');
 const distributionRounds = require('./distribution-rounds.js');
@@ -306,6 +307,7 @@ function readable(user,key,r,data){
 
  if(user.role==='MARKETING')return key==='attendance' ? r.accountId===user.id : ['customers','orders','products','customFieldDefinitions','productCategories','websites','traffic','careGroups'].includes(key) || (key==='notifications'&&(r.role==='ALL'||r.role==='MARKETING'||r.saleId===user.id));
  if(user.role==='UNASSIGNED')return key==='attendance' ? r.accountId===user.id : false;
+ if(user.role==='ACCOUNTING'&&key==='audit')return OrderAudit.isOrder(r,data);
  if(user.role==='ACCOUNTING')return key==='attendance' ? r.accountId===user.id : ['customers','orders','products','productCategories','customFieldDefinitions','brokerageMetrics','courseConfigs','expenses','settings'].includes(key) || (key==='members'&&['SALE','LEADER','MANAGER'].includes(r.role)) || (key==='notifications'&&(r.role==='ALL'||r.role==='ACCOUNTING'||r.saleId===user.id));
  if(!['LEADER','SALE'].includes(user.role))return false;
  if(key==='members')return r.id===user.id||r.id===user.leaderId||(user.role==='LEADER'&&r.teamId===user.teamId);
@@ -372,11 +374,11 @@ function compactAssetValue(key, value) {
  if (key === 'feedbacks') { const next = {...value}; next.hasImage = Boolean(next.imageData); delete next.imageData; return next; }
  if (key === 'orders') {
   const next = {...value}; const receipts = Array.isArray(next.paymentReceipts) ? next.paymentReceipts : [];
-  next.paymentReceipts = receipts.map(receipt => {
+  if(Array.isArray(value.paymentReceipts))next.paymentReceipts = receipts.map(receipt => {
    const images = OrderPayments.images(receipt);
    const compact = {...receipt}; delete compact.billImage; delete compact.imageData; delete compact.images; compact.hasBill = images.length > 0; compact.billCount = images.length; return compact;
   });
-  next.hasBill = Boolean(next.billImage) || next.paymentReceipts.some(receipt => receipt.hasBill); delete next.billImage; return next;
+  next.hasBill = Boolean(next.billImage) || (next.paymentReceipts||[]).some(receipt => receipt.hasBill); delete next.billImage; return next;
  }
  return value;
 }
@@ -458,6 +460,7 @@ function authorizeReceiptOrder(user,old,next,data){
  if(next.status!==(next.amountPaid===next.total?'PAID':'DEPOSIT'))error(400,'Trạng thái không khớp số tiền đã thu');
 }
 function authorize(user,key,old,next,data){
+ if(key==='audit'&&(old?.source===OrderAudit.SOURCE||old?.orderId||next?.source===OrderAudit.SOURCE||next?.orderId))error(403,'Lịch sử đơn do máy chủ ghi, không được sửa hoặc giả mạo');
  // Read/delete state belongs to the viewer; preserve other viewers' state and notice content.
  if(key==='notifications'&&old&&next&&readable(user,key,old,data)&&sameExcept(old,next,['readBy','deletedBy'])){
   const ownAppend=field=>Array.isArray(next[field]||[])&&(old[field]||[]).every(id=>(next[field]||[]).includes(id))&&(next[field]||[]).every(id=>id===user.id||(old[field]||[]).includes(id));
@@ -480,7 +483,7 @@ function authorize(user,key,old,next,data){
    if(!sameExcept(previous,next,['basicLots','miniLots','microLots','updatedAt']))error(403,'HRM chỉ được cập nhật Basic, Mini, Micro lot');
    return;
   }
-  if(key==='audit'&&!old&&next?.actorId===user.id)return;
+  if(key==='audit'&&!old&&next?.source!==OrderAudit.SOURCE&&!next?.orderId&&next?.actorId===user.id)return;
   error(403,'HRM chỉ được sửa hồ sơ nhân sự và lot; đơn hàng, điểm danh chỉ xem');
  }
  if(key==='customers'&&!old&&next?.createdVia==='ORDER'&&['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'].includes(user.role)){
@@ -519,7 +522,7 @@ function authorize(user,key,old,next,data){
  if(user.role==='ACCOUNTING'&&['expenses','courseConfigs','brokerageMetrics'].includes(key))return;
  if(user.role==='ACCOUNTING'&&key==='settings'&&next&&sameExcept(publicValue(user,key,old||{},data),next,['accountingLotConfig','brokeragePublishedPeriods']))return;
  if(user.role==='ACCOUNTING'&&key==='orders'&&old&&!next)return;
- if(user.role==='ACCOUNTING'&&key==='audit'&&!old&&next?.actorId===user.id)return;
+ if(user.role==='ACCOUNTING'&&key==='audit'&&!old&&next?.source!==OrderAudit.SOURCE&&!next?.orderId&&next?.actorId===user.id)return;
  if(key==='feedbacks'){
   if(user.role==='ADMIN')return;
   if(next&&next.authorId===user.id&&(!old||old.authorId===user.id))return;
@@ -1105,6 +1108,7 @@ async function writeLocked(user,requestId,changes,options={}){
      change.value={...old,saleId:user.id,saleAcceptedAt:value.saleAcceptedAt||new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19),updatedAt:value.updatedAt||new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19),status:value.status||old.status,note:value.note!==undefined?value.note:old.note};
    }
    if(key==='orders'&&old&&value)change.value=value=mergeOrderAssets(old,value);
+   if(key==='audit'&&!old&&value)change.value=value={...value,requestId};
    validate(key,change.value,id);
    if(key==='members'&&old?.role==='ADMIN'&&old.active!==false&&(!value||value.role!=='ADMIN'||value.active===false)&&[...data.members.values()].filter(r=>r.role==='ADMIN'&&r.active!==false).length<=1)error(400,'Phải giữ ít nhất một Admin hoạt động');
    if(revision(old===undefined?undefined:publicValue(user,key,old,data))!==base)error(409,`Bản ghi ${key}/${id} đã được máy khác cập nhật. Xuất bản nháp rồi tải lại.`);
@@ -1159,6 +1163,10 @@ async function writeLocked(user,requestId,changes,options={}){
   }
   for(const change of changes.filter(item=>item.key==='orders')){
    for(const notice of orderNotices(data.orders.get(change.id),change.value))await saveSystemNotice(c,data,notice,history);
+   for(const event of OrderAudit.events(user,data.orders.get(change.id)||null,change.value,requestId)){
+    await c.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE body=VALUES(body),deleted=VALUES(deleted)',['audit',event.id,JSON.stringify(event),0]);
+    history.push({key:'audit',id:event.id,before:null,after:event});
+   }
   }
   await c.execute('INSERT INTO crm_changes(request_id,actor_id,changes_json) VALUES (?,?,?)',[requestId,user.id,JSON.stringify(history)]);
   // Chỉ quét lại DB + chia data khi thật sự có khách đang chờ chia. Lượt lưu thường (đổi trạng thái,
@@ -1180,7 +1188,7 @@ function assetFromData(user, data, type, id, childId = null) {
  if(!data.state&&source[key] instanceof Map&&!readable(user,key,row,data))error(403,'Không có quyền xem ảnh này');
  if (type === 'process') { const images=Array.isArray(row.imageData)?row.imageData:(row.imageData?[row.imageData]:[]); return {id:row.id,images}; }
  if (type === 'feedback') return {id:row.id,imageData:row.imageData||''};
- const receipt=(row.paymentReceipts||[]).find(item=>String(item.id)===String(childId));
+ const receipt=(row.paymentReceipts||[]).find(item=>String(item.id)===String(childId))||OrderPayments.receipts(row).find(item=>String(item.id)===String(childId));
  if(!receipt)error(404,'Khong tim thay bill.');
  const images=OrderPayments.images(receipt);
  return {orderId:row.id,receiptId:receipt.id,images};
@@ -1189,8 +1197,9 @@ async function readAsset(user, type, id, childId = null) {
  const data = await read(user, {passive:true, full:true});
  return assetFromData(user, data, type, id, childId);
 }
-async function readAuditPage(user, page=1, limit=50) {
- const result = await read(user,{passive:true,full:true}); const all=result.state.audit||[]; const safePage=Math.max(1,Number(page)||1), safeLimit=Math.min(200,Math.max(1,Number(limit)||50));
- return {items:all.slice((safePage-1)*safeLimit,safePage*safeLimit),page:safePage,limit:safeLimit,total:all.length,hasMore:all.length>safePage*safeLimit};
+async function readAuditPage(user, page=1, limit=50, filters={}) {
+ const result=await read(user,{passive:true,full:true}),orders=new Map((result.state.orders||[]).map(row=>[row.id,row]));
+ const all=(result.state.audit||[]).filter(row=>!filters.ordersOnly&&!filters.orderId||OrderAudit.isOrder(row,{orders}));
+ return OrderAudit.page(all,page,limit,filters);
 }
 module.exports={mergeOrderAssets,dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};
