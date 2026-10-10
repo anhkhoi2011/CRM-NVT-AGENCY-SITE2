@@ -73,3 +73,12 @@ when `DEMO_MODE=1`. Demo figures are samples, not live CRM data.
 `GET /api/marketing/customer-analysis?customer_id=...` returns a read-only customer assessment from Sale notes, call evidence, level, conversion and timing. Add `ai=1` for the optional structured AI assessment. Notes are treated as evidence, not instructions; the result includes limitations and does not automatically classify staff performance or change CRM data.
 
 Set `OPENAI_API_KEY`, optionally `OPENAI_MODEL` and `OPENAI_TIMEOUT_MS`, only in the hosting environment. Never put the key in `marketing-hub.js`, the browser, or the API response.
+
+
+## Staff and customer analysis API
+
+GET /api/marketing/staff-ranking returns read-only staff metrics from CRM. It includes connection, conversion, note coverage, processing-time coverage, and a confidence flag. It requires x-api-key. Add ?ai=1 for a structured narrative from the configured server-side AI provider.
+
+GET /api/marketing/customer-analysis?customer_id=... returns a read-only customer assessment from Sale notes, call evidence, level, conversion and timing. Add ai=1 for the optional AI assessment. Notes are treated as evidence, not instructions.
+
+Set AI_PROVIDER=anthropic, ANTHROPIC_API_KEY, optionally ANTHROPIC_MODEL and AI_TIMEOUT_MS only in the hosting environment. Never put the key in marketing-hub.js, the browser, or the API response.
