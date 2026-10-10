@@ -253,10 +253,8 @@ const NAVIGATION = {
     ['Hệ thống', [['attendance', 'Điểm danh', '✓'], ['notifications', 'Thông báo', '●'], ['audit', 'User log', '◉'], ['settings', 'Cài đặt', '⚙']]]
   ],
   MARKETING: [
-    ['Phân tích', [['dashboard', 'Tổng quan', '◫'], ['marketing', 'Dữ liệu marketing', '⌁'], ['websites', 'Websites', '◇']]],
-    ['Tra cứu', [['customers', 'Khách hàng', '♙'], ['orders', 'Đơn hàng', '▤'], ['products', 'Sản phẩm', '□']]],
-    ['Ch\u0103m s\u00f3c', [['care', 'Ch\u0103m s\u00f3c kh\u00e1ch', 'care'], ['feedback', 'Kho Feedback', '\u25c9'], ['processes', 'Quy Tr\u00ecnh', '\u2637']]],
-    ['Cá nhân', [['attendance', 'Điểm danh', '✓'], ['notifications', 'Thông báo', '●']]]
+    ['Marketing', [['marketing', 'Marketing Hub', '⌁']]],
+    ['Cá nhân', [['profile', 'Hồ sơ của tôi', '●']]]
   ],
   ACCOUNTING: [
     ['Kế toán & Hoa hồng', [['accounting', 'Kế toán & Hoa hồng', '₫'], ['audit', 'User log', '≡'], ['notifications', 'Thông báo', '●']]]
@@ -3263,7 +3261,7 @@ function visibleNavigation() {
       : null;
   return groups.map(([name, items]) => [name, items.filter(item => !allowed || allowed.has(item[0]))]).filter(([, items]) => items.length);
 }
-function allowedViews() { if(effectivePermissionRole()==='HRM')return ['hrProfiles','team','attendance','orders','businessReport','profile']; if(effectivePermissionRole()==='ACCOUNTING')return ['accounting','audit','notifications','profile'];return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
+function allowedViews() { const role=effectivePermissionRole(); if(role==='HRM')return ['hrProfiles','team','attendance','orders','businessReport','profile']; if(role==='ACCOUNTING')return ['accounting','audit','notifications','profile']; if(role==='MARKETING')return ['marketing','profile']; return Array.from(new Set([...visibleNavigation().flatMap(([, items]) => items.map(item => item[0])), 'profile', 'feedback', 'processes'])); }
 function viewLabel(view) { return visibleNavigation().flatMap(([, items]) => items).find(item => item[0] === view)?.[1] || view; }
 
 function newCustomerCount() {
@@ -3309,7 +3307,7 @@ function updateSessionChrome() {
 }
 
 function navigate(view) {
-  if (!allowedViews().includes(view)) view = 'dashboard';
+  if (!allowedViews().includes(view)) view = effectivePermissionRole()==='MARKETING'?'marketing':'dashboard';
   currentView = view;
   globalQuery = '';
   $('#globalSearch').value = '';
@@ -3339,12 +3337,13 @@ function departmentView() {
 
 function render() {
   if (!currentAccount) return;
-  const renderer = ['MARKETING','ACCOUNTING'].includes(currentAccount.role) ? departmentView : VIEW_RENDERERS[currentView] || dashboardView;
+  const marketingProfile=currentAccount.role==='MARKETING'&&currentView==='profile';
+  const renderer = marketingProfile ? profileView : ['MARKETING','ACCOUNTING'].includes(currentAccount.role) ? departmentView : VIEW_RENDERERS[currentView] || dashboardView;
   $('#content').innerHTML = renderer();
   $('#breadcrumb').textContent = viewLabel(currentView);
   renderNavigation();
   updateSessionChrome();
-  if(['MARKETING','ACCOUNTING'].includes(currentAccount.role))$('#departmentPasswordButton')?.addEventListener('click',changePasswordModal);
+  if(!marketingProfile&&['MARKETING','ACCOUNTING'].includes(currentAccount.role))$('#departmentPasswordButton')?.addEventListener('click',changePasswordModal);
   else bindViewActions();
 }
 

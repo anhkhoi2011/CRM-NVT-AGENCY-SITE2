@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261009-order-user-log-62';
+const BUILD_VERSION = '20261010-marketing-2';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -221,6 +221,7 @@ function needsPasswordRehash(stored) {
 // Chế độ demo chỉ được bật chủ động bằng DEMO_MODE=1. npm start/cPanel không bật cờ này.
 const DEMO_MODE = typeof process !== 'undefined' && process.env?.DEMO_MODE === '1';
 const demoUsers = [
+  { id: 'demo-marketing', accountId: 'MARKETING-DEMO', phone: '0900000007', email: 'marketing.demo@local.test', name: 'Marketing Demo', role: 'MARKETING', teamId: '', leaderId: null, active: true },
   { id: 'demo-hrm', accountId: 'HRM-DEMO', phone: '0900000006', email: 'hrm.demo@local.test', name: 'HRM Demo', role: 'HRM', teamId: '', leaderId: null, active: true },
   { id: 'demo-accounting', accountId: 'ACCOUNTING-DEMO', phone: '0900000005', email: 'accounting.demo@local.test', name: 'Kế Toán Demo', role: 'ACCOUNTING', teamId: '', leaderId: null, active: true },
   { id: 'demo-admin', accountId: 'ADMIN-DEMO', phone: '0900000001', email: 'admin.demo@local.test', name: 'Admin Demo', role: 'ADMIN', teamId: '', leaderId: null, active: true },
@@ -229,6 +230,8 @@ const demoUsers = [
   { id: 'demo-sale', accountId: 'SALE-DEMO', phone: '0900000003', email: 'sale.demo@local.test', name: 'Sale Demo', role: 'SALE', teamId: 'DEMO', leaderId: 'demo-leader', active: true }
 ];
 const demoPasswords = {
+  'marketing.demo@local.test': 'MarketingDemo2026!',
+  'marketing@nvtagency.top': 'Marketing2026@',
   'hrm.demo@local.test': 'HrmDemo2026!',
   'accounting.demo@local.test': 'AccountingDemo2026!',
   'admin.demo@local.test': 'AdminDemo2026!',
@@ -301,10 +304,32 @@ function seedDemoWorkspace() {
   addMember({ id: 'demo-sale-3', accountId: 'SALE-DEMO-3', phone: '0900000016', email: 'sale3.demo@local.test', name: 'Sale Demo 3', role: 'SALE', teamId: 'DEMO', leaderId: 'demo-leader', active: true }, 'SaleDemo2026!');
   addMember({ id: 'demo-sale-manager', accountId: 'SALE-MANAGER-DEMO', phone: '0900000017', email: 'sale.manager.demo@local.test', name: 'Sale Truc Thuoc Manager', role: 'SALE', teamId: 'MANAGER-DIRECT', leaderId: null, managerId: 'demo-manager', active: true }, 'SaleDemo2026!');
 
-  const customer = (id, name, phone, owner, status, customerClass, level, createdAt) => ({
-    id, name, phone, email: `${id.toLowerCase()}@local.test`, source: 'Landing Page', campaign: 'DEMO-2026', status,
+  const customer = (id, name, phone, owner, status, customerClass, level, createdAt, extra = {}) => ({
+    id, name, phone, email: `${id.toLowerCase()}@local.test`, source: extra.source || 'Landing Page', campaign: extra.campaign || 'DEMO-2026', status,
     managerId: owner?.managerId || null, saleAcceptedAt: owner?.saleId ? createdAt : null, saleId: owner?.saleId || null, leaderId: owner?.leaderId || null, teamId: owner?.teamId || null,
-    note: 'Du lieu mau de kiem tra quy trinh CRM', customFields: { customerClass, customerLevel: level, callStatus: status === 'CONTACTED' ? 'CONTACTED' : 'NEW' }, createdAt, updatedAt: createdAt
+    note: extra.note || 'Dữ liệu mẫu để kiểm tra quy trình CRM',
+    customFields: {
+      customerClass,
+      customerLevel: level,
+      callStatus: extra.callStatus || (status === 'CONTACTED' ? 'Đã gọi được' : 'Chưa gọi'),
+      goi_ket_noi: extra.goi_ket_noi || (status === 'CONTACTED' ? 'Đã gọi được' : 'Chưa gọi'),
+      first_call_at: extra.first_call_at || (status === 'CONTACTED' ? createdAt : null),
+      ket_qua_cham_soc: extra.ket_qua_cham_soc || (status === 'CONTACTED' ? 'Quan tâm cao' : 'Không nghe máy'),
+      province: extra.province || 'Hà Nội',
+      age_range: extra.age_range || '25–34',
+      gender: extra.gender || 'Nam',
+      job: extra.job || 'Kinh doanh tự do',
+      capital_range: extra.capital_range || '50–200 triệu',
+      experience: extra.experience || '1–3 năm',
+      market_interest: extra.market_interest || 'Vàng (XAUUSD)',
+      main_interest: extra.main_interest || 'Tín hiệu giao dịch',
+      main_objection: extra.main_objection || 'Không có',
+      deposit_amount: extra.deposit_amount || null,
+      device_info: extra.device_info || 'iPhone 15 Pro Max',
+      utm_content: extra.utm_content || 'Video_TinHieuVang_Breakout',
+      ...(extra.customFields || {})
+    },
+    createdAt, updatedAt: createdAt
   });
   const owners = {
     leader1: { leaderId: 'demo-leader', teamId: 'DEMO' },
@@ -315,15 +340,17 @@ function seedDemoWorkspace() {
     managerSale: { saleId: 'demo-sale-manager', leaderId: null, managerId: 'demo-manager', teamId: 'MANAGER-DIRECT' }
   };
   [
-    customer('DEMO-CUS-3', 'Nguyen Minh Anh', '0900000021', owners.sale1, 'CONTACTED', 'Premium', 'L3', '2026-09-16 08:30'),
-    customer('DEMO-CUS-4', 'Tran Hoang Nam', '0900000022', owners.sale3, 'NEW', 'Whale', 'L1', '2026-09-16 09:15'),
-    customer('DEMO-CUS-5', 'Le Thu Ha', '0900000023', owners.sale2, 'CONTACTED', 'Premium', 'L4.1', '2026-09-15 10:00'),
-    customer('DEMO-CUS-6', 'Pham Gia Bao', '0900000024', owners.leader1, 'NEW', 'Lanh', 'L0', '2026-09-17 08:00'),
-    customer('DEMO-CUS-7', 'Vo Thanh Tung', '0900000025', owners.leader2, 'NEW', 'Am', 'L1', '2026-09-17 08:10'),
-    customer('DEMO-CUS-8', 'Do Ngoc Linh', '0900000026', owners.sale1, 'CONTACTED', 'Nong', 'L5', '2026-09-14 14:20'),
-    customer('DEMO-CUS-9', 'Bui Quoc Viet', '0900000027', owners.sale3, 'NEW', 'Pending', 'L0', '2026-09-13 16:45'),
-    customer('DEMO-CUS-MANAGER', 'Khach cua Sale Manager', '0900000029', owners.managerSale, 'NEW', 'Am', 'L2', '2026-09-18 09:20'),
-    customer('DEMO-CUS-10', 'Hoang Mai Phuong', '0900000028', owners.leader2, 'CONTACTED', 'Whale', 'L4.1', '2026-09-12 11:30')
+    customer('DEMO-CUS-3', 'Nguyễn Minh Anh', '0988407096', owners.sale1, 'CONTACTED', 'Premium', 'L3', '2026-09-16 08:30', { source: 'TikTok Ads', campaign: 'XAUUSD-Breakout', utm_content: 'Video_FakeBreakout_Vang', province: 'Hà Nội', age_range: '35–44', gender: 'Nam', job: 'Kinh doanh tự do', capital_range: '200 triệu–1 tỷ', market_interest: 'Vàng (XAUUSD)', main_interest: 'Tín hiệu giao dịch', deposit_amount: 50000000, device_info: 'iPhone 15 Pro Max' }),
+    customer('DEMO-CUS-4', 'Trần Hoàng Nam', '0912345678', owners.sale3, 'NEW', 'Whale', 'L1', '2026-09-16 09:15', { source: 'Facebook Ads', campaign: 'Forex-NgoaiHoi', utm_content: 'Image_KienThuc_NgoaiHoi', province: 'TP. Hồ Chí Minh', age_range: '25–34', gender: 'Nam', job: 'Nhân viên văn phòng', capital_range: '50–200 triệu', market_interest: 'Forex', main_interest: 'Học phương pháp', device_info: 'iPhone 14 Pro' }),
+    customer('DEMO-CUS-5', 'Lê Thu Hà', '0903456789', owners.sale2, 'CONTACTED', 'Premium', 'L4.1', '2026-09-15 10:00', { source: 'Google Ads', campaign: 'XAUUSD-VIP', utm_content: 'Search_TinHieu_Vang_VIP', province: 'Đà Nẵng', age_range: '35–44', gender: 'Nữ', job: 'Kinh doanh tự do', capital_range: '200 triệu–1 tỷ', market_interest: 'Vàng (XAUUSD)', main_interest: 'Coaching 1-1', deposit_amount: 100000000, device_info: 'iPhone 16 Pro Max' }),
+    customer('DEMO-CUS-6', 'Phạm Gia Bảo', '0977112233', owners.leader1, 'NEW', 'Lạnh', 'L0', '2026-09-17 08:00', { goi_ket_noi: 'Chưa gọi được', callStatus: 'Thuê bao', ket_qua_cham_soc: 'Thuê bao', province: 'Hải Phòng', age_range: '18–24', gender: 'Nam', job: 'Sinh viên', capital_range: 'Dưới 10 triệu', main_objection: 'Chưa đủ vốn', device_info: 'Samsung Galaxy S23' }),
+    customer('DEMO-CUS-7', 'Võ Thanh Tùng', '0944556677', owners.leader2, 'NEW', 'Ấm', 'L1', '2026-09-17 08:10', { source: 'TikTok Ads', campaign: 'XAUUSD-Breakout', utm_content: 'Video_FakeBreakout_Vang', province: 'Cần Thơ', age_range: '25–34', gender: 'Nam', job: 'Công chức/giáo viên', capital_range: '10–50 triệu', market_interest: 'Forex', device_info: 'iPhone 13' }),
+    customer('DEMO-CUS-8', 'Đỗ Ngọc Linh', '0966778899', owners.sale1, 'CONTACTED', 'Nóng', 'L6', '2026-09-14 14:20', { source: 'Facebook Ads', campaign: 'XAUUSD-VIP', utm_content: 'Video_ChienLuoc_Gold', province: 'Hà Nội', age_range: '45–54', gender: 'Nữ', job: 'Kinh doanh tự do', capital_range: 'Trên 1 tỷ', market_interest: 'Vàng (XAUUSD)', main_interest: 'Tín hiệu giao dịch', deposit_amount: 250000000, device_info: 'iPhone 15 Plus' }),
+    customer('DEMO-CUS-9', 'Bùi Quốc Việt', '0933221100', owners.sale3, 'NEW', 'Pending', 'L0', '2026-09-13 16:45', { goi_ket_noi: 'Chưa gọi', callStatus: 'Chưa gọi', ket_qua_cham_soc: '', province: 'Bình Dương (IP 4G)', age_range: '25–34', gender: 'Nam', job: 'Công nhân/lao động', capital_range: '10–50 triệu', device_info: 'Xiaomi Redmi Note 13' }),
+    customer('DEMO-CUS-MANAGER', 'Khách của Sale Manager', '0988112233', owners.managerSale, 'NEW', 'Ấm', 'L2', '2026-09-18 09:20', { province: 'Đồng Nai', age_range: '35–44', gender: 'Nam', job: 'Kinh doanh tự do', capital_range: '50–200 triệu', device_info: 'iPhone 14' }),
+    customer('DEMO-CUS-10', 'Hoàng Mai Phương', '0911223344', owners.leader2, 'CONTACTED', 'Whale', 'L7', '2026-09-12 11:30', { source: 'Facebook Ads', campaign: 'XAUUSD-VIP', utm_content: 'Video_ChienLuoc_Gold', province: 'TP. Hồ Chí Minh', age_range: '35–44', gender: 'Nữ', job: 'Kinh doanh tự do', capital_range: 'Trên 1 tỷ', market_interest: 'Vàng (XAUUSD)', main_interest: 'Coaching 1-1', deposit_amount: 500000000, device_info: 'iPhone 16 Pro Max' }),
+    customer('DEMO-CUS-11', 'Đặng Quốc Huy', '0922334455', owners.sale1, 'NEW', 'Lạnh', 'L0', '2026-09-18 10:15', { goi_ket_noi: 'Chưa gọi', callStatus: 'Chưa gọi', ket_qua_cham_soc: '', province: 'Bắc Ninh', age_range: '25–34', gender: 'Nam', job: 'Nhân viên văn phòng', device_info: 'Oppo Reno 10' }),
+    customer('DEMO-CUS-12', 'Nguyễn Thùy Trang', '0977889900', owners.sale2, 'CONTACTED', 'Premium', 'L8', '2026-09-10 14:00', { source: 'Google Ads', campaign: 'XAUUSD-VIP', utm_content: 'Search_TinHieu_Vang_VIP', province: 'Hà Nội', age_range: '35–44', gender: 'Nữ', job: 'Kinh doanh tự do', capital_range: '200 triệu–1 tỷ', market_interest: 'Vàng (XAUUSD)', deposit_amount: 150000000, device_info: 'iPhone 15 Pro' })
   ].forEach(row => addOnce(demoState.customers, row));
 
   // Cột "Khoá" của Chăm sóc khách là gốc của báo cáo khóa học: mỗi giá trị K0x là một lớp.
@@ -436,9 +463,11 @@ async function handleDemoApi(request, response, pathname) {
   }
   if (pathname === '/api/auth/login' && request.method === 'POST') {
     const body = await readDbBody(request);
-    const identifier = String(body.identifier || '').trim().toLowerCase();
-    const user = demoState.members.find(item => item.active!==false && [item.phone,item.email,item.accountId].some(value => String(value || '').trim().toLowerCase() === identifier));
-    if (!user || demoPasswords[user.email] !== String(body.password || '')) {
+    const identifier = String(body.identifier || body.username || body.email || '').trim().toLowerCase();
+    const user = demoState.members.find(item => item.active!==false && [item.phone,item.email,item.accountId].some(value => String(value || '').trim().toLowerCase() === identifier)) || (identifier === 'marketing@nvtagency.top' ? demoState.members.find(item => item.role === 'MARKETING') : null);
+    const password = String(body.password || '');
+    const validPassword = user && (demoPasswords[user.email] === password || (user.role === 'MARKETING' && (password === 'Marketing2026@' || password === 'MarketingDemo2026!')));
+    if (!user || !validPassword) {
       return dbJson(request, response, 401, { error: 'Thông tin đăng nhập demo không đúng' });
     }
     if(user.role==='UNASSIGNED')return dbJson(request,response,403,{error:'Tài khoản đã đăng ký, đang chờ Admin phân chức vụ.'});
@@ -1507,7 +1536,7 @@ async function serveStatic(request, response, urlPathname) {
     }
     return;
   }
-  if (!['/','/index.html','/crm.js','/crm.css','/crm-modern.css','/crm-boot.css','/logo.jpg','/login-background.jpg','/customer-journey.svg','/care-ui.js','/crm-runtime.html','/crm-runtime-api.js','/reference-view.js','/reference-crm.js','/crm-notifications.js','/crm-mobile.js','/crm-mobile.css','/order-payments.js','/accounting-detail.js','/hr-profiles.js','/customer-save-queue.js','/support-chat-widget.js','/nvt-mobile-auth.css','/team-tree-hierarchy.css','/commission_tree_demo.html','/commission-apex-mindmap.svg','/assets/livechat-employee.png'].includes(decoded)) return sendJson(response,404,{error:'Không tìm thấy tài nguyên'});
+  if (!['/','/index.html','/crm.js','/crm.css','/crm-modern.css','/crm-boot.css','/logo.jpg','/login-background.jpg','/customer-journey.svg','/care-ui.js','/crm-runtime.html','/crm-runtime-api.js','/reference-view.js','/reference-crm.js','/marketing-hub.js','/crm-notifications.js','/crm-mobile.js','/crm-mobile.css','/order-payments.js','/accounting-detail.js','/hr-profiles.js','/customer-save-queue.js','/support-chat-widget.js','/nvt-mobile-auth.css','/team-tree-hierarchy.css','/commission_tree_demo.html','/commission-apex-mindmap.svg','/assets/livechat-employee.png'].includes(decoded)) return sendJson(response,404,{error:'Không tìm thấy tài nguyên'});
 
   let relative = decoded === '/' ? '/index.html' : decoded;
   const absolute = path.resolve(REPO_ROOT, `.${path.posix.normalize(relative)}`);
@@ -1543,6 +1572,58 @@ async function serveStatic(request, response, urlPathname) {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end('404 Không tìm thấy file');
   }
+}
+
+const DEMO_MARKETING_API_KEY = 'crm_secret_marketing_key_2026';
+const CRM_EXPORT_API_KEY = String(process.env.CRM_API_KEY || '').trim();
+
+const MarketingHub = require('./marketing-hub.js');
+const { normalizePhoneForApi, parseCrmTimestamp, formatLeadPayload } = require('./marketing-export.cjs');
+function stateRows(state, key) { return Array.isArray(state?.[key]) ? state[key] : []; }
+async function marketingApiState() {
+  if (DEMO_MODE) return { state: demoState };
+  if (!dbConfigured) throw Object.assign(new Error('CRM chua duoc cau hinh co so du lieu.'), { status: 503 });
+  const snapshot = await crmData.read({ id: 'marketing-api', role: 'ADMIN', active: true }, { passive: true, full: true });
+  return { state: snapshot.state || {} };
+}
+async function handleLeadsExportApi(request, response, url) {
+  if (request.method === 'OPTIONS') { response.writeHead(204, corsHeaders(request)); return response.end(); }
+  if (request.method !== 'GET') return sendJson(response, 405, { error: 'Chi chap nhan GET' }, corsHeaders(request));
+  const suppliedKey = String(request.headers['x-api-key'] || '').trim();
+  const configuredKey = DEMO_MODE ? DEMO_MARKETING_API_KEY : CRM_EXPORT_API_KEY;
+  if (!configuredKey) return sendJson(response, 503, { error: 'CRM_API_KEY chua duoc cau hinh tren server.' }, corsHeaders(request));
+  const suppliedBytes=Buffer.from(suppliedKey),configuredBytes=Buffer.from(configuredKey);
+  if (!suppliedKey || suppliedBytes.length !== configuredBytes.length || !crypto.timingSafeEqual(suppliedBytes,configuredBytes)) return sendJson(response, 401, { error: 'API key khong hop le hoac thieu header x-api-key.' }, corsHeaders(request));
+  const sinceRaw = url.searchParams.get('since');
+  const since = sinceRaw ? parseCrmTimestamp(sinceRaw, { dateOnlyStart: true }) : NaN;
+  if (sinceRaw && !Number.isFinite(since)) return sendJson(response, 400, { error: 'since phai la ngay YYYY-MM-DD hoac timestamp hop le.' }, corsHeaders(request));
+  const sourceFilter = String(url.searchParams.get('source') || '').trim().toLowerCase();
+  const phoneFilter = url.searchParams.get('phone');
+  if (url.pathname==='/api/customer' && (!phoneFilter || !normalizePhoneForApi(phoneFilter))) return sendJson(response,400,{error:'phone la tham so bat buoc.'},corsHeaders(request));
+  const pageRaw = Number(url.searchParams.get('page') || 1), limitRaw = Number(url.searchParams.get('limit') || 100);
+  const page = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1, limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(500, limitRaw) : 100;
+  let snapshot;
+  try { snapshot = await marketingApiState(); } catch (error) { return sendJson(response, error.status || 500, { error: error.message }, corsHeaders(request)); }
+  const state = snapshot.state || {}, customers = MarketingHub.prepareData(state).customers, orders = stateRows(state, 'orders'), members = stateRows(state, 'members'), sourceNotes = stateRows(state, 'notes');
+  const memberMap = new Map(members.map(member => [String(member.id), member.name || member.id])), notesByCustomer = new Map(), ordersByCust = new Map();
+  for (const note of sourceNotes) { const customerId = note?.customerId || note?.customer_id; if (!customerId) continue; if (!notesByCustomer.has(String(customerId))) notesByCustomer.set(String(customerId), []); notesByCustomer.get(String(customerId)).push(note); }
+  for (const order of orders) { const customerId = order?.customerId || order?.customer_id; if (!customerId) continue; if (!ordersByCust.has(String(customerId))) ordersByCust.set(String(customerId), []); ordersByCust.get(String(customerId)).push(order); }
+  let filtered = customers.filter(customer => {
+    if (Number.isFinite(since)) { const updated = parseCrmTimestamp(customer.updatedAt || customer.updated_at || customer.createdAt || customer.created_at); if (!Number.isFinite(updated) || updated < since) return false; }
+    if (sourceFilter && !String(customer.source || customer.campaign || '').toLowerCase().includes(sourceFilter)) return false;
+    if (phoneFilter && normalizePhoneForApi(customer.phone) !== normalizePhoneForApi(phoneFilter)) return false;
+    return true;
+  });
+  if (url.pathname === '/api/customer' && phoneFilter) {
+    const exact = filtered.filter(customer => normalizePhoneForApi(customer.phone) === normalizePhoneForApi(phoneFilter));
+    if (!exact.length) return sendJson(response, 404, { ok: false, error: 'Khong tim thay khach hang voi SDT nay' }, corsHeaders(request));
+    if (exact.length > 1) return sendJson(response, 409, { ok: false, error: 'So dien thoai trung nhieu khach hang trong CRM' }, corsHeaders(request));
+    return sendJson(response, 200, { ok: true, data: formatLeadPayload(exact[0], memberMap, ordersByCust, notesByCustomer) }, corsHeaders(request));
+  }
+  filtered.sort((a, b) => (parseCrmTimestamp(b.updatedAt || b.updated_at || b.createdAt || b.created_at) || 0) - (parseCrmTimestamp(a.updatedAt || a.updated_at || a.createdAt || a.created_at) || 0));
+  const total = filtered.length, start = (page - 1) * limit, pageItems = filtered.slice(start, start + limit);
+  const nextPageUrl = start + limit < total ? (() => { const params = new URLSearchParams({ page: String(page + 1), limit: String(limit) }); if (sinceRaw) params.set('since', sinceRaw); if (sourceFilter) params.set('source', sourceFilter); if(phoneFilter)params.set('phone',phoneFilter);return new URL('/api/leads/export?' + params.toString(), DEMO_MODE ? url.origin : 'https://nvtagency.top').toString(); })() : null;
+  return sendJson(response, 200, { data: pageItems.map(customer => formatLeadPayload(customer, memberMap, ordersByCust, notesByCustomer)), total, page, limit, next_page_url: nextPageUrl }, corsHeaders(request));
 }
 
 /* ------------------------------------------------------------------ router */
@@ -1666,6 +1747,7 @@ const server = http.createServer(async (request, response) => {
       await dbQuery('UPDATE customer_appointments SET status = ?, note = COALESCE(?, note) WHERE id = ?', [status, body.note || null, id]);
       return sendJson(response, 200, { ok: true }, corsHeaders(request));
     }
+    if (pathname === '/api/leads/export' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
     if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
       return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });

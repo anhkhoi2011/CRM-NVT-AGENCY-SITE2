@@ -305,7 +305,7 @@ function readable(user,key,r,data){
  if(user.role==='MANAGER')return managerReadable(user,key,r,data);
  if(user.role==='ADMIN')return true;
 
- if(user.role==='MARKETING')return key==='attendance' ? r.accountId===user.id : ['customers','orders','products','customFieldDefinitions','productCategories','websites','traffic','careGroups'].includes(key) || (key==='notifications'&&(r.role==='ALL'||r.role==='MARKETING'||r.saleId===user.id));
+ if(user.role==='MARKETING')return key==='attendance' ? r.accountId===user.id : (key==='members'&&(r.id===user.id||['SALE','LEADER','MANAGER'].includes(r.role))) || (['notes','customerFieldHistory'].includes(key)&&Boolean(data.customers.get(r.customerId))) || ['customers','orders','products','customFieldDefinitions','productCategories','websites','traffic','careGroups'].includes(key) || (key==='notifications'&&(r.role==='ALL'||r.role==='MARKETING'||r.saleId===user.id));
  if(user.role==='UNASSIGNED')return key==='attendance' ? r.accountId===user.id : false;
  if(user.role==='ACCOUNTING'&&key==='audit')return OrderAudit.isOrder(r,data);
  if(user.role==='ACCOUNTING')return key==='attendance' ? r.accountId===user.id : ['customers','orders','products','productCategories','customFieldDefinitions','brokerageMetrics','courseConfigs','expenses','settings'].includes(key) || (key==='members'&&['SALE','LEADER','MANAGER'].includes(r.role)) || (key==='notifications'&&(r.role==='ALL'||r.role==='ACCOUNTING'||r.saleId===user.id));
@@ -323,6 +323,7 @@ function readable(user,key,r,data){
  return !!r.customerId&&customerScope(user,data.customers.get(r.customerId));
 }
 function publicValue(user,key,r,data){
+ if(user.role==='MARKETING'&&key==='members'&&r.id!==user.id)return {id:r.id,name:r.name,role:r.role,active:r.active};
  if(user.role==='HRM'&&key==='settings')return Object.fromEntries(Object.entries(r).filter(([k])=>['attendanceDeadline','fontFamily','customAccent'].includes(k)));
  if(user.role==='HRM'&&key==='members')return Object.fromEntries(Object.entries(r).filter(([k])=>['id','accountId','name','role','teamId','leaderId','managerId','phone','email','active','initials','createdAt'].includes(k)));
 
@@ -406,12 +407,12 @@ function snapshot(user,data,options={compact:false}){
   }
  }finally{snapshotMemo=previousMemo;}
  // Only public assignment fields; does not grant access to other teams' records.
- if(options.compact===true){if(Array.isArray(state.audit))state.audit=newestRows(state.audit,100);if(Array.isArray(state.customerFieldHistory))state.customerFieldHistory=newestRows(state.customerFieldHistory,200);}
+ if(options.compact===true){if(Array.isArray(state.audit))state.audit=newestRows(state.audit,100);if(user.role!=='MARKETING'&&Array.isArray(state.customerFieldHistory))state.customerFieldHistory=newestRows(state.customerFieldHistory,200);}
  state.orderAssignees=['ADMIN','ACCOUNTING','MANAGER','LEADER','SALE'].includes(user.role)
   ? [...data.members.values()].filter(m=>m.active!==false&&m.active!==0&&m.active!=='0'&&['MANAGER','LEADER','SALE'].includes(m.role)).map(m=>({id:m.id,name:m.name,role:m.role,teamId:m.teamId||'',leaderId:m.leaderId||null,managerId:m.managerId||null,active:true})) : [];
  state.accounts=state.members;
  state.registeredAccounts=state.members.filter(r=>r.role==='UNASSIGNED');
- state.members=state.members.filter(r=>['SALE','LEADER','MANAGER'].includes(r.role)||(user.role==='HRM'&&r.role!=='UNASSIGNED'));
+ state.members=state.members.filter(r=>['SALE','LEADER','MANAGER'].includes(r.role)||(user.role==='MARKETING'&&r.id===user.id)||(user.role==='HRM'&&r.role!=='UNASSIGNED'));
  const config=data.leaderDistribution.get('$')||{};
  const automation=user.role==='ADMIN'?{engine:'server-v1',enabled:config.enabled===true,mode:data.settings.get('$')?.assignmentMode||'MANUAL',eligibleLeaderCount:[...data.members.values()].filter(p=>p.role==='LEADER'&&p.active!==false&&p.teamId&&(config.enabledLeaderIds||[]).includes(p.id)).length}:undefined;
  return {state,versions,automation,storage:{mode:'mysql',durable:true}};

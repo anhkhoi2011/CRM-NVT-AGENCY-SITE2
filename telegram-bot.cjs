@@ -189,6 +189,24 @@ async function handleSupportTelegramUpdate(update) {
   return { ok: true, support: supportReply };
 }
 
+async function marketingCommandResponse(chatId, command) {
+  const linked = await dbQuery('SELECT id, name, role FROM users WHERE telegram_chat_id = ? AND active = 1 LIMIT 1', [String(chatId)]);
+  if (!linked?.length) { await sendMessage(chatId, '⚠️ Bạn chưa liên kết tài khoản CRM. Gõ /start để liên kết.'); return true; }
+  const user = linked[0];
+  if (!['MARKETING', 'ADMIN'].includes(String(user.role || '').toUpperCase())) { await sendMessage(chatId, '🔒 Lệnh này chỉ dành cho tài khoản Marketing.'); return true; }
+  const crmData = require('./crm-data.cjs');
+  const snapshot = await crmData.read({ id: user.id, role: 'ADMIN', active: true }, { passive: true, full: true });
+  const MarketingHub = require('./marketing-hub.js');
+  const analysis = MarketingHub.analyzeData(snapshot.state || {});
+  const insight = analysis.aiInsight;
+  let text;
+  if (command === '/chandung') text = '👤 <b>Chân dung khách hàng CRM</b>\n\n' + escapeHtml(insight.summaryHeadline) + '\nChưa gọi: ' + analysis.uncalledData + ' · Chưa rõ: ' + analysis.unknownData + ' · Trùng loại thống kê: ' + analysis.excludedData + '\n\n' + escapeHtml(insight.personaInsight);
+  if (command === '/content') text = '🎯 <b>Content hiệu quả từ CRM</b>\n\n' + escapeHtml(insight.contentInsight);
+  if (command === '/insight') text = '💡 <b>Insight tự động từ dữ liệu CRM</b>\n\n' + [insight.summaryHeadline, insight.personaInsight, insight.contentInsight, insight.objectionInsight].map(escapeHtml).join('\n\n');
+  if (text) { await sendMessage(chatId,text); return true; }
+  return false;
+}
+
 async function handleIncomingMessage(msg) {
   const chatId = msg.chat?.id;
   if (!chatId) return;
@@ -249,6 +267,12 @@ async function handleIncomingMessage(msg) {
   }
 
   // Lệnh /me
+  // Lệnh Marketing chỉ chạy sau khi đã xác thực tài khoản Telegram.
+  if (['/chandung', '/content', '/insight'].includes(rawText)) {
+    try { await marketingCommandResponse(chatId, rawText); } catch (error) { await sendMessage(chatId, '⚠️ Không tạo được báo cáo Marketing: ' + escapeHtml(error.message || 'CRM đang bận.')); }
+    return;
+  }
+
   if (rawText === '/me') {
     const rows = await dbQuery('SELECT id, name, role, team_id FROM users WHERE telegram_chat_id = ? AND active = 1 LIMIT 1', [String(chatId)]);
     if (!rows || rows.length === 0) {
@@ -283,7 +307,7 @@ async function handleIncomingMessage(msg) {
       `• /me - Xem thông tin tài khoản đang liên kết\n` +
       `• /huylienket - Hủy liên kết để đăng nhập máy mới\n` +
       `• /help - Xem hướng dẫn này`;
-    await sendMessage(chatId, helpText);
+    await sendMessage(chatId, helpText + '\n\n<b>Lệnh Marketing:</b> /chandung · /content · /insight');
     return;
   }
 
@@ -897,6 +921,29 @@ async function sendWeeklyReport() {
 
 let lastCheckinDate = '';
 let lastWeeklyReportDate = '';
+let lastMarketingInsightDate = '';
+
+async function sendWeeklyMarketingInsight() {
+  const crmData = require('./crm-data.cjs');
+  const MarketingHub = require('./marketing-hub.js');
+  const users = await dbQuery("SELECT id, name, role, telegram_chat_id FROM users WHERE role = 'MARKETING' AND active = 1 AND telegram_chat_id IS NOT NULL");
+  if (!users?.length) return { sent: 0 };
+  const snapshot = await crmData.read({ id: 'marketing-weekly', role: 'ADMIN', active: true }, { passive: true, full: true });
+  const analysis = MarketingHub.analyzeData(snapshot.state || {}), insight = analysis.aiInsight;
+  const text = '📊 <b>Insight Marketing tuần mới từ CRM</b>\n\n' + [insight.summaryHeadline, insight.personaInsight, insight.contentInsight, insight.objectionInsight].map(escapeHtml).join('\n\n');
+  let sent = 0;
+  const day = new Date().toLocaleDateString('en-CA', {timeZone:'Asia/Ho_Chi_Minh'});
+  for (const chatId of new Set(users.map(user=>String(user.telegram_chat_id)))) {
+    const id = 'marketing-insight:'+day+':'+chatId;
+    const body = {day,status:'ATTEMPTED',insight};
+    const [claim] = await pool.execute("INSERT IGNORE INTO crm_documents(collection,id,body,deleted) VALUES ('telegramDaily',?,?,0)",[id,JSON.stringify(body)]);
+    if(!claim.affectedRows)continue;
+    const result = await sendMessage(chatId, text);
+    if(result?.ok)sent++;
+    await pool.execute("UPDATE crm_documents SET body=? WHERE collection='telegramDaily' AND id=?",[JSON.stringify({...body,status:result?.ok?'SENT':'UNKNOWN'}),id]);
+  }
+  return { sent };
+}
 
 async function runTelegramScheduler({skipLeadDrain=false}={}) {
   try {
@@ -979,6 +1026,12 @@ async function runTelegramScheduler({skipLeadDrain=false}={}) {
     if (vnDay === 0 && hour === 20 && minute >= 0 && minute <= 10 && lastWeeklyReportDate !== vnDateStr) {
       lastWeeklyReportDate = vnDateStr;
       await sendWeeklyReport();
+    }
+
+    // 3b. Insight Marketing CRM sáng thứ Hai lúc 09:00 - 09:10
+    if (vnDay === 1 && hour === 9 && minute >= 0 && minute <= 10 && lastMarketingInsightDate !== vnDateStr) {
+      lastMarketingInsightDate = vnDateStr;
+      await sendWeeklyMarketingInsight();
     }
 
     // 4. Cảnh báo Data nóng quá 12 tiếng chưa xử lý (quét mỗi 15 phút)
@@ -1128,5 +1181,6 @@ module.exports = {
   sendMorningCheckinAlert,
   sendBroadcastAnnouncement,
   sendWeeklyReport,
+  sendWeeklyMarketingInsight,
   runTelegramScheduler
 };

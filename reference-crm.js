@@ -225,6 +225,7 @@
     const isAdmin=role==='ADMIN',isAccountant=role==='ACCOUNTING',canAccount=isAdmin||isAccountant;
     qa('#tab-orders .headline-row button').forEach(button=>{if(role==='HRM'&&/Tạo|Thêm/.test(button.textContent)){button.hidden=true;button.setAttribute('aria-hidden','true');button.style.setProperty('display','none','important');button.removeAttribute('onclick');}});
     ensureHrmMenu(role);
+    ensureMarketingMenu(role);
     document.documentElement.classList.toggle('role-hrm',role==='HRM');
     document.documentElement.classList.toggle('role-accounting',isAccountant);
     if(!q('#accountingWorkspaceStyles')){const style=document.createElement('style');style.id='accountingWorkspaceStyles';style.textContent='.role-accounting .nav-group:not(#accountingNavGroup),.role-accounting .nav-link[data-tab]:not([data-tab="tab-notifications"]):not([data-tab="tab-audit"]),.role-accounting section.tab-section:not(#tab-accounting):not(#tab-notifications):not(#tab-audit){display:none!important}.role-accounting #accountingNavGroup{display:block!important}.role-accounting .nav-group:not(#accountingNavGroup) .nav-link[data-tab="tab-audit"]{display:none!important}';document.head.appendChild(style);}
@@ -313,7 +314,8 @@
 
     const active=q('section.active[id^="tab-"]')?.id?.replace('tab-','');
     if(isAccountant&&!['accounting','audit','notifications'].includes(active))renders.switchTab('tab-accounting');
-    else if(!isAdmin&&!isAccountant&&restrictedAdminTabs.has(active)) renders.switchTab('tab-customers');
+    else if(role==='MARKETING'&&!['marketing'].includes(active))renders.switchTab('tab-marketing');
+    else if(!isAdmin&&!isAccountant&&role!=='MARKETING'&&restrictedAdminTabs.has(active)) renders.switchTab('tab-customers');
 
     // Admin xem tong quan data theo pham vi; Sale xem rieng data dang cho nhan.
     const pendingOverview=q('#tab-dashboard .goal-progress-box');
@@ -1615,6 +1617,63 @@
     group.hidden=role!=='HRM';
     const profile=q('#tab-hrProfiles');if(profile)profile.hidden=!['ADMIN','HRM'].includes(role);
   }
+  function renderMarketingHub() {
+    if (!window.MarketingHub || !data) return;
+    const host = q('#marketingHost');
+    if (!host) return;
+    window.MarketingHub.render(host, {
+      customers: data.customers || [],
+      orders: data.orders || [],
+      websites: data.websites || [],
+      traffic: data.traffic || [],
+      notes: data.notes || [],
+      customerFieldHistory: data.customerFieldHistory || [],
+      members: data.members || []
+    }, {
+      onRefresh: async () => { await api?.refresh(); refresh(true); },
+      accountId: data.user?.id,
+      demo: data.marketingDemo === true
+    });
+  }
+  function ensureMarketingMenu(role) {
+    const isMarketing = role === 'MARKETING';
+    const showMenu = isMarketing;
+    const marketingGroup = q('#marketingNavGroup');
+    if (marketingGroup) {
+      marketingGroup.hidden = !showMenu;
+      marketingGroup.style.setProperty('display', showMenu ? 'block' : 'none', 'important');
+      const btn = marketingGroup.querySelector('[data-tab="tab-marketing"]');
+      if (btn && !btn.dataset.wired) {
+        btn.dataset.wired = 'true';
+        btn.onclick = (e) => {
+          e.preventDefault();
+          switchTab('tab-marketing');
+        };
+      }
+    }
+    document.documentElement.classList.toggle('role-marketing', isMarketing);
+    if (isMarketing && !q('#marketingWorkspaceStyles')) {
+      const style = document.createElement('style');
+      style.id = 'marketingWorkspaceStyles';
+      style.textContent = `
+        .role-marketing .sidebar-nav > div:not(#marketingNavGroup) { display: none !important; }
+        .role-marketing section.tab-section:not(#tab-marketing) {
+          display: none !important;
+        }
+        .role-marketing #marketingNavGroup { display: block !important; }
+        .role-marketing .mobile-app-bottom-bar { display: none !important; }
+        .role-marketing #topbarBellBtn { display: none !important; }
+        .role-marketing #tab-orders .headline-row button,
+        .role-marketing #customerTableBody button:not([data-view-only]),
+        .role-marketing [data-role-action="create"],
+        .role-marketing [data-role-action="edit"] {
+          pointer-events: none;
+          opacity: 0.6;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }
   function hrmProfileFor(id){return (data.hrProfiles||[]).find(row=>String(row.employeeId)===String(id))||{id,employeeId:id,fields:{},columns:{},driveFiles:[]};}
   function hrmColumns(){return {...HrProfiles.labels,...Object.assign({},...(data.hrProfiles||[]).map(row=>row.columns||{})),...Object.fromEntries((data.hrProfiles||[]).flatMap(row=>Object.keys(row.fields||{})).filter(key=>!HrProfiles.labels[key]).map(key=>[key,(data.hrProfiles||[]).find(row=>row.columns?.[key])?.columns[key]||key]))};}
   function hrmPersonnel(){
@@ -2750,11 +2809,13 @@
     const alias={data:role==='LEADER'?'pool':role==='SALE'?'accept':'distribution'};
     if(role==='ACCOUNTING')return ['accounting','audit','notifications'].includes(view);
     if(role==='HRM')return ['team','attendance','orders','businessReport','hrProfiles'].includes(view);
+    if(role==='MARKETING')return ['marketing','profile'].includes(view);
     return sharedOrganizationTabs.has(view)||data.navigation.includes(alias[view]||view);
   };
   function paintTab(id,force=false){
     if(!data)return;
     const jobs={
+      'tab-marketing':[renderMarketingHub,[data.customers,data.orders,data.websites,data.traffic,data.notes,data.customerFieldHistory,data.members]],
       'tab-customers':[()=>{renderCustomerTable();renderCustomerImportHistory();},[data.customers,data.members,data.fields,data.offers,data.imports]],
       'tab-care':[renderCareView,[data.customers,data.fields,data.careGroups]],
       'tab-data':[renderDataQueue,[data.customers,data.pendingOffers,data.members,data.offers,data.resubmissions,data.assignmentHistory,data.settings,data.leaderDistribution,data.saleDistributionByLeader,data.today,data.assignedDataStats]],
@@ -2839,7 +2900,7 @@
     // Chỉ dựng tab đang xem; số thông báo vẫn cập nhật độc lập.
     if(first||readinessChanged)renderedTabs.clear();
     const storedTab=savedActiveTab();
-    const initialTab=tabAllowedForSnapshot(storedTab)?storedTab:((data.user.actualRole||data.user.role)==='ACCOUNTING'?'tab-accounting':(data.user.actualRole||data.user.role)==='HRM'?'tab-hrProfiles':'tab-customers');
+    const initialTab=tabAllowedForSnapshot(storedTab)?storedTab:((data.user.actualRole||data.user.role)==='ACCOUNTING'?'tab-accounting':(data.user.actualRole||data.user.role)==='HRM'?'tab-hrProfiles':(data.user.actualRole||data.user.role)==='MARKETING'?'tab-marketing':'tab-customers');
     paintTab('tab-notifications');
     paintTab(initialTab);wireParity();
     // Restore the outer tab after the runtime snapshot is ready. The static HTML
@@ -3303,7 +3364,7 @@
   // Khi bat tu dong, mac dinh dung che do ty trong cho data moi.
   toggleAutoDist=enabled=>run(()=>api.distribution(enabled,enabled?'BALANCED':data.settings.assignmentMode));
   updateAssignmentMode=mode=>run(()=>api.distribution(data.leaderDistribution.enabled,mode));
-  switchTab=function(id){document.getElementById('crm-preheat-tab-style')?.remove();if(data&&(data.user.actualRole||data.user.role)==='ACCOUNTING'&&!['tab-accounting','tab-audit','tab-notifications'].includes(id))return;if(data&&(data.user.actualRole||data.user.role)==='HRM'&&!tabAllowedForSnapshot(id))return;if(data){const view=id.replace('tab-',''),alias={data:data.user.role==='LEADER'?'pool':data.user.role==='SALE'?'accept':'distribution'},target=alias[view]||view;if(!sharedOrganizationTabs.has(view)&&!data.navigation.includes(target)&&!data.navigation.includes(view))return;}rememberActiveTab(id);renders.switchTab(id);if(data){if(id==='tab-customers')clearAutofilledCustomerSearch();if(id==='tab-data'&&(data.user.actualRole||data.user.role)==='SALE'){const search=q('#dataQueueSearch');if(search)search.value='';}paintTab(id,id==='tab-data');if(id==='tab-audit'){renderUserLog();loadUserActivity();loadOrderAudit();}reportUserActivity(id);wireParity();}};
+  switchTab=function(id){document.getElementById('crm-preheat-tab-style')?.remove();if(data&&(data.user.actualRole||data.user.role)==='ACCOUNTING'&&!['tab-accounting','tab-audit','tab-notifications'].includes(id))return;if(data&&(data.user.actualRole||data.user.role)==='HRM'&&!tabAllowedForSnapshot(id))return;if(data&&(data.user.actualRole||data.user.role)==='MARKETING'&&!tabAllowedForSnapshot(id))return;if(data){const view=id.replace('tab-',''),alias={data:data.user.role==='LEADER'?'pool':data.user.role==='SALE'?'accept':'distribution'},target=alias[view]||view;if(!sharedOrganizationTabs.has(view)&&!data.navigation.includes(target)&&!data.navigation.includes(view)&&!(view==='marketing'&&(data.user.actualRole||data.user.role)==='MARKETING'))return;}rememberActiveTab(id);renders.switchTab(id);if(data){if(id==='tab-customers')clearAutofilledCustomerSearch();if(id==='tab-data'&&(data.user.actualRole||data.user.role)==='SALE'){const search=q('#dataQueueSearch');if(search)search.value='';}paintTab(id,id==='tab-data'||id==='tab-marketing');if(id==='tab-audit'){renderUserLog();loadUserActivity();loadOrderAudit();}reportUserActivity(id);wireParity();}};
   qa('.nav-link[data-tab]').forEach(button=>button.addEventListener('click',()=>rememberActiveTab(button.dataset.tab),true));
   filterTeamPeriod=(period,button)=>{q('#teamStartDate').value=fromDay(parseInt(period)||30);q('#teamEndDate').value=data.today;if(button){qa('.team-period-btn').forEach(b=>b.className='btn-secondary team-period-btn');button.className='btn-primary team-period-btn';}updateTeamDateLabel();};
   updateTeamDateLabel=()=>text('teamDateRangeLabel',fmtDate(q('#teamStartDate').value)+' - '+fmtDate(q('#teamEndDate').value));

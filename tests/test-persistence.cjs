@@ -2341,3 +2341,17 @@ test('Accounting sees order history after deletion but cannot read unrelated per
  const page=await f.api.readAuditPage(actor,1,50,{ordersOnly:true,orderId:order.id});assert.ok(page.items.some(item=>item.action==='DELETE_ORDER'));assert.ok(page.items.every(item=>item.orderId===order.id));
  assert.equal((await f.api.readAuditPage(actor)).items.some(item=>item.id==='personnel-event'),false);
 });
+
+test('Marketing gets synchronized CRM notes and full call history but only public Sale identities',async()=>{
+ const f=fixture(),marketing={id:'marketing',role:'MARKETING'};
+ f.db.users.push({id:'marketing',name:'Marketing',role:'MARKETING',email:'marketing@example.test',phone:'0900000007',active:1},{id:'sale',name:'Sale',role:'SALE',email:'private-sale@example.test',phone:'0900000001',active:1});
+ const history=Array.from({length:210},(_,i)=>change('customerFieldHistory',{id:'call-'+i,customerId:customer.id,fieldId:'callStatus',to:'CONTACTED',at:'2026-10-01 10:00:00',source:'SALE'}));
+ await f.api.write(admin,'marketing-fixture',[change('customers',customer),change('orders',order),change('notes',{id:'note',customerId:customer.id,text:'Called customer',at:'2026-10-01 10:00:00'}),...history]);
+ const before=JSON.stringify(f.db),snapshot=await f.api.read(marketing,{passive:true});
+ assert.equal(snapshot.state.customers.length,1);assert.equal(snapshot.state.orders.length,1);assert.equal(snapshot.state.notes.length,1);assert.equal(snapshot.state.customerFieldHistory.length,210);
+ assert.equal(snapshot.state.members.find(m=>m.id==='marketing').email,'marketing@example.test');assert.equal(snapshot.state.members.find(m=>m.id==='sale').email,undefined);assert.equal(snapshot.state.members.find(m=>m.id==='sale').phone,undefined);assert.equal(JSON.stringify(f.db),before);
+ await assert.rejects(()=>f.api.write(marketing,'marketing-mutation',[change('customers',{...snapshot.state.customers[0],name:'Changed'},snapshot.versions['customers/'+customer.id])]),e=>e.status===403);
+ assert.equal(JSON.stringify(f.db),before);
+ const own=snapshot.state.members.find(m=>m.id==='marketing');await f.api.write(marketing,'marketing-own-profile',[change('members',{...own,name:'Updated Marketing'},snapshot.versions['members/marketing'])]);
+ assert.equal((await f.api.read(marketing,{passive:true})).state.members.find(m=>m.id==='marketing').name,'Updated Marketing');
+});
