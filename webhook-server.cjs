@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261010-marketing-5';
+const BUILD_VERSION = '20261010-marketing-6';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -1616,6 +1616,7 @@ async function handleLeadsExportApi(request, response, url) {
   const sourceFilter = String(url.searchParams.get('source') || '').trim().toLowerCase();
   const phoneFilter = url.searchParams.get('phone');
   if (url.pathname==='/api/customer' && (!phoneFilter || !normalizePhoneForApi(phoneFilter))) return sendJson(response,400,{error:'phone la tham so bat buoc.'},corsHeaders(request));
+  const exportAll = url.pathname === '/api/leads/export-all';
   const pageRaw = Number(url.searchParams.get('page') || 1), limitRaw = Number(url.searchParams.get('limit') || 100);
   const page = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1, limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(500, limitRaw) : 100;
   let snapshot;
@@ -1637,9 +1638,9 @@ async function handleLeadsExportApi(request, response, url) {
     return sendJson(response, 200, { ok: true, data: formatLeadPayload(exact[0], memberMap, ordersByCust, notesByCustomer) }, corsHeaders(request));
   }
   filtered.sort((a, b) => (parseCrmTimestamp(b.updatedAt || b.updated_at || b.createdAt || b.created_at) || 0) - (parseCrmTimestamp(a.updatedAt || a.updated_at || a.createdAt || a.created_at) || 0));
-  const total = filtered.length, start = (page - 1) * limit, pageItems = filtered.slice(start, start + limit);
-  const nextPageUrl = start + limit < total ? (() => { const params = new URLSearchParams({ page: String(page + 1), limit: String(limit) }); if (sinceRaw) params.set('since', sinceRaw); if (sourceFilter) params.set('source', sourceFilter); if(phoneFilter)params.set('phone',phoneFilter);return new URL('/api/leads/export?' + params.toString(), DEMO_MODE ? url.origin : 'https://nvtagency.top').toString(); })() : null;
-  return sendJson(response, 200, { data: pageItems.map(customer => formatLeadPayload(customer, memberMap, ordersByCust, notesByCustomer)), total, page, limit, next_page_url: nextPageUrl }, corsHeaders(request));
+  const total = filtered.length, start = exportAll ? 0 : (page - 1) * limit, pageItems = exportAll ? filtered : filtered.slice(start, start + limit);
+  const nextPageUrl = exportAll || start + limit >= total ? null : (() => { const params = new URLSearchParams({ page: String(page + 1), limit: String(limit) }); if (sinceRaw) params.set('since', sinceRaw); if (sourceFilter) params.set('source', sourceFilter); if(phoneFilter)params.set('phone',phoneFilter);return new URL('/api/leads/export?' + params.toString(), DEMO_MODE ? url.origin : 'https://nvtagency.top').toString(); })();
+  return sendJson(response, 200, { data: pageItems.map(customer => formatLeadPayload(customer, memberMap, ordersByCust, notesByCustomer)), total, page: exportAll ? 1 : page, limit: exportAll ? total : limit, next_page_url: nextPageUrl }, corsHeaders(request));
 }
 
 /* ------------------------------------------------------------------ router */
@@ -1763,7 +1764,7 @@ const server = http.createServer(async (request, response) => {
       await dbQuery('UPDATE customer_appointments SET status = ?, note = COALESCE(?, note) WHERE id = ?', [status, body.note || null, id]);
       return sendJson(response, 200, { ok: true }, corsHeaders(request));
     }
-    if (pathname === '/api/leads/export' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
+    if (pathname === '/api/leads/export' || pathname === '/api/leads/export-all' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
     if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {

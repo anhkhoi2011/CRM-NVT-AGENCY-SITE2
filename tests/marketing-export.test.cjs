@@ -34,6 +34,11 @@ test('Read-only export paginates, retains filters, clamps page size and looks up
  const page=await f.get('/api/leads/export?source=webhook-A&since=2026-10-09&limit=1');assert.equal(page.status,200);assert.equal(page.data.total,2);assert.ok(page.data.next_page_url.startsWith('http://localhost:4173/'));assert.ok(page.data.next_page_url.includes('since=2026-10-09'));assert.equal((await f.get(page.data.next_page_url)).data.next_page_url,null);
  assert.equal((await f.get('/api/leads/export?limit=999')).data.limit,500);assert.equal((await f.get('/api/leads/export?since=2026-02-30')).status,400);assert.equal((await f.get('/api/customer')).status,400);assert.equal((await f.get('/api/customer?phone=0901234')).status,404);assert.equal((await f.get('/api/customer?phone=%2B84901234567')).data.data.phone,lead.phone);
 });
+test('All-export endpoint returns every filtered customer in one response',async()=>{
+ const f=apiFixture({customers:[lead,{...lead,id:'c2',phone:'0909999999',source:'webhook-A',updatedAt:'2026-10-10 12:00:00'},{...lead,id:'c3',phone:'0909999998',source:'other',updatedAt:'2026-10-10 13:00:00'}]});
+ const result=await f.get('/api/leads/export-all?source=webhook-A');
+ assert.equal(result.status,200);assert.equal(result.data.total,1);assert.equal(result.data.data.length,1);assert.equal(result.data.data[0].phone,'0909999999');assert.equal(result.data.page,1);assert.equal(result.data.limit,1);assert.equal(result.data.next_page_url,null);
+});
 test('Ambiguous phone lookup is rejected instead of returning an arbitrary duplicate',async()=>{
  const f=apiFixture({customers:[lead,{...lead,id:'duplicate'}]});assert.equal((await f.get('/api/customer?phone=0901234567')).status,409);
 });

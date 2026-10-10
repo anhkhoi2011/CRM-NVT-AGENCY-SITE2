@@ -27,6 +27,11 @@ Response: `{data, total, page, limit, next_page_url}`. Follow `next_page_url` wi
 that same header until it becomes null. Limit is capped at 500. Updated dates
 include customer notes, field history and related order updates when available.
 
+`GET /api/leads/export-all` uses the same `x-api-key` header and returns every
+matching customer in one response. It accepts the same optional `since` and
+`source` filters, sets `next_page_url` to null, and is intended for controlled
+server-to-server syncs because the response size grows with the CRM.
+
 `GET /api/customer?phone=0901234567` matches normalized exact phone numbers;
 missing phone returns 400, no match 404, duplicate matches 409.
 
