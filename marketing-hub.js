@@ -323,6 +323,16 @@
       .mkt-subtab-btn { background: transparent; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted, #64748b); cursor: pointer; transition: all 0.15s; }
       .mkt-subtab-btn:hover { color: var(--text-main, #0f172a); }
       .mkt-subtab-btn.active { background: var(--bg-surface, #ffffff); color: #2563eb; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+      .mkt-persona-picker { display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:16px; padding:14px 16px; border:1px solid var(--border, #e2e8f0); border-radius:8px; background:var(--bg-surface, #fff); }
+      .mkt-persona-picker-copy { display:flex; flex-direction:column; gap:4px; min-width:220px; color:var(--text-main, #0f172a); }
+      .mkt-persona-picker-label { font-size:11px; font-weight:800; letter-spacing:.45px; text-transform:uppercase; color:#2563eb; }
+      .mkt-persona-picker-copy strong { font-size:14px; line-height:1.3; }
+      .mkt-persona-picker-copy span { font-size:12px; color:var(--text-muted, #64748b); }
+      .mkt-persona-picker-control { display:flex; align-items:center; gap:10px; min-width:min(100%, 340px); }
+      .mkt-persona-picker-control label { font-size:12px; font-weight:700; color:var(--text-muted, #64748b); white-space:nowrap; }
+      .mkt-persona-picker select { min-width:280px; max-width:100%; padding:9px 34px 9px 12px; border:1px solid var(--border, #cbd5e1); border-radius:6px; background:var(--bg-surface, #fff); color:var(--text-main, #0f172a); font-weight:700; }
+      .mkt-persona-current { display:inline-flex; align-items:center; gap:6px; margin:0 0 16px; padding:7px 10px; border-left:3px solid #2563eb; background:#eff6ff; color:#1e3a8a; font-size:12px; font-weight:700; }
+      @media(max-width:600px){.mkt-persona-picker{align-items:stretch}.mkt-persona-picker-control{width:100%;align-items:stretch;flex-direction:column;gap:6px}.mkt-persona-picker-control label{white-space:normal}.mkt-persona-picker select{width:100%;min-width:0}.mkt-persona-current{width:100%;box-sizing:border-box}}
 
       /* Table View */
       .mkt-table-card { min-width:0; background: var(--bg-surface, #ffffff); border-top: 1px solid var(--border, #e2e8f0); border-bottom: 1px solid var(--border, #e2e8f0); overflow: hidden; margin-bottom: 24px; }
@@ -702,18 +712,25 @@
         { id: 'mainObjections', label: 'Rào cản từ chối' },
         ...Object.keys(dimensions).filter(id => id.startsWith('custom:')).map(id => ({id, label: 'Trường CRM · ' + id.slice(7)}))
       ];
+      const personaGroups = [
+        { label: '\u0110i\u1ec1u ki\u1ec7n data', ids: ['sources', 'sales', 'levels', 'courses', 'mainInterests'] },
+        { label: 'Thi\u1ebft b\u1ecb & k\u1ebft n\u1ed1i', ids: ['os', 'deviceBrands', 'iphoneModels', 'carriers', 'networkTypes'] },
+        { label: 'H\u1ed3 s\u01a1 kh\u00e1ch h\u00e0ng', ids: ['provinces', 'ageRanges', 'genders', 'jobs'] },
+        { label: 'Th\u1eddi gian & nhu c\u1ea7u', ids: ['timeFrames', 'daysOfWeek', 'capitalRanges', 'experiences', 'marketInterests', 'mainObjections'] },
+        { label: 'Tr\u01b0\u1eddng t\u00f9y ch\u1ec9nh trong CRM', ids: personaOptions.filter(option => option.id.startsWith('custom:')).map(option => option.id) }
+      ].map(group => ({ ...group, options: group.ids.map(id => personaOptions.find(option => option.id === id)).filter(Boolean) })).filter(group => group.options.length);
+      const activePersonaOption = personaOptions.find(option => option.id === hubState.activePersona) || personaOptions[0];
 
       const currentDimension = dimensions[hubState.activePersona] || dimensions.sources;
 
       return `
         <!-- Sub-tabs chọn chiều phân tích -->
-        <div class="mkt-subtabs">
-          ${personaOptions.map(opt => `
-            <button type="button" class="mkt-subtab-btn ${hubState.activePersona === opt.id ? 'active' : ''}" data-mkt-persona="${esc(opt.id)}">
-              ${esc(opt.label)}
-            </button>
-          `).join('')}
+        <div class="mkt-persona-picker">
+          <div class="mkt-persona-picker-copy"><span class="mkt-persona-picker-label">\u0043h\u00e2n dung kh\u00e1ch h\u00e0ng</span><strong>\u0110ang ph\u00e2n t\u00edch theo ti\u00eau ch\u00ed</strong><span>\u0053o s\u00e1nh k\u1ebft n\u1ed1i, quan t\u00e2m v\u00e0 ch\u1ed1t trong c\u00f9ng m\u1ed9t b\u1ea3ng.</span></div>
+          <div class="mkt-persona-picker-control"><label for="mktPersonaDimension">Ti\u00eau ch\u00ed</label><select id="mktPersonaDimension" aria-label="\u0043h\u1ecdn ti\u00eau ch\u00ed ch\u00e2n dung kh\u00e1ch h\u00e0ng">${personaGroups.map(group => `<optgroup label="${esc(group.label)}">${group.options.map(opt => `<option value="${esc(opt.id)}" ${hubState.activePersona === opt.id ? 'selected' : ''}>${esc(opt.label)}</option>`).join('')}</optgroup>`).join('')}</select></div>
         </div>
+
+        <div class="mkt-persona-current">\u0110ang xem: <strong>${esc(activePersonaOption?.label || '')}</strong></div>
 
         ${hubState.activePersona === 'provinces' ? `
           <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:12.5px;color:#1e40af">
@@ -1050,12 +1067,8 @@ Headers:
     });
 
     // Đổi tab con Persona
-    host.querySelectorAll('[data-mkt-persona]').forEach(btn => {
-      btn.onclick = () => {
-        hubState.activePersona = btn.dataset.mktPersona;
-        render(host, rawData, options);
-      };
-    });
+    const personaSelect=host.querySelector('#mktPersonaDimension'); if(personaSelect) personaSelect.onchange=()=>{hubState.activePersona=personaSelect.value;render(host,rawData,options);};
+
 
     // Nút Refresh
     const refreshBtn = host.querySelector('#mktBtnRefresh');
