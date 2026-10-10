@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261010-marketing-2';
+const BUILD_VERSION = '20261010-marketing-3';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -1579,12 +1579,28 @@ const CRM_EXPORT_API_KEY = String(process.env.CRM_API_KEY || '').trim();
 
 const MarketingHub = require('./marketing-hub.js');
 const { normalizePhoneForApi, parseCrmTimestamp, formatLeadPayload } = require('./marketing-export.cjs');
+const aiAnalysis = require('./ai-analysis.cjs');
 function stateRows(state, key) { return Array.isArray(state?.[key]) ? state[key] : []; }
 async function marketingApiState() {
   if (DEMO_MODE) return { state: demoState };
   if (!dbConfigured) throw Object.assign(new Error('CRM chua duoc cau hinh co so du lieu.'), { status: 503 });
   const snapshot = await crmData.read({ id: 'marketing-api', role: 'ADMIN', active: true }, { passive: true, full: true });
   return { state: snapshot.state || {} };
+}
+function marketingApiAuthorized(request) {
+  const supplied=String(request.headers['x-api-key']||'').trim(), configured=DEMO_MODE?DEMO_MARKETING_API_KEY:CRM_EXPORT_API_KEY;
+  if(!configured)return {ok:false,status:503,error:'CRM_API_KEY missing'};
+  const a=Buffer.from(supplied),b=Buffer.from(configured); if(!supplied||a.length!==b.length||!crypto.timingSafeEqual(a,b))return {ok:false,status:401,error:'Invalid x-api-key'}; return {ok:true};
+}
+async function handleMarketingAnalysisApi(request,response,url){
+  if(request.method==='OPTIONS'){response.writeHead(204,corsHeaders(request));return response.end();}
+  if(request.method!=='GET')return sendJson(response,405,{error:'GET only'},corsHeaders(request));
+  const auth=marketingApiAuthorized(request);if(!auth.ok)return sendJson(response,auth.status,{error:auth.error},corsHeaders(request));
+  let snapshot;try{snapshot=await marketingApiState();}catch(e){return sendJson(response,e.status||500,{error:e.message},corsHeaders(request));}
+  const state=snapshot.state||{};
+  if(url.pathname==='/api/marketing/staff-ranking'){const result=aiAnalysis.rankStaff(state);if(url.searchParams.get('ai')==='1')result.ai_result=await aiAnalysis.callOpenAI('staff',{staff:result.staff.slice(0,100)});return sendJson(response,200,{ok:true,data:result},corsHeaders(request));}
+  if(url.pathname==='/api/marketing/customer-analysis'){const id=String(url.searchParams.get('customer_id')||'').trim();if(!id)return sendJson(response,400,{error:'customer_id required'},corsHeaders(request));const result=aiAnalysis.customerAssessment(state,id);if(!result)return sendJson(response,404,{error:'Customer not found'},corsHeaders(request));if(url.searchParams.get('ai')==='1')result.ai_result=await aiAnalysis.callOpenAI('customer',result);return sendJson(response,200,{ok:true,data:result},corsHeaders(request));}
+  return sendJson(response,404,{error:'Not found'},corsHeaders(request));
 }
 async function handleLeadsExportApi(request, response, url) {
   if (request.method === 'OPTIONS') { response.writeHead(204, corsHeaders(request)); return response.end(); }
@@ -1748,6 +1764,7 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 200, { ok: true }, corsHeaders(request));
     }
     if (pathname === '/api/leads/export' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
+    if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
     if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
       return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });

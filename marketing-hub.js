@@ -254,6 +254,12 @@
     const depositsByCurrency=Object.create(null);for(const row of records)if(row.deposit>0)depositsByCurrency[row.depositCurrency]=(depositsByCurrency[row.depositCurrency]||0)+row.deposit;
     return {...summary,depositsByCurrency,overview:summary,dimensions,contentGroups,facebookDemographics,records,aiInsight:generateAiInsight({...summary,dimensions,contentGroups})};
   }
+  function analyzeStaffRanking(input) {
+    const data=analyzeData(input||{}), groups=new Map();
+    for(const r of data.records){const key=String(r.raw.saleId||r.raw.sale_id||r.raw.assignedTo||r.raw.assigned_to||r.saleName||r.raw.sale||'Unassigned');const g=groups.get(key)||{sale:key,total:0,called:0,connected:0,converted:0,note:0,delays:[]};g.total++;if(!r.conn.isUncalled&&!r.conn.isUnknown&&!r.conn.isExcluded)g.called++;if(r.conn.isConnected)g.connected++;if(r.converted)g.converted++;if((r.raw.notes||[]).length)g.note++;if(r.callDelayMinutes!=null)g.delays.push(r.callDelayMinutes);groups.set(key,g);}
+    return [...groups.values()].map(g=>{const cr=g.called?g.connected/g.called*100:null,vr=g.total?g.converted/g.total*100:null,sp=g.delays.length?g.delays.reduce((a,b)=>a+b,0)/g.delays.length:null,score=g.total<10?null:(cr==null&&vr==null?null:Math.round(((cr||0)*.45+(vr||0)*.45+(sp==null?0:Math.max(0,100-sp/1440*100)*.1))*10)/10);return Object.assign(g,{connection_rate:cr,conversion_rate:vr,note_coverage:g.total?g.note/g.total*100:0,avg_processing_minutes:sp==null?null:Math.round(sp),score,confidence:g.total<10?'Small sample':'Reference sample'});}).sort((a,b)=>(b.score==null?-1:b.score)-(a.score==null?-1:a.score)).map((r,i)=>Object.assign(r,{rank:i+1}));
+  }
+
   function generateAiInsight(data) {
     const {calledData,connectedData,connectionRate,totalConverted,dimensions,contentGroups}=data;
     const eligible=rows=>(rows||[]).filter(row=>row.total>=10&&row.converted>0&&!/chưa|khác|IP 4G/i.test(row.key)).sort((a,b)=>b.deposit-a.deposit || b.converted-a.converted);
@@ -542,7 +548,9 @@
       { id: 'content', label: '3. Content & QC Hiệu Quả', icon: '🎯' },
       { id: 'facebook', label: '4. FB Nhân Khẩu Học', icon: '📱' },
       { id: 'ai_insight', label: '5. Insight khách hàng', icon: '🤖' },
-      { id: 'api_dev', label: '6. Tích Hợp API Dev CRM', icon: '⚡' }
+      { id: 'api_dev', label: '6. Tích Hợp API Dev CRM', icon: '⚡' },
+      { id: 'staff_ranking', label: '7. Staff ranking', icon: 'S' },
+      { id: 'customer_ai', label: '8. Customer note AI', icon: 'A' }
     ];
 
     const navTabsHtml = `
@@ -998,6 +1006,8 @@ Headers:
       `;
     }
 
+    function renderStaffRankingView() { const rows=analyzeStaffRanking(rawData); let html='<div class=\"mkt-table-card\"><div class=\"mkt-table-head\"><span class=\"mkt-table-title\">STAFF RANKING</span></div><p style=\"padding:12px 18px;font-size:12px;color:#475569\">Metrics: connection, conversion, note coverage and first-call processing time. Small samples are flagged.</p><div class=\"mkt-table-wrap\"><table class=\"mkt-table\"><thead><tr><th>Rank</th><th>Sale</th><th>Data</th><th>Connect</th><th>Convert</th><th>Notes</th><th>Minutes</th><th>Score</th><th>Confidence</th></tr></thead><tbody>'; rows.forEach(function(r){html+='<tr><td>#'+r.rank+'</td><td><strong>'+esc(r.sale)+'</strong></td><td>'+fmtNum(r.total)+'</td><td>'+(r.connection_rate==null?'?':fmtPct(r.connection_rate))+'</td><td>'+(r.conversion_rate==null?'?':fmtPct(r.conversion_rate))+'</td><td>'+fmtPct(r.note_coverage)+'</td><td>'+(r.avg_processing_minutes==null?'?':fmtNum(r.avg_processing_minutes))+'</td><td>'+(r.score==null?'?':r.score)+'</td><td>'+esc(r.confidence)+'</td></tr>';}); return html+'</tbody></table></div></div>'; }
+    function renderCustomerAiView() { let html='<div class=\"mkt-table-card\"><div class=\"mkt-table-head\"><span class=\"mkt-table-title\">CUSTOMER NOTE ANALYSIS</span></div><div class=\"mkt-table-wrap\"><table class=\"mkt-table\"><thead><tr><th>Customer</th><th>Sale</th><th>Connection</th><th>Interest</th><th>Last note</th><th>AI endpoint</th></tr></thead><tbody>'; records.slice(0,50).forEach(function(r){const note=(r.raw.notes||[]).slice(-1)[0];html+='<tr><td><strong>'+esc(r.raw.name||'Unknown')+'</strong><small style=\"display:block\">'+esc(r.raw.id)+'</small></td><td>'+esc(r.saleName)+'</td><td>'+esc(r.conn.label)+'</td><td>'+(r.interested?'Yes':'Unknown')+'</td><td style=\"max-width:320px;white-space:normal\">'+esc(note?.content||r.conn.detail||'No note')+'</td><td><code>/api/marketing/customer-analysis?customer_id='+encodeURIComponent(r.raw.id)+'&amp;ai=1</code></td></tr>';}); return html+'</tbody></table></div></div>'; }
     // Render toàn bộ Hub vào Host
     let activeContentHtml = '';
     if (hubState.activeTab === 'funnel') activeContentHtml = renderFunnelView();
@@ -1006,6 +1016,8 @@ Headers:
     else if (hubState.activeTab === 'facebook') activeContentHtml = renderFacebookView();
     else if (hubState.activeTab === 'ai_insight') activeContentHtml = renderAiInsightView();
     else if (hubState.activeTab === 'api_dev') activeContentHtml = renderApiDevView();
+    else if (hubState.activeTab === 'staff_ranking') activeContentHtml = renderStaffRankingView();
+    else if (hubState.activeTab === 'customer_ai') activeContentHtml = renderCustomerAiView();
 
     host.innerHTML = `
       <div class="mkt-container">
@@ -1124,6 +1136,7 @@ Headers:
     isConvertedCustomer,
     analyzeData,
     generateAiInsight,
+    analyzeStaffRanking,
     render
   };
 });

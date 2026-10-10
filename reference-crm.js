@@ -1628,6 +1628,7 @@
       traffic: data.traffic || [],
       notes: data.notes || [],
       customerFieldHistory: data.customerFieldHistory || [],
+      assignmentHistory: data.assignmentHistory || [],
       members: data.members || []
     }, {
       onRefresh: async () => { await api?.refresh(); refresh(true); },
