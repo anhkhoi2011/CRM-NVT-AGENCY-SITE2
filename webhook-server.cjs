@@ -1576,6 +1576,8 @@ async function serveStatic(request, response, urlPathname) {
 
 const DEMO_MARKETING_API_KEY = 'crm_secret_marketing_key_2026';
 const CRM_EXPORT_API_KEY = String(process.env.CRM_API_KEY || '').trim();
+const CRM_PUSH_API_KEY = String(process.env.CRM_PUSH_API_KEY || '').trim();
+const demoMarketingPushRequests = new Set();
 
 const MarketingHub = require('./marketing-hub.js');
 const { normalizePhoneForApi, parseCrmTimestamp, formatLeadPayload } = require('./marketing-export.cjs');
@@ -1602,6 +1604,149 @@ async function handleMarketingAnalysisApi(request,response,url){
   if(url.pathname==='/api/marketing/customer-analysis'){const id=String(url.searchParams.get('customer_id')||'').trim();if(!id)return sendJson(response,400,{error:'customer_id required'},corsHeaders(request));const result=aiAnalysis.customerAssessment(state,id);if(!result)return sendJson(response,404,{error:'Customer not found'},corsHeaders(request));if(url.searchParams.get('ai')==='1')result.ai_result=await aiAnalysis.callOpenAI('customer',result);return sendJson(response,200,{ok:true,data:result},corsHeaders(request));}
   return sendJson(response,404,{error:'Not found'},corsHeaders(request));
 }
+
+function marketingPushAuthorized(request) {
+  const supplied = String(request.headers['x-api-key'] || '').trim();
+  const configured = DEMO_MODE ? DEMO_MARKETING_API_KEY : CRM_PUSH_API_KEY;
+  if (!configured) return { ok: false, status: 503, error: 'CRM_PUSH_API_KEY chua duoc cau hinh tren server.' };
+  const suppliedBytes = Buffer.from(supplied), configuredBytes = Buffer.from(configured);
+  if (!supplied || suppliedBytes.length !== configuredBytes.length || !crypto.timingSafeEqual(suppliedBytes, configuredBytes)) {
+    return { ok: false, status: 401, error: 'API key khong hop le hoac thieu header x-api-key.' };
+  }
+  return { ok: true };
+}
+
+function pushBoolean(value, field) {
+  if (typeof value === 'boolean') return value;
+  if (value === 1 || value === 0) return Boolean(value);
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (['true', '1', 'yes', 'y', 'co', 'có', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'n', 'khong', 'không', 'off'].includes(normalized)) return false;
+  throw Object.assign(new Error(`${field} phai la boolean.`), { status: 422 });
+}
+
+function pushPriority(value) {
+  if (value == null || value === '') return null;
+  const aliases = { urgent: 1, highest: 1, high: 1, cao: 1, medium: 3, normal: 3, trungbinh: 3, 'trung bình': 3, low: 5, thap: 5, 'thấp': 5 };
+  const raw = typeof value === 'string' && aliases[value.trim().toLowerCase()] !== undefined
+    ? aliases[value.trim().toLowerCase()]
+    : Number(value);
+  if (!Number.isInteger(raw) || raw < 1 || raw > 5) throw Object.assign(new Error('call_priority phai la so nguyen tu 1 den 5.'), { status: 422 });
+  return raw;
+}
+
+function pushTimestamp(value) {
+  if (value == null || value === '') return stamp();
+  const parsed = parseCrmTimestamp(value);
+  if (!Number.isFinite(parsed)) throw Object.assign(new Error('analyzed_at phai la timestamp hop le.'), { status: 422 });
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    .format(new Date(parsed)).replace('T', ' ');
+}
+
+function marketingPushFields(record, body) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) throw Object.assign(new Error('Moi customer phai la object.'), { status: 422 });
+  const fields = {};
+  const quality = record.quality_label ?? record.data_quality_label ?? record.quality ?? record.nhan_chat_luong;
+  if (quality != null && quality !== '') {
+    const value = String(quality).trim();
+    if (!value || value.length > 80) throw Object.assign(new Error('quality_label khong hop le.'), { status: 422 });
+    fields.marketing_quality_label = value;
+  }
+  const audience = record.audience_network_avoid ?? record.audience_network_ne ?? record.avoid_audience_network;
+  if (audience !== undefined && audience !== null && audience !== '') fields.marketing_audience_network_avoid = pushBoolean(audience, 'audience_network_avoid');
+  const priority = record.call_priority ?? record.priority ?? record.muc_uu_tien_goi;
+  if (priority !== undefined && priority !== null && priority !== '') fields.marketing_call_priority = pushPriority(priority);
+  const analysisNote = record.analysis_note ?? record.quality_note ?? record.note;
+  if (analysisNote !== undefined && analysisNote !== null) {
+    const value = String(analysisNote).trim();
+    if (value.length > 2000) throw Object.assign(new Error('analysis_note qua dai.'), { status: 422 });
+    fields.marketing_analysis_note = value;
+  }
+  const source = record.analysis_source ?? body.source;
+  if (source !== undefined && source !== null && source !== '') {
+    const value = String(source).trim();
+    if (value.length > 120) throw Object.assign(new Error('source qua dai.'), { status: 422 });
+    fields.marketing_analysis_source = value;
+  }
+  const version = record.analysis_version ?? body.analysis_version;
+  if (version !== undefined && version !== null && version !== '') {
+    const value = String(version).trim();
+    if (value.length > 80) throw Object.assign(new Error('analysis_version qua dai.'), { status: 422 });
+    fields.marketing_analysis_version = value;
+  }
+  if (!Object.keys(fields).length) throw Object.assign(new Error('Customer thieu it nhat mot truong phan tich.'), { status: 422 });
+  fields.marketing_analyzed_at = pushTimestamp(record.analyzed_at ?? body.analyzed_at);
+  return fields;
+}
+
+async function handleLeadsPushApi(request, response, url) {
+  if (request.method === 'OPTIONS') { response.writeHead(204, corsHeaders(request)); return response.end(); }
+  if (request.method !== 'POST') return sendJson(response, 405, { error: 'Chi chap nhan POST' }, { Allow: 'POST, OPTIONS', ...corsHeaders(request) });
+  const auth = marketingPushAuthorized(request);
+  if (!auth.ok) return sendJson(response, auth.status, { error: auth.error }, corsHeaders(request));
+
+  let body;
+  try { body = await readDbBody(request); } catch (error) { return sendJson(response, error.status || 400, { error: 'Body JSON khong hop le.' }, corsHeaders(request)); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(response, 400, { error: 'Body phai la object JSON.' }, corsHeaders(request));
+  const requestId = String(body.request_id || body.requestId || '').trim() || `marketing-push-${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+  if (!/^[-\w]{1,96}$/.test(requestId)) return sendJson(response, 422, { error: 'request_id chi duoc gom chu, so, dau gach ngang va gach duoi.' }, corsHeaders(request));
+  const records = Array.isArray(body.customers) ? body.customers : Array.isArray(body.data) ? body.data : null;
+  if (!records || !records.length) return sendJson(response, 400, { error: 'customers phai la mang khong rong.' }, corsHeaders(request));
+  if (records.length > 500) return sendJson(response, 413, { error: 'Moi lan push toi da 500 customer.' }, corsHeaders(request));
+  if (DEMO_MODE && demoMarketingPushRequests.has(requestId)) return sendJson(response, 200, { ok: true, request_id: requestId, replayed: true, results: [], summary: { received: 0, updated: 0, not_found: 0, invalid: 0, duplicate: 0 } }, corsHeaders(request));
+
+  let snapshot;
+  try { snapshot = await marketingApiState(); } catch (error) { return sendJson(response, error.status || 500, { error: error.message }, corsHeaders(request)); }
+  const state = snapshot.state || {}, customers = Array.isArray(state.customers) ? state.customers : [];
+  const byPhone = new Map();
+  for (const customer of customers) {
+    const phone = normalizePhoneForApi(customer.phone);
+    if (!phone) continue;
+    if (!byPhone.has(phone)) byPhone.set(phone, []);
+    byPhone.get(phone).push(customer);
+  }
+  const seenPhones = new Set(), results = [], changes = [], now = stamp();
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index];
+    const phone = normalizePhoneForApi(record?.phone ?? record?.phone_number ?? record?.sdt);
+    const base = { index, phone: phone || null };
+    if (!/^\d{9,15}$/.test(phone)) { results.push({ ...base, status: 'invalid', error: 'phone phai co tu 9 den 15 chu so.' }); continue; }
+    if (seenPhones.has(phone)) { results.push({ ...base, status: 'duplicate' }); continue; }
+    seenPhones.add(phone);
+    const matches = byPhone.get(phone) || [];
+    if (!matches.length) { results.push({ ...base, status: 'not_found', error: 'Khong tim thay khach hang trong CRM.' }); continue; }
+    if (matches.length > 1) { results.push({ ...base, status: 'invalid', error: 'So dien thoai trung nhieu khach hang trong CRM.' }); continue; }
+    try {
+      const fields = marketingPushFields(record, body), customer = matches[0];
+      const updated = { ...customer, updatedAt: now, customFields: { ...(customer.customFields || {}), ...fields } };
+      changes.push({ key: 'customers', id: String(customer.id), base: null, fields: [...Object.keys(fields).map(field => `customFields.${field}`), 'updatedAt'], value: updated });
+      const eventId = `MKT-PUSH-${requestId}-${String(customer.id).replace(/[^A-Za-z0-9_.:$-]/g, '').slice(0, 40)}`.slice(0, 96);
+      changes.push({ key: 'audit', id: eventId, base: null, value: { id: eventId, actorId: 'MARKETING_PUSH_API', action: 'MARKETING_ANALYSIS_PUSH', source: 'MARKETING_PUSH_API', customerId: String(customer.id), at: now, detail: 'Sheet phan tich cap nhat nhan chat luong, Audience Network va uu tien goi.' } });
+      results.push({ ...base, customer_id: String(customer.id), status: 'updated', fields: Object.keys(fields) });
+    } catch (error) { results.push({ ...base, status: 'invalid', error: error.message }); }
+  }
+  const updateResults = results.filter(item => item.status === 'updated');
+  if (changes.length) {
+    if (DEMO_MODE) {
+      for (const change of changes.filter(item => item.key === 'customers')) {
+        const customer = demoState.customers.find(item => String(item.id) === String(change.id));
+        if (customer) Object.assign(customer, change.value);
+      }
+      for (const change of changes.filter(item => item.key === 'audit')) demoState.audit.unshift(change.value);
+      demoMarketingPushRequests.add(requestId);
+    } else {
+      const actor = { id: 'MARKETING_PUSH_API', role: 'ADMIN', active: true, teamId: '', leaderId: null };
+      try {
+        const writeResult = await crmData.write(actor, requestId, changes, { skipAutomatic: true });
+        if (writeResult?.replayed) return sendJson(response, 200, { ok: true, request_id: requestId, replayed: true, results: [], summary: { received: 0, updated: 0, not_found: 0, invalid: 0, duplicate: 0 } }, corsHeaders(request));
+      }
+      catch (error) { return sendJson(response, error.status || 500, { error: 'Khong ghi duoc du lieu phan tich vao CRM.', detail: error.message }, corsHeaders(request)); }
+    }
+  } else if (DEMO_MODE) demoMarketingPushRequests.add(requestId);
+  const summary = { received: records.length, updated: updateResults.length, not_found: results.filter(item => item.status === 'not_found').length, invalid: results.filter(item => item.status === 'invalid').length, duplicate: results.filter(item => item.status === 'duplicate').length };
+  return sendJson(response, 200, { ok: true, request_id: requestId, replayed: false, summary, results }, corsHeaders(request));
+}
+
 async function handleLeadsExportApi(request, response, url) {
   if (request.method === 'OPTIONS') { response.writeHead(204, corsHeaders(request)); return response.end(); }
   if (request.method !== 'GET') return sendJson(response, 405, { error: 'Chi chap nhan GET' }, corsHeaders(request));
@@ -1764,6 +1909,7 @@ const server = http.createServer(async (request, response) => {
       await dbQuery('UPDATE customer_appointments SET status = ?, note = COALESCE(?, note) WHERE id = ?', [status, body.note || null, id]);
       return sendJson(response, 200, { ok: true }, corsHeaders(request));
     }
+    if (pathname === '/api/leads/push') return await handleLeadsPushApi(request, response, url);
     if (pathname === '/api/leads/export' || pathname === '/api/leads/export-all' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
     if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);

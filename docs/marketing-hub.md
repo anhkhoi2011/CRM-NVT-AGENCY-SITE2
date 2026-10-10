@@ -16,6 +16,8 @@ bill handling remain unchanged.
    - `CRM_AUTH_HEADER=x-api-key`
    - `CRM_API_KEY` equal to the hosting secret
    - `CRM_EXTRA_FIELDS=course,capital_range,experience,market_interest,main_interest,main_objection,tinh_trang_nhan_tai_lieu`
+   - `CRM_PUSH_URL=https://nvtagency.top/api/leads/push`
+   - `CRM_PUSH_API_KEY` equal to the separate hosting secret used by the push endpoint
 4. Verify SQL on hosting with `npm run verify:sql`. Local demo storage is RAM and
    does not prove that a production MySQL deployment is configured.
 
@@ -34,6 +36,40 @@ server-to-server syncs because the response size grows with the CRM.
 
 `GET /api/customer?phone=0901234567` matches normalized exact phone numbers;
 missing phone returns 400, no match 404, duplicate matches 409.
+
+### Sheet to CRM push
+
+`POST /api/leads/push` accepts the analysis result from the Sheet. It requires
+the separate `x-api-key: <CRM_PUSH_API_KEY>` header and a JSON body like:
+
+```json
+{
+  "request_id": "sheet-scan-2026-10-10-001",
+  "source": "google-sheet",
+  "customers": [
+    {
+      "phone": "0901234567",
+      "quality_label": "HIGH",
+      "audience_network_avoid": true,
+      "call_priority": 1,
+      "analysis_note": "Data ket noi tot"
+    }
+  ]
+}
+```
+
+The endpoint matches an existing CRM customer by exact normalized phone and
+updates only these machine fields in `customFields`: `marketing_quality_label`,
+`marketing_audience_network_avoid`, `marketing_call_priority` (1 is highest,
+5 is lowest), `marketing_analysis_note`, `marketing_analysis_source`,
+`marketing_analysis_version`, and `marketing_analyzed_at`. It never overwrites
+the customer's phone, sale, level, source, or human note. Unknown phones are
+reported as `not_found`; repeated phones in one batch are `duplicate`.
+
+Production writes use the normal CRM transaction and add a
+`MARKETING_ANALYSIS_PUSH` audit event. Reusing the same `request_id` is
+idempotent in SQL, so a retried Sheet scan does not duplicate the write
+history. The endpoint accepts at most 500 customers per request.
 
 Missing fields retain their keys with null values. `revenue` measures collected
 order money after refunds. `deposit_amount` and `first_deposit_at` describe

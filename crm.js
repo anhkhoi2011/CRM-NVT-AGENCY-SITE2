@@ -1377,7 +1377,8 @@ function scopeSaleIds() {
   }
   if (currentAccount.scope === 'ALL') return activeStaff().filter(person => person.role === 'SALE').map(person => person.id);
   if (currentAccount.scope === 'TEAM') return activeStaff().filter(person => person.role === 'SALE' && person.teamId === currentAccount.teamId && person.leaderId === currentAccount.leaderId).map(person => person.id);
-  return [currentAccount.saleId];
+  const saleId = currentSaleIdentity();
+  return saleId ? [saleId] : [];
 }
 
 function effectivePermissionRole() {
@@ -1449,12 +1450,14 @@ function scopedCustomers() {
   // may not have a matching team/leader path, but must remain visible to the owner.
   if (currentAccount.scope === 'OWN') return state.customers.filter(customer => {
     if (saleIds.includes(customer.saleId)) return true;
-    return currentAccount.saleId && state.dataOffers.some(o => o.customerId === customer.id && o.saleId === currentAccount.saleId && o.status === 'PENDING');
+    const saleId = currentSaleIdentity();
+    return saleId && state.dataOffers.some(o => o.customerId === customer.id && String(o.saleId || '') === saleId && o.status === 'PENDING');
   });
   return state.customers.filter(customer => {
     if (customer.teamId !== currentAccount.teamId || customer.leaderId !== currentAccount.leaderId) return false;
     if (saleIds.includes(customer.saleId)) return true;
-    return currentAccount.saleId && state.dataOffers.some(o => o.customerId === customer.id && o.saleId === currentAccount.saleId && o.status === 'PENDING');
+    const saleId = currentSaleIdentity();
+    return saleId && state.dataOffers.some(o => o.customerId === customer.id && String(o.saleId || '') === saleId && o.status === 'PENDING');
   });
 }
 
@@ -2158,7 +2161,13 @@ async function quickAssignSale(customerId, saleId) {
     : permissionRole === 'MANAGER' && !inManagerScope;
   if (!customer || !sale || outsideScope) { toast('Sale hoac khach hang nam ngoai pham vi duoc giao'); render(); return false; }
   const pending = state.dataOffers.find(o => o.customerId === customer.id && o.status === 'PENDING');
-  if (customer.saleId === sale.id || (pending?.saleId === sale.id && Date.parse(String(pending.offeredAt).replace(' ', 'T') + '+07:00') + offerDeadlineMs() > Date.now())) return true;
+  const alreadyAssigned = customer.saleId === sale.id || (pending?.saleId === sale.id && Date.parse(String(pending.offeredAt).replace(' ', 'T') + '+07:00') + offerDeadlineMs() > Date.now());
+  if (alreadyAssigned) {
+    // A failed first save leaves the local assignment staged. Retry must still
+    // flush that draft instead of treating the matching local value as done.
+    if (hasServerChanges() || serverPendingRequest) return flushServerPersistence();
+    return true;
+  }
   applyCustomerAssignment(customer, sale, `Giao thủ công cho ${sale.name}`);
   saveState(); renderPreservingCustomerScroll();
   const saved = await flushServerPersistence();
@@ -4719,7 +4728,7 @@ function pendingOffersForMe() {
 // Thong ke data da duoc giao theo ngay giao, doc lap voi hang cho nhan.
 // Mot khach duoc giao lai nhieu lan trong cung ky chi dem mot lan.
 function assignedDataStatsForMe() {
-  const saleId = currentAccount?.saleId || currentAccount?.id;
+  const saleId = currentSaleIdentity();
   const today = dayIso(0);
   const offers = state.dataOffers.filter(offer => offer.saleId === saleId
     && offer.customerId && ['PENDING', 'ACCEPTED', 'EXPIRED'].includes(offer.status));
@@ -4756,11 +4765,12 @@ function acceptDataOffer(offerId) {
   if (currentAccount.role !== 'SALE') { toast('FORBIDDEN · chỉ Sale được nhận data'); return false; }
   const offer = state.dataOffers.find(item => item.id === offerId);
   if (!offer || offer.status !== 'PENDING') { toast('Data này không còn chờ nhận'); render(); return false; }
-  if (offer.saleId !== currentAccount.saleId) { toast('FORBIDDEN · data không dành cho bạn'); return false; }
+  const saleId = currentSaleIdentity();
+  if (String(offer.saleId || '') !== saleId) { toast('FORBIDDEN · data không dành cho bạn'); return false; }
   if (!pendingOffersForMe().some(item => item.id === offer.id)) { toast('Data da het han nhan. Vui long tai lai danh sach.'); return false; }
   const customer = customerById(offer.customerId);
   if (!customer) { toast('Khách không tồn tại'); return false; }
-  customer.saleId = offer.saleId;
+  customer.saleId = saleId;
   customer.leaderId = offer.leaderId;
   customer.teamId = offer.teamId;
   customer.saleAcceptedAt = stamp();

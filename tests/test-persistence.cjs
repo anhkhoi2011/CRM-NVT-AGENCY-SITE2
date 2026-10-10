@@ -485,6 +485,27 @@ test('Leader selects a Sale from the customer table and persists the pending ass
 });
 
 
+test('Retry doi Sale sau loi server van day lai ban nhap phan cong',async()=>{
+ const f=fixture(),c=frontend(),lead={id:'lead',name:'Leader',role:'LEADER',teamId:'T'};
+ f.db.users.push({id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1},{id:'sale',name:'Sale One',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ await f.api.write(admin,'seed-retry-assignment',[change('customers',{...customer,saleId:null})]);
+ c.snapshot=await f.api.read(lead);
+ vm.runInContext(`currentAccount=hydrateSessionAccount({id:'lead',name:'Leader',role:'LEADER',teamId:'T'});serverSyncToken='token';applyServerSnapshot(snapshot);renderPreservingCustomerScroll=()=>{};queueEmailNotification=()=>{};`,c);
+ let attempts=0;
+ c.fetch=async(url,options)=>{
+  attempts++;
+  if(attempts===1)return {ok:false,status:503,json:async()=>({error:'May chu dang ban'})};
+  const body=JSON.parse(options.body),result=await f.api.write(lead,body.requestId,body.changes);
+  return {ok:true,status:200,json:async()=>result};
+ };
+ assert.equal(await c.quickAssignSale('c1','sale'),false);
+ assert.equal(vm.runInContext(`state.dataOffers.some(o=>o.saleId==='sale'&&o.status==='PENDING')`,c),true);
+ assert.equal(await c.quickAssignSale('c1','sale'),true);
+ const saved=await f.api.read(lead);
+ assert.equal(saved.state.dataOffers.filter(o=>o.saleId==='sale'&&o.status==='PENDING').length,1);
+ assert.equal(attempts,2);
+});
+
 test('Round robin keeps one customer per recipient and defers a new Sale to the next round',()=>{
  const c=frontend();
  vm.runInContext(`currentAccount=hydrateSessionAccount({id:'admin',name:'Admin',role:'ADMIN'});state=initialState();state.members=[{id:'lead',name:'Leader',role:'LEADER',teamId:'T',managerId:'mgr',active:true},{id:'mgr',name:'Manager',role:'MANAGER',active:true},{id:'s1',name:'Sale 1',role:'SALE',leaderId:'lead',teamId:'T',active:true},{id:'s2',name:'Sale 2',role:'SALE',leaderId:'lead',teamId:'T',active:true},{id:'s3',name:'Sale 3',role:'SALE',leaderId:'lead',teamId:'T',active:true}];state.saleDistributionByLeader.lead={leaderEnabled:false,managerDistributionInitialized:false,enabledSaleIds:[],weights:{}};STAFF=state.members;`,c);
@@ -2354,4 +2375,34 @@ test('Marketing gets synchronized CRM notes and full call history but only publi
  assert.equal(JSON.stringify(f.db),before);
  const own=snapshot.state.members.find(m=>m.id==='marketing');await f.api.write(marketing,'marketing-own-profile',[change('members',{...own,name:'Updated Marketing'},snapshot.versions['members/marketing'])]);
  assert.equal((await f.api.read(marketing,{passive:true})).state.members.find(m=>m.id==='marketing').name,'Updated Marketing');
+});
+
+test('Sale nhan data qua runtime voi snapshot bi che va tai khoan thieu saleId',async()=>{
+ const f=fixture();
+ f.db.users.push({id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1},{id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ f.db.customers.push({id:'c_runtime',name:'Khach runtime',phone:'0988776655',email:'runtime@test.vn',source:'Landing Page',campaign:'',website_id:null,status:'NEW',sale_id:null,leader_id:'lead',team_id:'T',custom_fields_json:'{}',created_at:'2026-08-01 09:00:00'});
+ const offeredAt=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19);
+ f.db.docs.push({collection:'dataOffers',id:'o_runtime',body:{id:'o_runtime',customerId:'c_runtime',saleId:'sale',leaderId:'lead',teamId:'T',offeredAt,status:'PENDING',resolvedAt:'',source:'AUTO'},deleted:0});
+ const snapshot=await f.api.read(sale),c=frontend();
+ assert.equal(snapshot.state.customers.find(row=>row.id==='c_runtime').phone,undefined);
+ vm.runInContext(`applyServerSnapshot(${JSON.stringify(snapshot)});currentAccount={id:'sale',name:'Sale',role:'SALE'};serverSyncToken='token';render=()=>{};`,c);
+ vm.runInContext(fs.readFileSync('crm-runtime-api.js','utf8'),c);
+ let request;
+ c.fetch=async(url,options)=>{
+  request=JSON.parse(options.body);
+  try{return {ok:true,status:200,json:async()=>await f.api.write(sale,request.requestId,request.changes)}}
+  catch(error){return {ok:false,status:error.status||500,json:async()=>({error:error.message})}};
+ };
+ const result=await c.window.crmApi.acceptOffer('o_runtime');
+ assert.equal(result.ok,true);
+ assert.equal(request.changes.some(change=>change.key==='customers'&&Array.isArray(change.fields)),true);
+ const saved=await f.api.read(sale),savedCustomer=saved.state.customers.find(row=>row.id==='c_runtime');
+ assert.equal(savedCustomer.saleId,'sale');
+ assert.equal(savedCustomer.phone,'0988776655');
+ assert.equal(saved.state.dataOffers.find(row=>row.id==='o_runtime').status,'ACCEPTED');
+ assert.ok(saved.state.tasks.some(row=>row.customerId==='c_runtime'&&row.ownerId==='sale'));
+ assert.ok(saved.state.audit.some(row=>row.action==='ACCEPT_DATA'&&row.entity==='c_runtime'));
+ const replay=await f.api.write(sale,request.requestId,request.changes);
+ assert.equal(replay.replayed,true);
+ assert.equal((await f.api.read(admin)).state.tasks.filter(row=>row.customerId==='c_runtime').length,1);
 });
