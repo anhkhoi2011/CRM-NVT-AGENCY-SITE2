@@ -36,6 +36,8 @@ write human notes, Sale, Level, phone or source.
 
 1. Deploy the release through cPanel Git **Update from Remote**, then **Deploy HEAD
    Commit**. The deployment manifest includes `webhook-journal.cjs` in the Node root.
+   Deployment paths are resolved from the active cPanel account's `$HOME`; do not
+   reuse a `/home/<old-user>/...` path copied from another hosting account.
 2. Preserve `WEBHOOK_DATA_DIR` and `WEBHOOK_INBOX_FILE` if configured. The Node user
    needs write permission there. Do not delete or replace existing inbox files.
 3. Keep the backfill date `WEBHOOK_RECOVERY_DATE=2026-10-11`, even if deploying later.

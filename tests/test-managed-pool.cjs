@@ -95,3 +95,11 @@ test('Every local UI script and stylesheet is included in both deployment roots'
   }
  }
 });
+
+test('cPanel deployment uses the active account home instead of a previous username',()=>{
+ const deployment=require('node:fs').readFileSync(ROOT+'/.cpanel.yml','utf8');
+ assert.doesNotMatch(deployment,/\/home\/[A-Za-z0-9_-]+\//);
+ assert.match(deployment,/PUBLICPATH="\$HOME\/public_html\/"/);
+ assert.match(deployment,/CRMPATH="\$HOME\/crm\/"/);
+ assert.match(deployment,/"\$HOME\/nodevenv\/crm\/18\/bin\/activate"/);
+});
