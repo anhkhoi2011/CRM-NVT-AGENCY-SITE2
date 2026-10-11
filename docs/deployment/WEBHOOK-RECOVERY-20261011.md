@@ -75,3 +75,56 @@ Validation: 503 automated tests passed; syntax checks passed for 62 tracked JS/C
 files. Tests use SQL fixtures; no production customers were changed during review.
 The public production health probe still returned `20261010-marketing-6`. Deploy
 HEAD and restart Node before testing the new recovery build on hosting.
+
+## Multipart intake fix and hosting diagnosis (build 20261011-webhook-recovery-4)
+
+The request Content-Type media type and charset remain case-insensitive, but the
+multipart boundary now preserves its original case. Previously lowercasing the
+entire header made mixed-case boundaries fail to match the body. Valid forms
+could be stored as INVALID events with missing name/phone and no customer row.
+A regression test demonstrates the failure before the fix and succeeds after it.
+Existing INVALID events are not automatically promoted or reconstructed. If the
+original raw fields were lost during decoding, retrieve and resend the original
+submission through the configured authenticated webhook.
+
+Webhook intake also invalidates the shared CRM snapshot after the SQL commit.
+This avoids retaining a snapshot populated by a concurrent GET while intake was
+still in progress. Authentication failures log [webhook-auth] TOKEN_MISMATCH;
+validation failures log [webhook-invalid] with event ID and validation problems.
+Neither new log contains credentials or submitted contact details.
+
+After updating and restarting, run in cPanel Terminal:
+
+```bash
+source "$HOME/nodevenv/crm/18/bin/activate"
+cd "$HOME/crm"
+node tools/diagnose-webhook.cjs --date 2026-10-11
+```
+
+This command runs only SELECT queries and reads the inbox/journal. It does not
+prepare schema, resend notifications, distribute customers or alter records.
+It omits customer names, phone numbers, email addresses, raw payloads and secrets.
+The output includes event status, whether the customer row exists, whether a
+customer document marks it deleted, source slugs, pending counts and SQL errors.
+
+Interpretation:
+
+- INVALID plus missing name/phone: inspect the original sender payload and retry
+  with corrected parsing/field mapping. Do not invent missing fields.
+- Pending journal records plus SQL errors: fix the specific reported SQL error;
+  keep pending files for the automatic retry.
+- NEW plus customerExists:true: investigate the selected role, date filters,
+  ownership scope and frontend refresh; intake has reached SQL.
+- No matching recent event in inbox, journal or SQL: check the sender's webhook
+  history, exact URL and headers. Health alone cannot prove a form was delivered.
+- A repeated phone/email can resolve to an existing customer. A new row is not
+  required; original ownership and notes are preserved.
+
+Public probes during this review returned HTTP 200, build
+20261011-webhook-recovery-3, MySQL ready, inbox count 898 and token configured.
+Earlier connection failures in the local inspection environment were not evidence
+that the hosting Node application was down. The command above must run on the
+hosting account to confirm the state of individual submissions.
+
+Validation for this follow-up: 512 automated tests passed. Production recovery
+and receipt of new submissions still require the hosting diagnostic report.

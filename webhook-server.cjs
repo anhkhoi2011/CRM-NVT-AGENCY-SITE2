@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261011-webhook-recovery-3';
+const BUILD_VERSION = '20261011-webhook-recovery-4';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -944,8 +944,9 @@ function adaptLadiPagePayload(payload) {
 /* ------------------------------------------------------------- parse body */
 
 function contentTypeOf(request) {
-  const header = String(request.headers['content-type'] || '').toLowerCase();
-  return { full: header, base: header.split(';')[0].trim(), charset: (header.match(/charset=([\w-]+)/) || [])[1] || '' };
+  // Media type/charset are case-insensitive; multipart boundary values are not.
+  const header = String(request.headers['content-type'] || '');
+  return { full: header, base: header.split(';')[0].trim().toLowerCase(), charset: ((header.match(/charset=([\w-]+)/i) || [])[1] || '').toLowerCase() };
 }
 
 function parseUrlEncoded(text) {
@@ -1316,6 +1317,7 @@ async function handleWebhook(request, response, slug) {
   }
 
   if (!checkToken(request)) {
+    console.warn('[webhook-auth]', slug, 'TOKEN_MISMATCH');
     sendJson(response, 401, { received: false, error: 'Sai token' });
     return;
   }
@@ -1360,6 +1362,8 @@ async function handleWebhook(request, response, slug) {
     consumedAt: ''
   };
 
+  if (!adapted.ok) console.warn('[webhook-invalid]', record.id, record.slug, JSON.stringify(record.problems));
+
   // Persist before any SQL lookup: an unavailable database must not lose a lead.
   try { if (!DEMO_MODE) await webhookJournal.put(record); }
   catch (error) { console.error('[webhook-journal]', error.code || 'WRITE_FAILED'); return sendJson(response,503,{received:false,error:'Khong luu duoc hang doi webhook. Vui long gui lai.'}); }
@@ -1388,6 +1392,7 @@ async function handleWebhook(request, response, slug) {
     sendJson(response, 503, { received: false, queued: !DEMO_MODE, id: record.id, error: 'Chưa lưu được MySQL. Vui lòng gửi lại.' });
     return;
   }
+  if (dbConfigured && !DEMO_MODE) crmData.invalidateSnapshotCache();
   if (!inbox.some(item => item.id === record.id)) inbox.push(record);
   if (inbox.length > MAX_INBOX_RECORDS) inbox.splice(0, inbox.length - MAX_INBOX_RECORDS);
   scheduleFlush();

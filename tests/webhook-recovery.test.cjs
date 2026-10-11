@@ -56,7 +56,7 @@ test('Recovery timer survives failed startup readiness and continues retrying',a
 
 test('SQL failure retains journal; successful replay returns stable event ID without duplicate inbox rows',async()=>{
  const pending=new Set(),inbox=[];let fail=true,response;
- const context={SLUG_PATTERN:/.*/,checkToken:()=>true,contentTypeOf:()=>({base:'application/json'}),readBody:async()=>Buffer.from('{}'),decodeBody:()=>({}),adaptLadiPagePayload:()=>({ok:true,record:{name:'Test',phone:'0901234567'},flat:{}}),dedupeKey:()=> 'key',stamp:()=> '2026-10-11 12:00:00',crypto:require('node:crypto'),Date,DEMO_MODE:false,dbConfigured:true,webhookJournal:{put:async r=>pending.add(r.id),remove:async r=>pending.delete(r.id)},notificationWebsiteForSlug:async()=>null,persistWebhook:async()=>{if(fail)throw Error('SQL down');return {eventId:'WHE-stable',customerId:'CUS-stable',replay:true,duplicate:true};},sendJson:(res,status,body)=>{response={status,body};},console,inbox,MAX_INBOX_RECORDS:5000,scheduleFlush:()=>{},notifyInboxListeners:()=>{},wakeTelegramOutbox:()=>{}};
+ const context={SLUG_PATTERN:/.*/,checkToken:()=>true,contentTypeOf:()=>({base:'application/json'}),readBody:async()=>Buffer.from('{}'),decodeBody:()=>({}),adaptLadiPagePayload:()=>({ok:true,record:{name:'Test',phone:'0901234567'},flat:{}}),dedupeKey:()=> 'key',stamp:()=> '2026-10-11 12:00:00',crypto:require('node:crypto'),Date,DEMO_MODE:false,dbConfigured:true,crmData:{invalidateSnapshotCache(){}},webhookJournal:{put:async r=>pending.add(r.id),remove:async r=>pending.delete(r.id)},notificationWebsiteForSlug:async()=>null,persistWebhook:async()=>{if(fail)throw Error('SQL down');return {eventId:'WHE-stable',customerId:'CUS-stable',replay:true,duplicate:true};},sendJson:(res,status,body)=>{response={status,body};},console,inbox,MAX_INBOX_RECORDS:5000,scheduleFlush:()=>{},notifyInboxListeners:()=>{},wakeTelegramOutbox:()=>{}};
  vm.createContext(context);vm.runInContext(source.slice(source.indexOf('async function handleWebhook('),source.indexOf('/* ------------------------------------------------------- inbox read + SSE */')),context);
  await context.handleWebhook({method:'POST'}, {},'DS-TEST');assert.equal(response.status,503);assert.equal(pending.size,1);assert.equal(inbox.length,0);
  fail=false;await context.handleWebhook({method:'POST'}, {},'DS-TEST');assert.equal(response.status,200);assert.equal(response.body.id,'WHE-stable');assert.equal(pending.size,1);
@@ -80,4 +80,12 @@ test('A full batch of failures does not starve later pending leads',async()=>{
 });
 test('Telegram wake is independent of a journal filesystem failure',async()=>{
  const f=recovery({listFail:true});await assert.rejects(f.run(),/disk unavailable/);assert.equal(f.wakes,1);
+});
+
+test('Webhook invalidates a snapshot populated during SQL intake only after SQL success',async()=>{
+ const actions=[];let fail=false;
+ const context={SLUG_PATTERN:/.*/,checkToken:()=>true,contentTypeOf:()=>({base:'application/json'}),readBody:async()=>Buffer.from('{}'),decodeBody:()=>({}),adaptLadiPagePayload:()=>({ok:true,record:{name:'Test',phone:'0901234567'},flat:{}}),dedupeKey:()=> 'key',stamp:()=> '2026-10-11 12:00:00',crypto:require('node:crypto'),Date,DEMO_MODE:false,dbConfigured:true,crmData:{invalidateSnapshotCache:()=>actions.push('invalidate')},webhookJournal:{put:async()=>{},remove:async()=>{}},notificationWebsiteForSlug:async()=>null,persistWebhook:async()=>{if(fail)throw Error('SQL failed');actions.push('commit');return {eventId:'WHE-test',customerId:'CUS-test'};},sendJson:(res,status)=>actions.push('response-'+status),console,inbox:[],MAX_INBOX_RECORDS:5000,scheduleFlush:()=>{},notifyInboxListeners:()=>{},wakeTelegramOutbox:()=>{}};
+ vm.createContext(context);vm.runInContext(source.slice(source.indexOf('async function handleWebhook('),source.indexOf('/* ------------------------------------------------------- inbox read + SSE */')),context);
+ await context.handleWebhook({method:'POST'}, {},'DS-TEST');assert.deepEqual(actions,['commit','invalidate','response-200']);
+ actions.length=0;fail=true;await context.handleWebhook({method:'POST'}, {},'DS-TEST');assert.deepEqual(actions,['response-503']);
 });

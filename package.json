@@ -10,7 +10,8 @@
     "test": "node --test \"tests/*.cjs\"",
     "telegram:worker": "node telegram-worker.cjs",
     "watchdog": "node watchdog.cjs",
-    "verify:sql": "node tools/verify-sql.cjs"
+    "verify:sql": "node tools/verify-sql.cjs",
+    "diagnose:webhook": "node tools/diagnose-webhook.cjs"
   },
   "engines": {
     "node": ">=18"
