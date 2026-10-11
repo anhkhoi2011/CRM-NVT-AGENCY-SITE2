@@ -39,7 +39,7 @@ test('Rollback failure discards the connection instead of reusing its transactio
 });
 test('Deployment copies both new runtime modules to the Node app',()=>{
  const text=require('node:fs').readFileSync(ROOT+'/.cpanel.yml','utf8');const line=text.split('\n').find(line=>line.includes('webhook-server.cjs')&&line.includes('$CRMPATH'));assert.ok(line.includes('managed-pool.cjs'));assert.ok(line.includes('process-safety.cjs'));
- assert.ok(line.includes('password-service.cjs'));assert.ok(line.includes('password-worker.cjs'));
+ assert.ok(line.includes('password-service.cjs'));assert.ok(line.includes('password-worker.cjs'));assert.ok(line.includes('runtime-storage.cjs'));
 });
 
 test('Eight database leases run concurrently and the next waits for release',async()=>{

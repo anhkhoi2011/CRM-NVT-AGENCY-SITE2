@@ -40,6 +40,9 @@ write human notes, Sale, Level, phone or source.
    reuse a `/home/<old-user>/...` path copied from another hosting account.
 2. Preserve `WEBHOOK_DATA_DIR` and `WEBHOOK_INBOX_FILE` if configured. The Node user
    needs write permission there. Do not delete or replace existing inbox files.
+   If either setting still points to an inaccessible previous cPanel account, the
+   server falls back to the active account's `$HOME/webhook-data` and reports
+   `webhookStorage.fallback: true` from `/api/health/live`.
 3. Keep the backfill date `WEBHOOK_RECOVERY_DATE=2026-10-11`, even if deploying later.
 4. Restart the Node app. Public `/api/health/live` should report build
    `20261011-webhook-recovery-2`.

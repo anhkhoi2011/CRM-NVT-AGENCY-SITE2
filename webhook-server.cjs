@@ -44,22 +44,21 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261011-webhook-recovery-2';
+const BUILD_VERSION = '20261011-webhook-recovery-3';
 const REPO_ROOT = path.resolve(__dirname);
-const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
-  ? path.resolve(process.env.WEBHOOK_DATA_DIR)
-  : path.join(process.env.HOME || path.dirname(REPO_ROOT), 'webhook-data');
-const INBOX_FILE = process.env.WEBHOOK_INBOX_FILE
-  ? path.resolve(process.env.WEBHOOK_INBOX_FILE)
-  : path.join(DEFAULT_WEBHOOK_DATA_DIR, '.webhook-inbox.json');
+const runtimeStorage = require('./runtime-storage.cjs');
+const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
+const webhookStorage = runtimeStorage.resolveWritableDirectory({ configured: process.env.WEBHOOK_DATA_DIR, fallback: path.join(runtimeHome, 'webhook-data'), label: 'WEBHOOK_DATA_DIR' });
+const DEFAULT_WEBHOOK_DATA_DIR = webhookStorage.path;
+const inboxStorage = runtimeStorage.resolveWritableFile({ configured: process.env.WEBHOOK_INBOX_FILE, fallback: path.join(DEFAULT_WEBHOOK_DATA_DIR, '.webhook-inbox.json'), label: 'WEBHOOK_INBOX_FILE' });
+const INBOX_FILE = inboxStorage.path;
 const webhookJournal = require('./webhook-journal.cjs').createJournal(path.join(DEFAULT_WEBHOOK_DATA_DIR, 'pending'));
 const WEBHOOK_RECOVERY_DATE = process.env.WEBHOOK_RECOVERY_DATE || '2026-10-11';
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_INBOX_RECORDS = 5000;
 const MAX_SUPPORT_IMAGE_BYTES = 5 * 1024 * 1024;
-const SUPPORT_UPLOAD_DIR = process.env.SUPPORT_UPLOAD_DIR
-  ? path.resolve(process.env.SUPPORT_UPLOAD_DIR)
-  : path.join(process.env.HOME || path.dirname(REPO_ROOT), 'crm-support-uploads');
+const supportStorage = runtimeStorage.resolveWritableDirectory({ configured: process.env.SUPPORT_UPLOAD_DIR, fallback: path.join(runtimeHome, 'crm-support-uploads'), label: 'SUPPORT_UPLOAD_DIR' });
+const SUPPORT_UPLOAD_DIR = supportStorage.path;
 const TELEGRAM_WEBHOOK_URL = (process.env.TELEGRAM_WEBHOOK_URL || '').trim();
 const TELEGRAM_WEBHOOK_SECRET = (process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
 const TELEGRAM_SUPPORT_WEBHOOK_URL = (process.env.TELEGRAM_SUPPORT_WEBHOOK_URL ||
@@ -1911,7 +1910,7 @@ const server = http.createServer(async (request, response) => {
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
     if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
-      return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
+      return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), webhookStorage: { ready: true, fallback: webhookStorage.fallback || inboxStorage.fallback }, instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
     }
     if (pathname === '/api/health') {
       if (DEMO_MODE) return sendJson(response, 200, { ok: true, demo: true, inbox: inbox.length, token: Boolean(WEBHOOK_TOKEN) });
