@@ -2406,3 +2406,13 @@ test('Sale nhan data qua runtime voi snapshot bi che va tai khoan thieu saleId',
  assert.equal(replay.replayed,true);
  assert.equal((await f.api.read(admin)).state.tasks.filter(row=>row.customerId==='c_runtime').length,1);
 });
+
+test('Marketing initial read does not expire offers or change existing customer assignments',async()=>{
+ const f=fixture(), marketing={id:'marketing',role:'MARKETING'};
+ f.db.users.push({id:'marketing',name:'Marketing',role:'MARKETING',active:1});
+ await f.api.write(admin,'seed-marketing-readonly',[change('customers',customer)]);
+ f.db.docs.push({collection:'dataOffers',id:'expired-marketing-test',body:{id:'expired-marketing-test',customerId:'c1',saleId:'sale',status:'PENDING',offeredAt:'2020-01-01 00:00:00'},deleted:0});
+ const before=JSON.stringify(f.db);
+ await f.api.read(marketing);
+ assert.equal(JSON.stringify(f.db),before);
+});

@@ -166,7 +166,7 @@ async function recordDuplicate(connection, eventId, record, existing, sourceSnap
   return { ownerSaleId, pendingOfferId: pendingOffer?.id || null, waitingForAcceptance };
 }
 
-async function persistWebhook(record) {
+async function persistWebhook(record, { skipAutomatic = false } = {}) {
   await ensureSchema();
   await crmData.prepare();
   const connection = await pool.getConnection();
@@ -227,7 +227,7 @@ async function persistWebhook(record) {
       const notification={id:`NT-DATA-${eventId}`,kind:'DATA_ARRIVAL',role:'ADMIN',customerId,title:'Data mới về',text:`${record.customer.name} · ${website?.name||'Landing Page'}`,at:new Date().toISOString(),readBy:[]};
       await connection.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE id=id',['notifications',notification.id,JSON.stringify(notification)]);
     }
-    if (record.status === 'NEW' && !replay) await crmData.distributeAutomatic(connection);
+    if (record.status === 'NEW' && !replay && !skipAutomatic) await crmData.distributeAutomatic(connection);
     await connection.commit();
     return { eventId, customerId: record.status === 'NEW' ? customerId : null, duplicate: replay, replay, source: sourceSnapshot };
   } catch (error) {

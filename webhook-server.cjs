@@ -33,8 +33,8 @@ const telegramBot = require('./telegram-bot.cjs');
 let telegramWorker=null;
 const inlineTelegramScheduler=process.env.RUN_TELEGRAM_SCHEDULER==='1';
 function wakeTelegramOutbox(){
- // Worker riêng đọc hàng đợi SQL; web chỉ gửi trực tiếp khi bật chế độ tương thích.
- if(inlineTelegramScheduler)void telegramBot.drainLeadNotifications().catch(error=>console.warn('[telegram-outbox]',error.code||error.message));
+ // SQL advisory lock coordinates fallback delivery with other workers.
+ if(inlineTelegramScheduler || telegramWorker?.status() !== 'running')void telegramBot.drainLeadNotifications().catch(error=>console.warn('[telegram-outbox]',error.code||error.message));
 }
 const supportChat = require('./support-chat.cjs');
 let nodemailer = null;
@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261010-marketing-6';
+const BUILD_VERSION = '20261011-webhook-recovery-1';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -52,6 +52,8 @@ const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
 const INBOX_FILE = process.env.WEBHOOK_INBOX_FILE
   ? path.resolve(process.env.WEBHOOK_INBOX_FILE)
   : path.join(DEFAULT_WEBHOOK_DATA_DIR, '.webhook-inbox.json');
+const webhookJournal = require('./webhook-journal.cjs').createJournal(path.join(DEFAULT_WEBHOOK_DATA_DIR, 'pending'));
+const WEBHOOK_RECOVERY_DATE = process.env.WEBHOOK_RECOVERY_DATE || '2026-10-11';
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_INBOX_RECORDS = 5000;
 const MAX_SUPPORT_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -1341,28 +1343,8 @@ async function handleWebhook(request, response, slug) {
     return;
   }
 
-  const website = await notificationWebsiteForSlug(slug);
-  if (website?.provider === 'NOTIFICATION') {
-    try { await handleNotificationWebhook(request, response, slug, website, payload); } catch (error) { console.error('[notification-webhook]', error.message); sendJson(response, 503, { received: false, error: 'Chưa lưu được thông báo webhook.' }); }
-    return;
-  }
-
   const adapted = adaptLadiPagePayload(payload);
   const key = dedupeKey(slug, adapted.record.phone, adapted.flat);
-
-  const existing = inbox.find(item => item.dedupeKey === key);
-  if (existing) {
-    try {
-      const saved = await persistWebhook(existing);
-      if(dbConfigured&&!DEMO_MODE)wakeTelegramOutbox();
-      sendJson(response, 200, { received: true, duplicate: true, id: saved.eventId });
-    } catch (error) {
-      console.error('[webhook-mysql]', error.message);
-      sendJson(response, 503, { received: false, error: 'Chưa lưu được MySQL. Vui lòng gửi lại.' });
-    }
-    return;
-  }
-
   const record = {
     id: `WHE-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
     slug: slug.toUpperCase(),
@@ -1379,6 +1361,19 @@ async function handleWebhook(request, response, slug) {
     consumedAt: ''
   };
 
+  // Persist before any SQL lookup: an unavailable database must not lose a lead.
+  try { if (!DEMO_MODE) await webhookJournal.put(record); }
+  catch (error) { console.error('[webhook-journal]', error.code || 'WRITE_FAILED'); return sendJson(response,503,{received:false,error:'Khong luu duoc hang doi webhook. Vui long gui lai.'}); }
+  let website;
+  try { website = await notificationWebsiteForSlug(slug); }
+  catch (error) { return sendJson(response,503,{received:false,queued:!DEMO_MODE,id:record.id,error:'MySQL tam thoi khong san sang. Data da duoc giu de thu lai.'}); }
+  if (website?.provider === 'NOTIFICATION') {
+    try {
+      await handleNotificationWebhook(request, response, slug, website, payload);
+      if (!DEMO_MODE) await webhookJournal.remove(record);
+    } catch (error) { console.error('[notification-webhook]',error.code || 'FAILED'); if (!response.writableEnded) sendJson(response,503,{received:false,error:'Chua luu duoc thong bao webhook.'}); }
+    return;
+  }
   try {
     const saved = await persistWebhook(record);
     record.customerId = saved.customerId;
@@ -1387,12 +1382,14 @@ async function handleWebhook(request, response, slug) {
     record.replay = Boolean(saved.replay);
     record.ownerSaleId = saved.ownerSaleId || null;
     record.persisted = true;
+    if (!DEMO_MODE) await webhookJournal.remove(record).catch(error => console.warn('[webhook-journal-cleanup]',error.code));
+    record.id = saved.eventId;
   } catch (error) {
     console.error('[webhook-mysql]', error.message);
-    sendJson(response, 503, { received: false, error: 'Chưa lưu được MySQL. Vui lòng gửi lại.' });
+    sendJson(response, 503, { received: false, queued: !DEMO_MODE, id: record.id, error: 'Chưa lưu được MySQL. Vui lòng gửi lại.' });
     return;
   }
-  inbox.push(record);
+  if (!inbox.some(item => item.id === record.id)) inbox.push(record);
   if (inbox.length > MAX_INBOX_RECORDS) inbox.splice(0, inbox.length - MAX_INBOX_RECORDS);
   scheduleFlush();
   notifyInboxListeners(record);
@@ -1949,14 +1946,36 @@ server.keepAliveTimeout = Number(process.env.HTTP_KEEPALIVE_TIMEOUT || 5000);
 
 loadInbox();
 // Khôi phục inbox cũ theo ID ổn định; không xóa file gốc sau khi nhập.
+let webhookRecoveryRunning = false;
 async function recoverLegacyInbox() {
-  for (const record of inbox) {
-    if (!record.dedupeKey || !record.customer) continue;
-    const saved = await persistWebhook(record);
-    record.customerId = saved.customerId;
-    record.source = saved.source || null;
-    record.persisted = true;
-  }
+  if (webhookRecoveryRunning) return;
+  webhookRecoveryRunning = true;
+  try {
+    // Only this incident's date is eligible for historical backfill.
+    const legacy = inbox.filter(record => !record.persisted && String(record.receivedAt || '').slice(0,10) === WEBHOOK_RECOVERY_DATE);
+    const pending = await webhookJournal.list();
+    const records = new Map([...legacy, ...pending].map(record => [record.dedupeKey, record]));
+    let recovered = 0, attempted = 0;
+    for (const record of records.values()) {
+      if (!record.dedupeKey || !record.customer) continue;
+      try {
+        const website = await notificationWebsiteForSlug(record.slug);
+        // Notification-only webhooks must never become customer records.
+        if (website?.provider === 'NOTIFICATION') continue;
+        if (attempted++ >= 100) break;
+        const saved = await persistWebhook(record, { skipAutomatic: true });
+        Object.assign(record,{customerId:saved.customerId,source:saved.source || null,persisted:true});
+        await webhookJournal.remove(record);
+        recovered++;
+      } catch (error) { console.warn('[webhook-recovery]',record.id,error.code || 'RECOVERY_FAILED'); }
+    }
+    wakeTelegramOutbox();
+    if (recovered) {
+      scheduleFlush();
+      crmData.invalidateSnapshotCache();
+      console.log('[webhook-recovery] Recovered:', recovered);
+    }
+  } finally { webhookRecoveryRunning = false; }
 }
 const systemSchemaReady = (async () => {
   if (!dbConfigured) return false;
@@ -1973,8 +1992,15 @@ const systemAccountsReady = systemSchemaReady.then(async ready => {
 void systemAccountsReady.then(ready => {
   if (!ready || DEMO_MODE) return;
   void supportChat.prepare().catch(error => console.error('[support-init]', error.code || 'INIT_ERROR'));
-  void recoverLegacyInbox().catch(error => console.error('[webhook-recovery]', error.code || 'RECOVERY_ERROR'));
 });
+// Keep retrying even if MySQL was unavailable during initial schema/account setup.
+if (dbConfigured && !DEMO_MODE) {
+  const recover = () => void recoverLegacyInbox().catch(error => console.error('[webhook-recovery]', error.code || 'RECOVERY_ERROR'));
+  void systemSchemaReady.then(recover);
+  const recoveryTimer = setInterval(recover, 60000);
+  recoveryTimer.unref();
+  server.once('close', () => clearInterval(recoveryTimer));
+}
 server.listen(PORT, HOST, () => {
   const lan = HOST === '0.0.0.0' ? ' (mọi interface — máy khác trong LAN vào được)' : '';
   console.log(`\nCRM webhook server chạy tại http://localhost:${PORT}${lan}`);

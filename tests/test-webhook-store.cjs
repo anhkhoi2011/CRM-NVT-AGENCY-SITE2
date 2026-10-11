@@ -125,3 +125,17 @@ test('Webhook creates a durable data-arrival notice only once when the incoming 
  const f=fixture();await f.persistWebhook(record);await f.persistWebhook({...record,id:'WHE-replay'});
  const notices=[...f.documents.values()].filter(d=>d.collection==='notifications');assert.equal(notices.length,1);assert.equal(notices[0].body.kind,'DATA_ARRIVAL');assert.equal(notices[0].body.role,'ADMIN');
 });
+
+test('Recovery inserts only the missing lead without scanning old customers for assignment', async () => {
+  const f = fixture();
+  f.customers.set('OLD', ['OLD','Old customer','0900000000',null,null,null,null,'NEW',null,null,null,'old-sale','old-leader','old-team']);
+  const before=JSON.stringify(f.customers.get('OLD'));
+  const saved=await f.persistWebhook(record,{skipAutomatic:true});
+  assert.equal(saved.customerId,'CUS-WHE-1');
+  assert.equal(f.customers.size,2);
+  assert.equal(JSON.stringify(f.customers.get('OLD')),before);
+  assert.equal(f.calls.includes('assign'),false);
+  assert.equal(f.notices.length,1);
+  await f.persistWebhook(record,{skipAutomatic:true});
+  assert.equal(f.notices.length,1);
+});

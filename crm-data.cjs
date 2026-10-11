@@ -961,7 +961,7 @@ function sharedData(){
 }
 async function read(user, options={}){
  await prepare();
- if(options.passive===true)return snapshot(user,await sharedData(),{compact:options.full!==true});
+ if(options.passive===true || user.role==='MARKETING')return snapshot(user,await sharedData(),{compact:options.full!==true});
  try{return await readActive(user);}finally{invalidateSnapshotCache();}
 }
 async function readActive(user){const c=await pool.getConnection();try{await c.beginTransaction();await c.query('SELECT id FROM crm_write_lock WHERE id=1 FOR UPDATE');const data=await allData(c,{mirrorAttendance:true});await expireOffers(c,data);const assigned=await distributeAutomatic(c,data);await warnRentalExpiry(c,data);const result=snapshot(user,assigned?await allData(c):data);await c.commit();return result;}catch(e){await c.rollback().catch(()=>{});throw e;}finally{c.release();}}
