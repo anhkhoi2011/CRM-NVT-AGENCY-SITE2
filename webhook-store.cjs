@@ -177,11 +177,24 @@ async function persistWebhook(record, { skipAutomatic = false } = {}) {
     const website = await sourceBySlug(connection, record.slug);
     const sourceSnapshot = website ? { websiteId: website.id, landingPageName: website.name, landingPageUrl: website.sourceUrl, sourceUrl: website.sourceUrl, landingPageDomain: website.domain, campaign: website.campaign } : null;
     const storedRecord = sourceSnapshot ? { ...record, source: sourceSnapshot } : record;
-    const [existingEvents] = await connection.execute('SELECT id FROM webhook_events WHERE dedupe_key = ?', [record.dedupeKey]);
+    const [existingEvents] = await connection.execute('SELECT id, payload_json FROM webhook_events WHERE dedupe_key = ?', [record.dedupeKey]);
     await connection.execute('INSERT INTO webhook_events (id, dedupe_key, payload_json) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id', [record.id, record.dedupeKey, JSON.stringify(storedRecord)]);
-    const [rows] = await connection.execute('SELECT id FROM webhook_events WHERE dedupe_key = ?', [record.dedupeKey]);
+    const [rows] = await connection.execute('SELECT id, payload_json FROM webhook_events WHERE dedupe_key = ?', [record.dedupeKey]);
     const eventId = rows[0].id;
     const replay = existingEvents.length > 0 || eventId !== record.id;
+    if (replay) {
+      // A duplicate intake may point to a pre-existing customer, not CUS-eventId.
+      const original = parsed(existingEvents[0]?.payload_json) || parsed(rows[0]?.payload_json) || storedRecord;
+      await connection.commit();
+      return {
+        eventId, replay: true, duplicate: true,
+        customerId: original.status === 'NEW' ? (original.duplicateCustomerId || original.customerId || `CUS-${eventId}`) : null,
+        ownerSaleId: original.ownerSaleId || null,
+        pendingOfferId: original.pendingOfferId || null,
+        duplicateStatus: original.duplicateStatus || null,
+        source: original.source || null
+      };
+    }
     const customerId = `CUS-${eventId}`;
     if (record.status === 'NEW' && !replay) {
       const existing = await findExistingCustomer(connection, record.customer);

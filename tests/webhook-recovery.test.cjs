@@ -13,9 +13,9 @@ test('Journal survives reopening; acknowledgement removes only the processed eve
  await fs.writeFile(path.join(dir,'WHE-bad.json'),'{');
  assert.equal((await journal.list()).length,1);
 });
-function recovery({inbox=[],pending=[],fail='',notification=false}={}){
+function recovery({inbox=[],pending=[],fail='',notification=false,cleanupFail=false,listFail=false}={}){
  const writes=[],removed=[];let wakes=0,invalidations=0;
- const context={inbox,WEBHOOK_RECOVERY_DATE:'2026-10-11',console,Map,webhookJournal:{list:async()=>pending,remove:async r=>removed.push(r.id)},notificationWebsiteForSlug:async()=>notification?{provider:'NOTIFICATION'}:null,persistWebhook:async(r,opts)=>{if(r.id===fail)throw Error('SQL failed');writes.push({r,opts});return {customerId:'CUS-'+r.id};},scheduleFlush:()=>{},crmData:{invalidateSnapshotCache:()=>invalidations++},wakeTelegramOutbox:()=>wakes++};
+ const context={inbox,WEBHOOK_RECOVERY_DATE:'2026-10-11',console,Map,webhookJournal:{list:async()=>{if(listFail)throw Error('disk unavailable');return pending;},remove:async r=>{if(cleanupFail)throw Error('unlink failed');removed.push(r.id);}},notificationWebsiteForSlug:async()=>notification?{provider:'NOTIFICATION'}:null,persistWebhook:async(r,opts)=>{if(typeof fail==='function'?fail(r):r.id===fail)throw Error('SQL failed');writes.push({r,opts});return {customerId:'CUS-'+r.id};},scheduleFlush:()=>{},crmData:{invalidateSnapshotCache:()=>invalidations++},wakeTelegramOutbox:()=>wakes++};
  vm.createContext(context);vm.runInContext(source.slice(source.indexOf('let webhookRecoveryRunning = false;'),source.indexOf('const systemSchemaReady')),context);
  return {run:()=>context.recoverLegacyInbox(),writes,removed,get wakes(){return wakes;},get invalidations(){return invalidations;}};
 }
@@ -61,4 +61,23 @@ test('SQL failure retains journal; successful replay returns stable event ID wit
  await context.handleWebhook({method:'POST'}, {},'DS-TEST');assert.equal(response.status,503);assert.equal(pending.size,1);assert.equal(inbox.length,0);
  fail=false;await context.handleWebhook({method:'POST'}, {},'DS-TEST');assert.equal(response.status,200);assert.equal(response.body.id,'WHE-stable');assert.equal(pending.size,1);
  await context.handleWebhook({method:'POST'}, {},'DS-TEST');assert.equal(inbox.length,1);assert.equal(pending.size,1);
+});
+
+test('Committed recovery refreshes CRM even when journal cleanup fails',async()=>{
+ const f=recovery({pending:[record('saved')],cleanupFail:true});await f.run();
+ assert.equal(f.writes.length,1);assert.equal(f.invalidations,1);assert.equal(f.wakes,1);
+});
+test('Legacy and journal copies of the same event are acknowledged together',async()=>{
+ const legacy=record('legacy'),pending={...record('pending'),dedupeKey:legacy.dedupeKey};
+ const f=recovery({inbox:[legacy],pending:[pending]});await f.run();
+ assert.equal(f.writes.length,1);assert.equal(legacy.persisted,true);assert.equal(pending.persisted,true);
+ assert.ok(f.removed.includes(pending.id));
+});
+test('A full batch of failures does not starve later pending leads',async()=>{
+ const pending=Array.from({length:101},(_,i)=>record(String(i)));
+ const f=recovery({pending,fail:r=>r.id!=='WHE-100'});await f.run();await f.run();
+ assert.ok(f.writes.some(w=>w.r.id==='WHE-100'));
+});
+test('Telegram wake is independent of a journal filesystem failure',async()=>{
+ const f=recovery({listFail:true});await assert.rejects(f.run(),/disk unavailable/);assert.equal(f.wakes,1);
 });

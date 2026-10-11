@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 function fixture(failCustomer = false, websites = [{ id: 'WEB-TEST', name: 'Hoang Phuc Academy', domain: 'www.hoangphucacademy.vn', sourceUrl: 'https://www.hoangphucacademy.vn/', campaignId: 'ACADEMY', webhookSlug: 'DS-TEST' }], offers = []) {
-  const events = new Map(), customers = new Map(), documents = new Map(offers.map(row => [`${row.collection || 'dataOffers'}:${row.id}`, row])), notices = [], calls = [];
+  const payloads = new Map(), events = new Map(), customers = new Map(), documents = new Map(offers.map(row => [`${row.collection || 'dataOffers'}:${row.id}`, row])), notices = [], calls = [];
   const connection = {
     async beginTransaction() { calls.push('begin'); },
     async commit() { calls.push('commit'); },
@@ -16,18 +16,18 @@ function fixture(failCustomer = false, websites = [{ id: 'WEB-TEST', name: 'Hoan
     async query(sql, values) { return this.execute(sql, values); },
     async execute(sql, values = []) {
       if (sql.includes('FROM crm_write_lock')) return [[{id:1}]];
-      if (sql.startsWith('INSERT INTO webhook_events')) { if (!events.has(values[1])) events.set(values[1], values[0]); }
+      if (sql.startsWith('INSERT INTO webhook_events')) { if (!events.has(values[1])) { events.set(values[1], values[0]); payloads.set(values[0],values[2]); } }
       if (sql.includes("FROM crm_documents WHERE collection='websites'")) return [websites.map(item => ({ id: item.id, body: JSON.stringify(item) }))];
       if (sql.includes("FROM crm_documents WHERE collection='dataOffers'")) return [[...documents.values()].filter(row => row.collection === 'dataOffers' && !row.deleted).map(row => ({ id: row.id, body: JSON.stringify(row.body) }))];
       if (sql.startsWith('SELECT id, name, phone, email, sale_id, leader_id, team_id, status FROM customers')) return [[...customers.values()].map(values => ({ id: values[0], name: values[1], phone: values[2], email: values[3], sale_id: values[11] || null, leader_id: values[12] || null, team_id: values[13] || null, status: values[7] }))];
       if (sql.startsWith('SELECT id, body FROM crm_documents')) return [[...documents.values()].map(row => ({ id: row.id, body: JSON.stringify(row.body) }))];
-      if (sql.startsWith('SELECT id')) return [events.has(values[0]) ? [{ id: events.get(values[0]) }] : []];
+      if (sql.startsWith('SELECT id')) return [events.has(values[0]) ? [{ id: events.get(values[0]), payload_json: payloads.get(events.get(values[0])) }] : []];
       if (sql.startsWith('INSERT INTO customers')) {
         if (failCustomer) throw new Error('Database unavailable');
         if (!customers.has(values[0])) customers.set(values[0], values);
       }
       if (sql.startsWith('INSERT INTO crm_documents')) documents.set(`${values[0]}:${values[1]}`, { collection: values[0], id: values[1], body: JSON.parse(values[2]), deleted: values[3] || 0 });
-      if (sql.startsWith('UPDATE webhook_events')) return [{}];
+      if (sql.startsWith('UPDATE webhook_events')) { payloads.set(values[1],values[0]); return [{}]; }
       return [{}];
     }
   };
@@ -138,4 +138,15 @@ test('Recovery inserts only the missing lead without scanning old customers for 
   assert.equal(f.notices.length,1);
   await f.persistWebhook(record,{skipAutomatic:true});
   assert.equal(f.notices.length,1);
+});
+
+test('Replayed duplicate webhook returns the original existing customer and owner',async()=>{
+ const f=fixture();
+ f.customers.set('EXISTING',['EXISTING','Existing','0912345678',null,null,null,null,'NEW',null,null,null,'sale-original','lead-original','team-original']);
+ const first=await f.persistWebhook(record);
+ assert.equal(first.customerId,'EXISTING');const notices=f.notices.length;
+ const retry=await f.persistWebhook({...record,id:'WHE-RETRY'});
+ assert.equal(retry.replay,true);assert.equal(retry.eventId,first.eventId);
+ assert.equal(retry.customerId,'EXISTING');assert.equal(retry.ownerSaleId,'sale-original');
+ assert.equal(f.customers.size,1);assert.equal(f.notices.length,notices);
 });

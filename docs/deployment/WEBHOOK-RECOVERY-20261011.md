@@ -40,7 +40,7 @@ write human notes, Sale, Level, phone or source.
    needs write permission there. Do not delete or replace existing inbox files.
 3. Keep the backfill date `WEBHOOK_RECOVERY_DATE=2026-10-11`, even if deploying later.
 4. Restart the Node app. Public `/api/health/live` should report build
-   `20261011-webhook-recovery-1`.
+   `20261011-webhook-recovery-2`.
 5. Check logs for `[webhook-recovery] Recovered:` and failures. Confirm recovered
    leads appear in CRM and Telegram notices arrive. Do not clear SENT outbox states.
 
@@ -52,3 +52,21 @@ landing page/Sheet and resend through its existing authenticated webhook.
 Local automated tests use filesystem journals and SQL fixtures; they are not proof
 of production restoration. The live health probe before deployment returned the
 previous build `20261010-marketing-6`, with local Telegram worker `standby`.
+
+## Follow-up review
+
+- Recovery rotates through batches of at most 100 distinct events so repeated
+  failures or notification-only entries cannot indefinitely block later leads.
+- Legacy inbox and journal copies of one event are acknowledged together.
+- A successful SQL commit invalidates the CRM cache even if journal cleanup fails;
+  failed cleanup retains the file for safe replay.
+- The Telegram fallback is attempted even if reading the journal fails.
+- Duplicate webhook replies preserve the original customer ID and ownership from
+  the stored event, including when intake matched an existing customer.
+- Marketing audit IDs hash the full request/customer pair rather than truncating
+  it, preserving separate audit entries for large request IDs and multi-lead batches.
+
+Validation: 503 automated tests passed; syntax checks passed for 62 tracked JS/CJS
+files. Tests use SQL fixtures; no production customers were changed during review.
+The public production health probe still returned `20261010-marketing-6`. Deploy
+HEAD and restart Node before testing the new recovery build on hosting.

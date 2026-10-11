@@ -80,3 +80,9 @@ test('Production push delegates to the transactional CRM writer with an audit ev
   assert.ok(result.writeArgs[2].some(change => change.key === 'audit' && change.value.action === 'MARKETING_ANALYSIS_PUSH'));
   assert.ok(result.writeArgs[2].some(change => change.key === 'customers' && change.fields.includes('customFields.marketing_call_priority')));
 });
+
+test('Long marketing request IDs retain separate audit events for each customer',async()=>{
+ const api=fixture({customers:[{id:'c1',phone:'0901234567',customFields:{}},{id:'c2',phone:'0901234568',customFields:{}}],audit:[]},{production:true});
+ const result=await api.post({request_id:'r'.repeat(96),customers:[{phone:'0901234567',quality_label:'HIGH'},{phone:'0901234568',quality_label:'LOW'}]},{'x-api-key':'push-key'});
+ const audits=result.writeArgs[2].filter(c=>c.key==='audit');assert.equal(audits.length,2);assert.notEqual(audits[0].id,audits[1].id);assert.ok(audits.every(c=>c.id.length<=96));
+});

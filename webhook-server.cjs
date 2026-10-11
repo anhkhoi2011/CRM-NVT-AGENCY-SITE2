@@ -44,7 +44,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261011-webhook-recovery-1';
+const BUILD_VERSION = '20261011-webhook-recovery-2';
 const REPO_ROOT = path.resolve(__dirname);
 const DEFAULT_WEBHOOK_DATA_DIR = process.env.WEBHOOK_DATA_DIR
   ? path.resolve(process.env.WEBHOOK_DATA_DIR)
@@ -1717,7 +1717,7 @@ async function handleLeadsPushApi(request, response, url) {
       const fields = marketingPushFields(record, body), customer = matches[0];
       const updated = { ...customer, updatedAt: now, customFields: { ...(customer.customFields || {}), ...fields } };
       changes.push({ key: 'customers', id: String(customer.id), base: null, fields: [...Object.keys(fields).map(field => `customFields.${field}`), 'updatedAt'], value: updated });
-      const eventId = `MKT-PUSH-${requestId}-${String(customer.id).replace(/[^A-Za-z0-9_.:$-]/g, '').slice(0, 40)}`.slice(0, 96);
+      const eventId = 'MKT-PUSH-' + crypto.createHash('sha256').update(JSON.stringify([requestId, String(customer.id)])).digest('hex');
       changes.push({ key: 'audit', id: eventId, base: null, value: { id: eventId, actorId: 'MARKETING_PUSH_API', action: 'MARKETING_ANALYSIS_PUSH', source: 'MARKETING_PUSH_API', customerId: String(customer.id), at: now, detail: 'Sheet phan tich cap nhat nhan chat luong, Audience Network va uu tien goi.' } });
       results.push({ ...base, customer_id: String(customer.id), status: 'updated', fields: Object.keys(fields) });
     } catch (error) { results.push({ ...base, status: 'invalid', error: error.message }); }
@@ -1947,35 +1947,49 @@ server.keepAliveTimeout = Number(process.env.HTTP_KEEPALIVE_TIMEOUT || 5000);
 loadInbox();
 // Khôi phục inbox cũ theo ID ổn định; không xóa file gốc sau khi nhập.
 let webhookRecoveryRunning = false;
+let webhookRecoveryCursor = 0;
 async function recoverLegacyInbox() {
   if (webhookRecoveryRunning) return;
   webhookRecoveryRunning = true;
+  let recovered = 0;
   try {
     // Only this incident's date is eligible for historical backfill.
     const legacy = inbox.filter(record => !record.persisted && String(record.receivedAt || '').slice(0,10) === WEBHOOK_RECOVERY_DATE);
     const pending = await webhookJournal.list();
-    const records = new Map([...legacy, ...pending].map(record => [record.dedupeKey, record]));
-    let recovered = 0, attempted = 0;
-    for (const record of records.values()) {
+    const records = new Map();
+    for (const record of [...legacy, ...pending]) {
       if (!record.dedupeKey || !record.customer) continue;
+      if (!records.has(record.dedupeKey)) records.set(record.dedupeKey, []);
+      records.get(record.dedupeKey).push(record);
+    }
+    const groups = [...records.values()];
+    const start = groups.length ? webhookRecoveryCursor % groups.length : 0;
+    const batch = [...groups.slice(start), ...groups.slice(0,start)].slice(0,100);
+    webhookRecoveryCursor = groups.length ? (start + batch.length) % groups.length : 0;
+    for (const copies of batch) {
+      const record = copies[0];
       try {
         const website = await notificationWebsiteForSlug(record.slug);
         // Notification-only webhooks must never become customer records.
         if (website?.provider === 'NOTIFICATION') continue;
-        if (attempted++ >= 100) break;
         const saved = await persistWebhook(record, { skipAutomatic: true });
-        Object.assign(record,{customerId:saved.customerId,source:saved.source || null,persisted:true});
-        await webhookJournal.remove(record);
+        // SQL success must be reflected in CRM even if filesystem cleanup fails.
         recovered++;
+        for (const copy of copies) {
+          Object.assign(copy,{customerId:saved.customerId,source:saved.source || null,persisted:true});
+          await webhookJournal.remove(copy).catch(error => console.warn('[webhook-recovery-cleanup]',copy.id,error.code || 'CLEANUP_FAILED'));
+        }
       } catch (error) { console.warn('[webhook-recovery]',record.id,error.code || 'RECOVERY_FAILED'); }
     }
+  } finally {
+    webhookRecoveryRunning = false;
     wakeTelegramOutbox();
     if (recovered) {
-      scheduleFlush();
       crmData.invalidateSnapshotCache();
+      scheduleFlush();
       console.log('[webhook-recovery] Recovered:', recovered);
     }
-  } finally { webhookRecoveryRunning = false; }
+  }
 }
 const systemSchemaReady = (async () => {
   if (!dbConfigured) return false;
