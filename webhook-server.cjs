@@ -29,6 +29,7 @@ const orderAudit = require('./order-audit.cjs');
 const { dbConfigured, dbQuery, authQuery, dbHealth, pool, authPool } = require('./db.js');
 const { provisionSystemAccounts } = require('./system-accounts.cjs');
 const { persistWebhook } = require('./webhook-store.cjs');
+const blacklist = require('./blacklist.cjs');
 const telegramBot = require('./telegram-bot.cjs');
 let telegramWorker=null;
 const inlineTelegramScheduler=process.env.RUN_TELEGRAM_SCHEDULER==='1';
@@ -44,7 +45,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261011-webhook-recovery-4';
+const BUILD_VERSION = '20261012-revenue-commission';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -259,7 +260,7 @@ const demoState = {
   customFieldDefinitions: DEMO_MODE ? structuredClone(require('./crm-defaults.json').customFieldDefinitions) : [], customerFieldHistory: [], assignmentHistory: [],
   resubmissions: [], notes: [], imports: [], attendance: [], dataOffers: [],
   traffic: [], tasks: [], notifications: [], audit: [], websites: [{ id: 'WEB-DEMO', name: 'Nguồn local', domain: 'localhost:4173', sourceUrl: 'http://localhost:4173/', status: 'ACTIVE' }],
-  integrations: [], webhookPending: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [],
+  integrations: [], webhookPending: [], blacklistIps: [], blacklistEntries: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [],
   settings: { assignmentMode: 'BALANCED', leaderCanUpdate: true, leaderAttendanceRequired: true },
   leaderDistribution: { enabled: true, enabledLeaderIds: ['demo-leader'], weights: { 'demo-leader': 1 }, sourceRules: [] },
   saleDistributionByLeader: { 'demo-leader': { leaderEnabled: true, enabledSaleIds: ['demo-sale'], weights: { 'demo-leader': 1, 'demo-sale': 1 } } }
@@ -452,6 +453,100 @@ function demoPayload(user) {
   expireDemoOffers();
   return {...crmData.snapshot(user,demoData(),{compact:true}),user,storage:{mode:'demo',durable:false}};
 }
+const demoWebhookEvents = new Map();
+let demoIntakeChain = Promise.resolve();
+function persistDemoWebhook(record, { acceptBlacklistId = null, actor = null } = {}) {
+  const task = demoIntakeChain.then(async () => {
+    const next = structuredClone(demoState);
+    let entry = null;
+    if (acceptBlacklistId) {
+      blacklist.requireAdmin(actor);
+      entry = next.blacklistEntries.find(row => row.id === acceptBlacklistId);
+      if (!entry) throw Object.assign(new Error('Data Blacklist không còn tồn tại.'), { status: 404 });
+      if (entry.status === 'ACCEPTED') return { eventId: entry.record.id, customerId: entry.customerId, duplicate: entry.duplicate, replay: true, source: entry.source };
+      record = entry.record;
+      if (record.status !== 'NEW') throw Object.assign(new Error('Data thiếu hoặc sai thông tin. Chưa thể chấp nhận vào CRM.'), { status: 400 });
+    }
+    if (!entry && demoWebhookEvents.has(record.dedupeKey)) return { ...demoWebhookEvents.get(record.dedupeKey), replay: true, duplicate: true };
+    const website = next.websites.find(row => String(row.webhookSlug || '').toUpperCase() === record.slug);
+    const source = website ? { websiteId: website.id, landingPageName: website.name, landingPageUrl: website.sourceUrl || '', landingPageDomain: website.domain || '', campaign: website.campaignId || 'UNATTRIBUTED' } : null;
+    const rule = !entry && blacklist.ruleFor(next.blacklistIps, record.customer?.ipAddress);
+    let result = { eventId: record.id, customerId: null, source, replay: false, duplicate: false };
+    if (rule) {
+      next.blacklistEntries.unshift(blacklist.makeEntry(record, rule, source));
+      result.blacklisted = true;
+    } else if (record.status === 'NEW') {
+      const normalizePhone = value => String(value || '').replace(/\D/g, '').replace(/^84(?=\d{9}$)/, '0');
+      const existing = next.customers.find(row => normalizePhone(row.phone) === normalizePhone(record.customer.phone) || (record.customer.email && String(row.email || '').toLowerCase() === record.customer.email.toLowerCase()));
+      if (existing) {
+        result = { ...result, customerId: existing.id, duplicate: true, ownerSaleId: existing.saleId || null };
+        next.resubmissions.unshift({ id: 'RESUB-' + record.id, customerId: existing.id, at: record.receivedAt, intakeType: 'API', duplicate: true, source: 'Landing page webhook', previousSaleId: existing.saleId || null });
+        if (existing.saleId) next.notifications.unshift({ id: 'NT-DUP-' + record.id, role: 'OWN', saleId: existing.saleId, title: 'DATA TRÙNG - giữ Sale phụ trách', text: existing.name, at: new Date().toISOString(), readBy: [] });
+      } else {
+        const customer = { ...record.customer, id: 'CUS-' + record.id, ...(source || {}), source: 'Landing Page', webhookSlug: record.slug, webhookEventId: record.id,
+          status: 'NEW', saleId: null, leaderId: null, teamId: null, createdAt: record.receivedAt, updatedAt: record.receivedAt, customFields: { customerLevel: 'L0' } };
+        next.customers.unshift(customer);
+        next.notifications.unshift(crmData.dataArrivalNotice(customer));
+        result.customerId = customer.id;
+        // Reuse production distribution rules with an in-memory document writer.
+        const memoryConnection = { async execute(sql, values = []) {
+          if (sql.startsWith('INSERT INTO crm_documents')) {
+            const [key, id, body] = values, value = JSON.parse(body);
+            if (crmData.LISTS.includes(key)) next[key] = [...(next[key] || []).filter(row => row.id !== id), value];
+            else if (crmData.OBJECTS.includes(key)) next[key] = value;
+          }
+          return [[]];
+        } };
+        await crmData.distributeAutomatic(memoryConnection, demoData(next), { customerIds: [customer.id] });
+      }
+      if (entry) Object.assign(entry, blacklist.acceptedEntry(entry, actor, result));
+    }
+    Object.assign(demoState, next);
+    demoStateVersion++;
+    demoWebhookEvents.set(record.dedupeKey, result);
+    return result;
+  });
+  demoIntakeChain = task.catch(() => {});
+  return task;
+}
+async function handleBlacklistApi(request, response, pathname, user) {
+  try {
+    blacklist.requireAdmin(user);
+    const ipMatch = pathname.match(/^\/api\/admin\/blacklist\/ips\/([^/]+)$/);
+    const acceptMatch = pathname.match(/^\/api\/admin\/blacklist\/entries\/([^/]+)\/accept$/);
+    if (pathname === '/api/admin/blacklist/ips' && request.method === 'POST') {
+      const input = await readDbBody(request);
+      let rule;
+      if (DEMO_MODE) {
+        const previous = blacklist.ruleFor(demoState.blacklistIps, input.ip);
+        rule = blacklist.makeRule(user, input, previous);
+        demoState.blacklistIps = [...demoState.blacklistIps.filter(row => row.id !== rule.id), rule];
+        demoStateVersion++;
+      } else rule = await blacklist.saveIp(user, input);
+      notifyInboxListeners({ kind: 'blacklist' });
+      return dbJson(request, response, 200, { ok: true, rule });
+    }
+    if (ipMatch && request.method === 'DELETE') {
+      const id = decodeURIComponent(ipMatch[1]);
+      if (DEMO_MODE) {
+        if (!demoState.blacklistIps.some(row => row.id === id)) return dbJson(request, response, 404, { error: 'IP không còn trong Blacklist.' });
+        demoState.blacklistIps = demoState.blacklistIps.filter(row => row.id !== id);
+        demoStateVersion++;
+      } else await blacklist.removeIp(user, id);
+      notifyInboxListeners({ kind: 'blacklist' });
+      return dbJson(request, response, 200, { ok: true });
+    }
+    if (acceptMatch && request.method === 'POST') {
+      const id = decodeURIComponent(acceptMatch[1]);
+      const entry = DEMO_MODE ? null : await blacklist.readEntry(user, id);
+      const result = await (DEMO_MODE ? persistDemoWebhook(null, { acceptBlacklistId: id, actor: user }) : persistWebhook(entry.record, { acceptBlacklistId: id, actor: user }));
+      if (!DEMO_MODE) { crmData.invalidateSnapshotCache(); wakeTelegramOutbox(); }
+      notifyInboxListeners({ kind: 'blacklist-accepted' });
+      return dbJson(request, response, 200, { ok: true, ...result });
+    }
+    return dbJson(request, response, 404, { error: 'Chức năng Blacklist không hợp lệ.' });
+  } catch (error) { return dbJson(request, response, error.status || 503, { error: error.status ? error.message : 'Chưa lưu được Blacklist. Vui lòng thử lại.' }); }
+}
 async function handleDemoApi(request, response, pathname) {
   if (pathname === '/api/db/health') return dbJson(request, response, 200, { configured: false, demo: true });
   if (pathname === '/api/auth/register' && request.method === 'POST') {
@@ -492,6 +587,7 @@ async function handleDemoApi(request, response, pathname) {
   const user = demoUserFromToken(request);
   if (!user) return dbJson(request, response, 401, { error: 'Đăng nhập demo trước' });
   demoTouchSession(request);
+  if (pathname.startsWith('/api/admin/blacklist')) return handleBlacklistApi(request, response, pathname, user);
   const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/);
   if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch)){
     try{
@@ -640,6 +736,7 @@ async function handleDbApi(request, response, pathname) {
       if(user.role!=='ADMIN')return dbJson(request,response,403,{error:'Chỉ Admin được xem User log'});
       return dbJson(request,response,200,await adminUserActivity());
     }
+    if (pathname.startsWith('/api/admin/blacklist')) return handleBlacklistApi(request, response, pathname, user);
     if(pathname==='/api/customers/manual' && request.method==='POST'){
       const body=await readDbBody(request);
       return dbJson(request,response,200,await createManualCustomer(user,body,request));
@@ -832,9 +929,9 @@ function scheduleFlush() {
  * trong builder — thường là tiếng Việt có dấu. Nên phải đoán trường theo alias,
  * sau khi bỏ dấu + bỏ ký tự không phải chữ số.
  *
- * Theo quy tắc đã chốt: landing page CHỈ lấy họ tên, SĐT, email.
- * KHÔNG lấy IP (LadiPage gửi webhook từ server của họ, IP đó không phải của khách),
- * KHÔNG lấy utm/link/ladi_form_id vào khách hàng.
+ * Lấy họ tên, SĐT, email và IP khách nếu payload form có gửi IP hợp lệ.
+ * Không dùng IP kết nối webhook để chặn: đó có thể là máy chủ LadiPage.
+ * Không lấy utm/link/ladi_form_id vào khách hàng.
  */
 const KEY_ALIASES = {
   name: ['name', 'fullname', 'hoten', 'hovaten', 'ten', 'tenkhachhang', 'khachhang', 'customer', 'customername', 'yourname', 'field', 'hotenkhachhang'],
@@ -1354,7 +1451,7 @@ async function handleWebhook(request, response, slug) {
     status: adapted.ok ? 'NEW' : 'INVALID',
     problems: adapted.problems,
     matchedKeys: adapted.record.matchedKeys,
-    // Chỉ 3 trường được phép đi vào khách hàng. IP/utm/link cố tình KHÔNG lưu ở đây.
+    // IP khách chỉ lấy từ payload form; không lấy từ socket/header máy chủ gửi webhook.
     customer: { name: adapted.record.name, phone: adapted.record.phone, email: adapted.record.email, ipAddress: adapted.record.ipAddress },
     raw: adapted.flat,
     dedupeKey: key,
@@ -1378,7 +1475,7 @@ async function handleWebhook(request, response, slug) {
     return;
   }
   try {
-    const saved = await persistWebhook(record);
+    const saved = await (DEMO_MODE ? persistDemoWebhook(record) : persistWebhook(record));
     record.customerId = saved.customerId;
     record.source = saved.source || null;
     record.duplicate = Boolean(saved.duplicate);
@@ -1387,6 +1484,11 @@ async function handleWebhook(request, response, slug) {
     record.persisted = true;
     if (!DEMO_MODE) await webhookJournal.remove(record).catch(error => console.warn('[webhook-journal-cleanup]',error.code));
     record.id = saved.eventId;
+    if (saved.blacklisted) {
+      if (!DEMO_MODE) crmData.invalidateSnapshotCache();
+      notifyInboxListeners({ kind: 'blacklist' });
+      return sendJson(response, 200, { received: true, id: record.id, status: 'BLACKLISTED', customerId: null });
+    }
   } catch (error) {
     console.error('[webhook-mysql]', error.message);
     sendJson(response, 503, { received: false, queued: !DEMO_MODE, id: record.id, error: 'Chưa lưu được MySQL. Vui lòng gửi lại.' });
@@ -1438,7 +1540,7 @@ async function handleInbox(request, response, url) {
   const since = url.searchParams.get('since') || '';
   const includeRaw = url.searchParams.get('raw') === '1';
   const startIndex = since ? inbox.findIndex(item => item.id === since) : -1;
-  const items = (startIndex === -1 ? inbox : inbox.slice(startIndex + 1)).map(item => {
+  const items = (startIndex === -1 ? inbox : inbox.slice(startIndex + 1)).filter(item => item.status !== 'BLACKLISTED').map(item => {
     if (includeRaw) return item;
     const { raw, dedupeKey, ...rest } = item;
     return rest;
@@ -1913,7 +2015,7 @@ const server = http.createServer(async (request, response) => {
     if (pathname === '/api/leads/push') return await handleLeadsPushApi(request, response, url);
     if (pathname === '/api/leads/export' || pathname === '/api/leads/export-all' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
-    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
+    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
       return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), webhookStorage: { ready: true, fallback: webhookStorage.fallback || inboxStorage.fallback }, instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
     }
@@ -1980,7 +2082,7 @@ async function recoverLegacyInbox() {
         // SQL success must be reflected in CRM even if filesystem cleanup fails.
         recovered++;
         for (const copy of copies) {
-          Object.assign(copy,{customerId:saved.customerId,source:saved.source || null,persisted:true});
+          Object.assign(copy,{customerId:saved.customerId,source:saved.source || null,persisted:true,...(saved.blacklisted ? {status:'BLACKLISTED'} : {})});
           await webhookJournal.remove(copy).catch(error => console.warn('[webhook-recovery-cleanup]',copy.id,error.code || 'CLEANUP_FAILED'));
         }
       } catch (error) { console.warn('[webhook-recovery]',record.id,error.code || 'RECOVERY_FAILED'); }

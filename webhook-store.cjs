@@ -2,6 +2,7 @@
 const { pool, dbConfigured } = require('./db.js');
 const defaultWebsites = require('./crm-defaults.json').websites || [];
 const crmData = require('./crm-data.cjs');
+const blacklist = require('./blacklist.cjs');
 let ready;
 // Chỉ tạo bảng bổ sung; không sửa hoặc xóa bảng khách hàng hiện có.
 function ensureSchema() {
@@ -166,7 +167,7 @@ async function recordDuplicate(connection, eventId, record, existing, sourceSnap
   return { ownerSaleId, pendingOfferId: pendingOffer?.id || null, waitingForAcceptance };
 }
 
-async function persistWebhook(record, { skipAutomatic = false } = {}) {
+async function persistWebhook(record, { skipAutomatic = false, acceptBlacklistId = null, actor = null } = {}) {
   await ensureSchema();
   await crmData.prepare();
   const connection = await pool.getConnection();
@@ -174,6 +175,25 @@ async function persistWebhook(record, { skipAutomatic = false } = {}) {
     await connection.beginTransaction();
     // Cung khoa voi API CRM de phan cong va con tro ty trong luon nhat quan.
     await connection.query('SELECT id FROM crm_write_lock WHERE id=1 FOR UPDATE');
+    let accepted = null;
+    if (acceptBlacklistId) {
+      blacklist.requireAdmin(actor);
+      accepted = await blacklist.sqlEntry(connection, acceptBlacklistId);
+      if (accepted.status === 'ACCEPTED') {
+        await connection.commit();
+        return { eventId: accepted.record.id, customerId: accepted.customerId, duplicate: accepted.duplicate, replay: true, source: accepted.source };
+      }
+      record = accepted.record;
+      if (record.status !== 'NEW') throw Object.assign(new Error('Data thiếu hoặc sai thông tin. Chưa thể chấp nhận vào CRM.'), { status: 400 });
+    }
+    const commitResult = async result => {
+      if (accepted) {
+        await blacklist.sqlSave(connection, 'blacklistEntries', blacklist.acceptedEntry(accepted, actor, result));
+        await blacklist.sqlChanged(connection, actor.id, 'ACCEPT_BLACKLIST_DATA', accepted.id);
+      }
+      await connection.commit();
+      return result;
+    };
     const website = await sourceBySlug(connection, record.slug);
     const sourceSnapshot = website ? { websiteId: website.id, landingPageName: website.name, landingPageUrl: website.sourceUrl, sourceUrl: website.sourceUrl, landingPageDomain: website.domain, campaign: website.campaign } : null;
     const storedRecord = sourceSnapshot ? { ...record, source: sourceSnapshot } : record;
@@ -181,7 +201,7 @@ async function persistWebhook(record, { skipAutomatic = false } = {}) {
     await connection.execute('INSERT INTO webhook_events (id, dedupe_key, payload_json) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id', [record.id, record.dedupeKey, JSON.stringify(storedRecord)]);
     const [rows] = await connection.execute('SELECT id, payload_json FROM webhook_events WHERE dedupe_key = ?', [record.dedupeKey]);
     const eventId = rows[0].id;
-    const replay = existingEvents.length > 0 || eventId !== record.id;
+    const replay = !accepted && (existingEvents.length > 0 || eventId !== record.id);
     if (replay) {
       // A duplicate intake may point to a pre-existing customer, not CUS-eventId.
       const original = parsed(existingEvents[0]?.payload_json) || parsed(rows[0]?.payload_json) || storedRecord;
@@ -192,8 +212,19 @@ async function persistWebhook(record, { skipAutomatic = false } = {}) {
         ownerSaleId: original.ownerSaleId || null,
         pendingOfferId: original.pendingOfferId || null,
         duplicateStatus: original.duplicateStatus || null,
+        blacklisted: original.status === 'BLACKLISTED',
         source: original.source || null
       };
+    }
+    if (!accepted) {
+      const rule = blacklist.ruleFor(await blacklist.sqlRows(connection, 'blacklistIps'), record.customer?.ipAddress);
+      if (rule) {
+        const entry = blacklist.makeEntry(storedRecord, rule, sourceSnapshot);
+        await blacklist.sqlSave(connection, 'blacklistEntries', entry);
+        await connection.execute('UPDATE webhook_events SET payload_json=? WHERE id=?', [JSON.stringify({ ...storedRecord, status: 'BLACKLISTED', blacklistId: entry.id }), eventId]);
+        await blacklist.sqlChanged(connection, 'SYSTEM', 'QUARANTINE_BLACKLIST_DATA', entry.id);
+        return await commitResult({ eventId, customerId: null, blacklisted: true, replay: false, duplicate: false, source: sourceSnapshot });
+      }
     }
     const customerId = `CUS-${eventId}`;
     if (record.status === 'NEW' && !replay) {
@@ -219,8 +250,7 @@ async function persistWebhook(record, { skipAutomatic = false } = {}) {
         });
         const duplicateRecord = { ...storedRecord, duplicate: true, duplicateCustomerId: existing.id, ownerSaleId: duplicate.ownerSaleId, pendingOfferId: duplicate.pendingOfferId, duplicateStatus: duplicate.waitingForAcceptance ? 'PENDING_ACCEPTANCE' : duplicate.ownerSaleId ? 'ASSIGNED' : 'UNASSIGNED' };
         await connection.execute('UPDATE webhook_events SET payload_json = ? WHERE id = ?', [JSON.stringify(duplicateRecord), eventId]);
-        await connection.commit();
-        return { eventId, customerId: existing.id, duplicate: true, replay: false, ownerSaleId: duplicate.ownerSaleId, pendingOfferId: duplicate.pendingOfferId, duplicateStatus: duplicateRecord.duplicateStatus, source: sourceSnapshot };
+        return await commitResult({ eventId, customerId: existing.id, duplicate: true, replay: false, ownerSaleId: duplicate.ownerSaleId, pendingOfferId: duplicate.pendingOfferId, duplicateStatus: duplicateRecord.duplicateStatus, source: sourceSnapshot });
       }
       await crmData.queueTelegramNotice(connection, 'webhook:' + eventId, { kind: 'WEBHOOK_ADMIN', customer: record.customer, receivedAt: record.receivedAt, source: sourceSnapshot });
       // Lưu ảnh chụp nguồn cùng khách; replay không ghi đè phân công/trạng thái cũ.
@@ -241,8 +271,8 @@ async function persistWebhook(record, { skipAutomatic = false } = {}) {
       await connection.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE id=id',['notifications',notification.id,JSON.stringify(notification)]);
     }
     if (record.status === 'NEW' && !replay && !skipAutomatic) await crmData.distributeAutomatic(connection);
-    await connection.commit();
-    return { eventId, customerId: record.status === 'NEW' ? customerId : null, duplicate: replay, replay, source: sourceSnapshot };
+    if (accepted) await connection.execute('UPDATE webhook_events SET payload_json=? WHERE id=?', [JSON.stringify({ ...storedRecord, customerId }), eventId]);
+    return await commitResult({ eventId, customerId: record.status === 'NEW' ? customerId : null, duplicate: replay, replay, source: sourceSnapshot });
   } catch (error) {
     await connection.rollback().catch(()=>{});
     throw error;

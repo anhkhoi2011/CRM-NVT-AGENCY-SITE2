@@ -1516,14 +1516,14 @@
       @media(max-width:860px){.data-date-filter-grid{grid-template-columns:1fr 1fr}.data-date-filter-footer{align-items:flex-start;flex-direction:column}.data-date-filter-actions{width:100%}.data-date-filter-actions button{flex:1}}
       @media(max-width:480px){.data-date-filter-head,.data-date-filter-body,.data-date-filter-footer{padding-left:15px;padding-right:15px}.data-date-filter-grid{grid-template-columns:1fr}.data-date-filter-footer{gap:12px}}
     </style>
-<link rel="preload" as="script" href="reference-view.js?v=20261001-cleanup-1">
+<link rel="preload" as="script" href="reference-view.js?v=20261012-customers-10">
 <link rel="preload" as="script" href="customer-save-queue.js?v=20261003-offline-save-1">
-<link rel="preload" as="script" href="reference-crm.js?v=20261011-webhook-recovery-4">
+<link rel="preload" as="script" href="reference-crm.js?v=20261012-revenue-commission">
 <style id="crm-startup-guard">
 body:not(.reference-ready) > .app-shell,
 body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 </style>
-<script src="order-payments.js?v=20261011-webhook-recovery-4"></script>
+<script src="order-payments.js?v=20261012-revenue-commission"></script>
 
 <style id="crm-notifications-style">
 .notice-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}.notice-heading h1{margin:0}.notice-heading p{color:var(--text-muted);font-size:12px;margin:6px 0 0}
@@ -1531,7 +1531,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 .notice-list-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--border)}.notice-list-header small{color:var(--text-muted)}.notice-list{padding:0 16px}.notice-row{display:flex;gap:14px;align-items:flex-start;padding:18px 0;border-bottom:1px solid var(--border-light)}.notice-row:last-child{border-bottom:0}.notice-icon{display:grid;place-items:center;flex-shrink:0;width:34px;height:34px;border-radius:9px;background:var(--bg-subtle);color:var(--notice-color);font-weight:800}.notice-content{flex:1;min-width:0}.notice-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}.notice-dot{width:7px;height:7px;border-radius:50%;background:#2563eb}.notice-content p{font-size:12px;color:var(--text-muted);line-height:1.6;margin:6px 0;overflow-wrap:anywhere;white-space:pre-wrap}.notice-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted);flex-wrap:wrap}.notice-actions{display:flex;gap:6px;flex-shrink:0}.notice-actions button{font-size:11px;padding:6px 9px;border-radius:7px}.notice-actions .notice-delete{color:#dc2626}.notice-read .notice-title{font-weight:500}.notice-empty{padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px}.notice-preview .notice-row{padding:14px 16px;flex-wrap:wrap}.notice-preview .notice-actions{margin-left:48px}.notice-preview .notice-content p{margin:4px 0}.notice-preview .notice-title{font-size:12px}
 @media(max-width:850px){.notice-categories{grid-template-columns:repeat(2,minmax(0,1fr))}.notice-row{flex-wrap:wrap}.notice-actions{margin-left:48px}}@media(max-width:600px){.notice-row .notice-content{flex:1 1 calc(100% - 48px)}.notice-row .notice-actions{margin-left:48px}}@media(max-width:480px){.notice-heading{align-items:flex-start}.notice-heading h1{font-size:20px}.notice-categories{gap:9px}.notice-category{padding:12px}.notice-list-header{align-items:flex-start}.notice-category strong{font-size:11px}}
 </style>
-<link rel="stylesheet" href="crm-mobile.css?v=20261011-webhook-recovery-4">
+<link rel="stylesheet" href="crm-mobile.css?v=20261012-revenue-commission">
 </head>
 <body>
 <div id=crmBootScreen role=status aria-label="Đang tải CRM"><div class="crm-boot-skeleton" aria-hidden="true"><aside class="crm-boot-sidebar"><b>NVT AGENCY</b><i></i><i></i><i></i><i></i></aside><div class="crm-boot-topbar"><i></i></div></div><div class=crm-boot-mark><span class=crm-boot-spinner aria-hidden=true></span><span>NVT AGENCY · Đang tải dữ liệu…</span></div></div>
@@ -1567,7 +1567,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 })();
 </script>
 <!-- Ẩn lớp đăng nhập trong lúc khôi phục phiên để F5 không nhấp nháy về form login. -->
-<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261011-webhook-recovery-4" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
+<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261012-revenue-commission" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
 
 
 <div class="bg-aura"></div>
@@ -1724,6 +1724,12 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
             <button class="nav-link" data-tab="tab-audit">
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               <span>User log</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-link" data-tab="tab-blacklist" hidden>
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"></circle><path d="m6 6 12 12"></path></svg>
+              <span>Blacklist</span>
             </button>
           </li>
           <li>
@@ -3426,7 +3432,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
                 <b style="font-size: 15px; display: block; color: var(--text-main);">Danh Sách Khách Đang Thuê Chỉ Báo</b>
                 <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Theo dõi hợp đồng thuê, thời hạn sử dụng và cảnh báo ngày gia hạn</div>
               </div>
-              <span class="chip chip-green" style="font-weight: 800;">3 khách đang thuê</span>
+              <span class="chip chip-green" id="revRentalCountBadge" style="font-weight: 800;">0 khách đang thuê</span>
             </div>
 
             <div class="table-responsive">
@@ -3729,6 +3735,29 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
       </section>
 
       <!-- ══════════ [TAB 13] USER LOG (THEO CHUẨN ẢNH 2 CỦA BẠN) ══════════ -->
+      <section class="tab-section" id="tab-blacklist" hidden>
+        <div class="headline-row bl-heading">
+          <div class="bl-title"><span class="bl-title-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"></path><path d="m9 9 6 6m0-6-6 6"></path></svg></span><h1>Blacklist</h1></div>
+          <button type="button" class="btn-action btn-primary bl-add" id="blacklistAddIp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Chặn IP</button>
+        </div>
+        <div class="bl-workspace">
+          <div class="bl-view-tabs" role="tablist" aria-label="Blacklist">
+            <button type="button" id="blacklistDataTab" class="bl-view-tab is-active" data-blacklist-view="entries" role="tab" aria-selected="true" aria-controls="blacklistDataPanel">Data bị chặn<span id="blacklistDataCount" class="bl-count">0</span></button>
+            <button type="button" id="blacklistIpsTab" class="bl-view-tab" data-blacklist-view="ips" role="tab" aria-selected="false" aria-controls="blacklistIpsPanel">IP đang chặn<span id="blacklistIpCount" class="bl-count">0</span></button>
+          </div>
+          <div class="bl-toolbar">
+            <label class="bl-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 4 4"></path></svg><input id="blacklistSearch" type="search" placeholder="Tìm kiếm…" aria-label="Tìm kiếm Blacklist"></label>
+            <select id="blacklistStatus" aria-label="Trạng thái data"><option value="PENDING">Chờ duyệt</option><option value="ACCEPTED">Đã chấp nhận</option><option value="ALL">Tất cả</option></select>
+          </div>
+          <div id="blacklistDataPanel" class="bl-panel" role="tabpanel" aria-labelledby="blacklistDataTab">
+            <div class="table-responsive"><table class="modern-table bl-data-table"><thead><tr><th>KHÁCH HÀNG</th><th>LIÊN HỆ</th><th>IP</th><th>NGUỒN</th><th>THỜI GIAN</th><th>TRẠNG THÁI</th><th></th></tr></thead><tbody id="blacklistEntryBody"></tbody></table></div>
+            <div id="blacklistPagination" class="bl-pagination"></div>
+          </div>
+          <div id="blacklistIpsPanel" class="bl-panel" role="tabpanel" aria-labelledby="blacklistIpsTab" hidden>
+            <div class="table-responsive"><table class="modern-table bl-ip-table"><thead><tr><th>ĐỊA CHỈ IP</th><th>NGÀY CHẶN</th><th></th></tr></thead><tbody id="blacklistIpBody"></tbody></table></div>
+          </div>
+        </div>
+      </section>
       <section class="tab-section" id="tab-audit">
         <div class="headline-row">
           <h1>User log</h1>
@@ -4494,12 +4523,70 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 </div>
 
 
-<script src="reference-view.js?v=20261001-cleanup-1"></script>
+<script src="reference-view.js?v=20261012-customers-10"></script>
 <script src="customer-save-queue.js?v=20261003-offline-save-1"></script>
-<script src="hr-profiles.js?v=20261005-hrm-24" ></script>
-<script src="marketing-hub.js?v=20261011-webhook-recovery-4"></script>
-<script src="crm-notifications.js?v=20261011-webhook-recovery-4"></script>
-<script src="reference-crm.js?v=20261011-webhook-recovery-4"></script>
+<script src="hr-profiles.js?v=20261012-revenue-commission" ></script>
+<script src="marketing-hub.js?v=20261012-revenue-commission"></script>
+<script src="crm-notifications.js?v=20261012-revenue-commission"></script>
+<style>
+  #tab-blacklist{--bl-line:var(--border-light,#e8edf3);--bl-muted:var(--text-muted,#78869a)}
+  #tab-blacklist .bl-heading{margin-bottom:20px;gap:16px}
+  #tab-blacklist .bl-title{display:flex;align-items:center;gap:12px}
+  #tab-blacklist .bl-title h1{margin:0;font-size:24px;letter-spacing:-.7px}
+  #tab-blacklist .bl-title-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#fff1f0;color:#c55249}
+  #tab-blacklist .bl-title-icon svg{width:23px;height:23px}
+  #tab-blacklist .bl-add{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:10px 15px;font-size:12px}
+  #tab-blacklist .bl-add svg{width:16px;height:16px}
+  #tab-blacklist .bl-workspace{background:var(--bg-surface,#fff);border:1px solid var(--bl-line);border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(15,23,42,.025)}
+  #tab-blacklist .bl-view-tabs{display:flex;gap:26px;padding:0 22px;border-bottom:1px solid var(--bl-line)}
+  #tab-blacklist .bl-view-tab{position:relative;display:inline-flex;align-items:center;gap:8px;min-height:56px;padding:0;border:0;background:transparent;color:var(--bl-muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+  #tab-blacklist .bl-view-tab.is-active{color:var(--text-main,#172b4d)}
+  #tab-blacklist .bl-view-tab.is-active:after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:3px;background:var(--accent,#e8572a);border-radius:3px 3px 0 0}
+  #tab-blacklist .bl-count{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:6px;background:var(--bg-subtle,#f1f4f8);color:var(--bl-muted);font-size:11px;font-variant-numeric:tabular-nums}
+  #tab-blacklist .bl-view-tab.is-active .bl-count{background:#fff1eb;color:#c35c32}
+  #tab-blacklist .bl-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px}
+  #tab-blacklist .bl-search{display:flex;align-items:center;gap:9px;flex:1;max-width:340px;min-width:0;height:38px;padding:0 12px;border:1px solid var(--bl-line);border-radius:8px;background:var(--bg-surface,#fff)}
+  #tab-blacklist .bl-search svg{width:16px;height:16px;flex-shrink:0;color:var(--bl-muted)}
+  #tab-blacklist .bl-search input{width:100%;min-width:0;padding:0;border:0;outline:none;background:transparent;color:var(--text-main);font:inherit;font-size:12px}
+  #tab-blacklist .bl-search:focus-within{border-color:#e9ac91;box-shadow:0 0 0 3px rgba(232,87,42,.06)}
+  #tab-blacklist #blacklistStatus{height:38px;max-width:180px;padding:0 12px;border:1px solid var(--bl-line);border-radius:8px;background:var(--bg-surface,#fff);color:var(--text-main);font:inherit;font-size:12px}
+  #tab-blacklist .bl-panel[hidden],#tab-blacklist #blacklistStatus[hidden]{display:none!important}
+  #tab-blacklist .table-responsive{border-radius:0;overflow-x:auto}
+  #tab-blacklist .modern-table{width:100%;margin:0}
+  #tab-blacklist .modern-table th{padding:11px 18px;background:var(--bg-subtle,#f8fafc);border-top:1px solid var(--bl-line);border-bottom:1px solid var(--bl-line);font-size:10px;font-weight:600;letter-spacing:.5px;white-space:nowrap}
+  #tab-blacklist .modern-table td{padding:14px 18px;border-bottom:1px solid var(--bl-line);vertical-align:middle;font-size:12px}
+  #tab-blacklist .modern-table tbody tr:last-child td{border-bottom:0}
+  #tab-blacklist .modern-table tbody tr:hover{background:rgba(148,163,184,.035)}
+  #tab-blacklist .modern-table th:last-child,#tab-blacklist .modern-table td:last-child{text-align:right;white-space:nowrap}
+  #tab-blacklist .bl-data-table{min-width:1020px}
+  #tab-blacklist .bl-ip-table th:first-child{width:50%}
+  #tab-blacklist .bl-customer{display:flex;align-items:center;gap:10px;min-width:180px;max-width:260px}
+  #tab-blacklist .bl-avatar{display:inline-grid;place-items:center;flex-shrink:0;width:32px;height:32px;border-radius:10px;background:#edf2f8;color:#637b98;font-size:11px;font-weight:700}
+  #tab-blacklist .bl-customer b{font-size:12px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
+  #tab-blacklist .bl-contact{display:grid;gap:4px}
+  #tab-blacklist .bl-contact small{font-size:11px;color:var(--bl-muted)}
+  #tab-blacklist .bl-ip{display:inline-block;padding:4px 7px;border-radius:5px;background:var(--bg-subtle,#f4f6f9);font-family:var(--font-mono,monospace);font-size:11px;white-space:nowrap}
+  #tab-blacklist .bl-source{display:block;max-width:160px;line-height:1.5;color:var(--bl-muted)}
+  #tab-blacklist .bl-time{color:var(--bl-muted);font-size:11px;white-space:nowrap}
+  #tab-blacklist .bl-status{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:6px;font-size:10px;font-weight:600;white-space:nowrap;background:#fff5e5;color:#a77a20}
+  #tab-blacklist .bl-status:before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor}
+  #tab-blacklist .bl-status.is-accepted{background:#edf8f2;color:#27885e}
+  #tab-blacklist .bl-status.is-invalid{background:#fff0ef;color:#b9574a}
+  #tab-blacklist .bl-accept{padding:7px 11px;border:1px solid #dbe9e1;border-radius:7px;background:#f1f8f4;color:#27885e;font-size:11px;font-weight:600;box-shadow:none;white-space:nowrap}
+  #tab-blacklist .bl-accept:hover:not(:disabled){border-color:#92c4aa;background:#e5f3ec}
+  #tab-blacklist .bl-unblock{padding:7px 11px;border:1px solid var(--bl-line);border-radius:7px;background:transparent;color:var(--bl-muted);font-size:11px;box-shadow:none}
+  #tab-blacklist .bl-unblock:hover{border-color:#e6b6aa;background:#fff5f1;color:#c4634d}
+  #tab-blacklist .btn-action:disabled{opacity:.45;cursor:not-allowed}
+  #tab-blacklist .bl-empty{text-align:center;padding:44px 16px;color:var(--bl-muted);font-size:12px}
+  #tab-blacklist .bl-pagination{display:flex;align-items:center;gap:7px;padding:12px 20px;border-top:1px solid var(--bl-line);color:var(--bl-muted);font-size:11px}
+  #tab-blacklist .bl-pagination-summary{margin-right:auto}
+  #tab-blacklist .bl-page-current{min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
+  #tab-blacklist .bl-page-button{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--bl-line);border-radius:6px;background:transparent;color:var(--bl-muted);font-size:18px;cursor:pointer}
+  #tab-blacklist .bl-page-button:disabled{opacity:.35;cursor:not-allowed}
+  #tab-blacklist button:focus-visible,#tab-blacklist select:focus-visible{outline:2px solid #e9ac91;outline-offset:3px}
+  @media(max-width:680px){#tab-blacklist .bl-heading{margin-bottom:16px}#tab-blacklist .bl-title{gap:9px}#tab-blacklist .bl-title h1{font-size:21px}#tab-blacklist .bl-title-icon{width:34px;height:34px}#tab-blacklist .bl-view-tabs{gap:22px;padding:0 14px}#tab-blacklist .bl-view-tab{min-height:50px;font-size:12px}#tab-blacklist .bl-toolbar{padding:12px 14px;gap:8px}#tab-blacklist .bl-search{max-width:none}#tab-blacklist #blacklistStatus{max-width:145px;padding:0 8px}#tab-blacklist .modern-table th,#tab-blacklist .modern-table td{padding-left:14px;padding-right:14px}#tab-blacklist .bl-ip-table{min-width:480px}#tab-blacklist .bl-pagination{padding:12px 14px}}
+</style>
+<script src="reference-crm.js?v=20261012-revenue-commission"></script>
 <script src="support-chat-widget.js?v=20261001-no-sse-1"></script>
 <script>
   (() => {
@@ -4534,6 +4621,6 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
   })();
 </script>
 
-<script src="crm-mobile.js?v=20261011-webhook-recovery-4"></script>
+<script src="crm-mobile.js?v=20261012-revenue-commission"></script>
 </body>
 </html>

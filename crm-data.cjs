@@ -6,7 +6,7 @@ const OrderAudit = require('./order-audit.cjs');
 const crypto = require('node:crypto');
 const distributionRounds = require('./distribution-rounds.js');
 const { pool } = require('./db.js');
-const LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles'];
+const LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles','blacklistIps','blacklistEntries'];
 const OBJECTS = ['settings','leaderDistribution','saleDistributionByLeader','productCategories','careGroups'];
 const ADMIN_ONLY = new Set(['products','members','registrations','customFieldDefinitions','imports','traffic','websites','integrations','webhookPending','productCategories','leaderDistribution','careGroups','processes','expenses','courseConfigs']);
 const SCHEMA = [
@@ -298,6 +298,7 @@ function pendingOffer(data,user,id){
  return (index.get(id)||[]).find(o=>offerPending(o,user,id));
 }
 function readable(user,key,r,data){
+ if(key==='blacklistIps'||key==='blacklistEntries')return user.role==='ADMIN';
  if(key==='notifications'&&(r.deletedBy||[]).includes(user.id))return false;
  if(key==='hrProfiles')return ['ADMIN','HRM'].includes(user.role);
  if(user.role==='HRM')return ['members','attendance','orders','products','brokerageMetrics','settings'].includes(key);
@@ -461,6 +462,7 @@ function authorizeReceiptOrder(user,old,next,data){
  if(next.status!==(next.amountPaid===next.total?'PAID':'DEPOSIT'))error(400,'Trạng thái không khớp số tiền đã thu');
 }
 function authorize(user,key,old,next,data){
+ if(key==='blacklistIps'||key==='blacklistEntries')error(403,'Blacklist chỉ được cập nhật qua chức năng quản lý Blacklist.');
  if(key==='audit'&&(old?.source===OrderAudit.SOURCE||old?.orderId||next?.source===OrderAudit.SOURCE||next?.orderId))error(403,'Lịch sử đơn do máy chủ ghi, không được sửa hoặc giả mạo');
  // Read/delete state belongs to the viewer; preserve other viewers' state and notice content.
  if(key==='notifications'&&old&&next&&readable(user,key,old,data)&&sameExcept(old,next,['readBy','deletedBy'])){
@@ -493,7 +495,17 @@ function authorize(user,key,old,next,data){
  }
 
  if(key==='orders'&&!old&&next?.createdBy&&(!validOrderAssignee(next,data)||next.createdBy!==user.id))error(403,'Người phụ trách đơn không hợp lệ');
+ if(key==='orders'&&!old&&next?.receiptsVersion===1&&!next.createdBy)error(403,'Đơn mới phải có người tạo');
  if(key==='orders'&&!old&&next?.receiptsVersion===1&&next.paymentReceipts.some(r=>r.legacy||r.createdBy!==user.id))error(403,'Bill mới không hợp lệ');
+ if(key==='orders'&&!old&&next?.createdBy){
+  try{
+   const commission=OrderPayments.commissionAssignment({product:data.products.get(next.productId),seller:data.members.get(next.saleId),members:[...data.members.values()],customer:data.customers.get(next.customerId),fields:[...(data.customFieldDefinitions?.values()||[])],configs:[...(data.courseConfigs?.values()||[])],courseKey:next.commissionCourseKey});
+   for(const [field,value] of Object.entries(commission))if(next[field]!==undefined&&String(next[field])!==String(value))error(400,'Thông tin Leader hoặc người đào tạo của đơn không khớp cấu hình.');
+   Object.assign(next,commission);
+  }catch(cause){error(400,cause.message);}
+ }
+ if(key==='orders'&&old&&next&&['commissionCourseKey','commissionTrainerId','commissionLeaderId','commissionSellerRole'].some(field=>old[field]!==next[field]))error(403,'Không được thay đổi người hưởng hoa hồng của đơn đã tạo.');
+ if(key==='courseConfigs'&&next&&OrderPayments.productKind(data.products.get(next.productId))==='COURSE'&&(next.trainerIds||[]).length>1)error(400,'Mỗi khóa chỉ được chọn một người đào tạo.');
  if(key==='orders'&&old?.receiptsVersion===1&&next&&next.receiptsVersion!==1)error(403,'Không được xóa lịch sử thanh toán');
  if(key==='orders'&&old&&next&&next.receiptsVersion===1){
   const before=OrderPayments.receipts(old),after=next.paymentReceipts||[];
@@ -611,6 +623,8 @@ function validate(key,value,id){
   for(const field of ['trainerIds','leaderIds'])if(!Array.isArray(value[field]??[])||(value[field]??[]).length>50||(value[field]??[]).some(item=>typeof item!=='string'||item.length>80))error(400,'Danh sách nhân sự khóa học không hợp lệ');
   for(const field of ['rateSale','rateLeader','rateTrainer','rateCompany'])if(!Number.isFinite(Number(value[field]??0))||Number(value[field]??0)<0||Number(value[field]??0)>100)error(400,'Tỷ lệ chia khóa học không hợp lệ');
   for(const field of ['trainerRates','leaderRates','saleRates'])if(value[field]!==undefined&&(!value[field]||typeof value[field]!=='object'||Array.isArray(value[field])||Object.keys(value[field]).length>500||Object.values(value[field]).some(rate=>!Number.isFinite(Number(rate))||Number(rate)<0||Number(rate)>100)))error(400,'Tỷ lệ hoa hồng cá nhân không hợp lệ');
+  if(Number(value.rateSale||0)>15||Object.values(value.saleRates||{}).some(rate=>Number(rate)>15))error(400,'Hoa hồng bán sản phẩm tối đa 15%.');
+  if(Number(value.rateTrainer||0)>15||Object.values(value.trainerRates||{}).some(rate=>Number(rate)>15)||Number(value.rateLeader||0)>5||Object.values(value.leaderRates||{}).some(rate=>Number(rate)>5))error(400,'Hoa hồng đào tạo tối đa 15%, quản lý tối đa 5%.');
   if(Object.hasOwn(value,'startDate')&&value.startDate&&!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(value.startDate)))error(400,'Ngày khai giảng không hợp lệ');
  }
  if(key==='products'&&Object.hasOwn(value,'imageData')&&(typeof value.imageData!=='string'||(value.imageData!==''&&(!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.imageData)||value.imageData.length>2_800_000))))error(400,'\u1ea2nh s\u1ea3n ph\u1ea9m kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c qu\u00e1 l\u1edbn');
@@ -633,6 +647,7 @@ function validate(key,value,id){
   // Manager/Leader không thuộc Team nào nên chỉ Sale bắt buộc teamId.
   if(!value.memberId||!value.leaderId||(!['MANAGER','LEADER'].includes(value.memberRole)&&!value.teamId))error(400,'Thiếu nhân sự hoặc Team cho báo cáo lot');
   for(const field of ['miniLots','productRate'])if(Object.hasOwn(value,field)&&(!Number.isFinite(Number(value[field]))||Number(value[field])<0))error(400,'Dữ liệu lot hoặc tỷ lệ hoa hồng không hợp lệ');
+  if(Number(value.productRate||0)>15)error(400,'Hoa hồng bán sản phẩm tối đa 15%.');
   for(const field of ['basicLots','microLots','nanoLots','lotCommissionRate','indicatorCommissionRate','courseCommissionRate','vatRate'])if(!Number.isFinite(Number(value[field]))||Number(value[field])<0)error(400,'Dữ liệu lot hoặc tỷ lệ hoa hồng không hợp lệ');if(Object.hasOwn(value,'bonus')&&(!Number.isFinite(Number(value.bonus))||Number(value.bonus)<0))error(400,'Tiền thưởng không hợp lệ');
   if(Number(value.vatRate)>1)error(400,'Thuế suất báo cáo không hợp lệ');
  }
@@ -798,7 +813,7 @@ function automaticPending(data){
  const waiting=[...data.customers.values()].some(row=>!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&!offered.has(row.id));
  return waiting&&automaticLeaders(data,config).leaders.length>0;
 }
-async function distributeAutomatic(c, data = null) {
+async function distributeAutomatic(c, data = null, options = {}) {
  data ||= await allData(c);
  const config = data.leaderDistribution.get('$') || {};
  const settings = JSON.parse(JSON.stringify(data.settings.get('$') || {}));
@@ -843,7 +858,8 @@ async function distributeAutomatic(c, data = null) {
   data[key].set(id,value);
  };
  // Chi chia hang cho Admin. Khach da vao Team (ke ca het han 24h) de Leader phan lai.
- const waiting = [...data.customers.values()].filter(row=>!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&![...data.dataOffers.values()].some(o=>o.customerId===row.id&&o.status==='PENDING'))
+ const customerIds=Array.isArray(options.customerIds)?new Set(options.customerIds.map(String)):null;
+ const waiting = [...data.customers.values()].filter(row=>(!customerIds||customerIds.has(String(row.id)))&&!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&![...data.dataOffers.values()].some(o=>o.customerId===row.id&&o.status==='PENDING'))
   .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||''))||a.id.localeCompare(b.id));
  let count = 0;
  for (const row of waiting) {
@@ -929,6 +945,10 @@ async function distributeAutomatic(c, data = null) {
   await c.execute('INSERT INTO crm_changes(request_id,actor_id,changes_json) VALUES (?,?,?)',['auto-'+crypto.randomUUID(),'SYSTEM',JSON.stringify(history)]);
  }
  return count || (roundsChanged?1:0);
+}
+async function distributeAutomaticForCustomers(c, customerIds) {
+ if(!Array.isArray(customerIds)||!customerIds.length)return 0;
+ return distributeAutomatic(c,null,{customerIds});
 }
 
 // Bộ đệm dữ liệu dùng chung cho các lượt đọc passive (F5 + đồng bộ 15 giây).
@@ -1203,4 +1223,4 @@ async function readAuditPage(user, page=1, limit=50, filters={}) {
  const all=(result.state.audit||[]).filter(row=>!filters.ordersOnly&&!filters.orderId||OrderAudit.isOrder(row,{orders}));
  return OrderAudit.page(all,page,limit,filters);
 }
-module.exports={mergeOrderAssets,dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};
+module.exports={mergeOrderAssets,dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,distributeAutomaticForCustomers,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};

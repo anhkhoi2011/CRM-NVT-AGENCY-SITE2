@@ -22,7 +22,7 @@ function form(createOrder,options={}){
  const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,hidden:false,required:false,dataset:{},classList:{add(){},toggle(){}},focus(){},before(n){if(n.id==='aoPreviewSlip')this.preview=n;else this.back=n;},selectedOptions:[{dataset:{price:5000000},textContent:'Product'}]});return nodes.get(id);};
  let save,created=[],markup;const modal={querySelector:node,querySelectorAll:()=>[]};
- const context=vm.createContext({OrderPayments:require('../order-payments.js'),data:{products:[{id:'product',name:'Product',price:5000000},{id:'second-product',name:'Second product',price:909091}],customers:options.customers||[],user:sale},orderSalesInScope:()=>options.sales||[sale],q:node,esc:String,money:v=>String(v),opt:()=>'',ORDER_BANKS:['MB Bank'],phoneKey:String,compressBill:async()=> 'data:image/jpeg;base64,AA==',editor:(title,body,fn)=>{markup=body;save=fn;return modal;},document:{createElement:()=>({})},ensureAccountingOrderStyles(){},showOrderSuccess(){},api:{createOrder:async p=>{created.push(p);if(createOrder)return createOrder(p);return {order:{...p,status:'DEPOSIT',amountPaid:p.amountPaid,balanceDue:5500000-p.amountPaid}};}},Date:options.Date||Date,Math,alert:assert.fail});
+ const context=vm.createContext({OrderPayments:require('../order-payments.js'),data:{products:[{id:'product',name:'Product',price:5000000},{id:'second-product',name:'Second product',price:909091}],customers:options.customers||[],members:[...(options.sales||[sale]),{id:'lead',name:'Leader',role:'LEADER',active:true}],user:sale},orderSalesInScope:()=>options.sales||[sale],q:node,esc:String,money:v=>String(v),opt:()=>'',ORDER_BANKS:['MB Bank'],phoneKey:String,compressBill:async()=> 'data:image/jpeg;base64,AA==',editor:(title,body,fn)=>{markup=body;save=fn;return modal;},document:{createElement:()=>({})},ensureAccountingOrderStyles(){},showOrderSuccess(){},api:{createOrder:async p=>{created.push(p);if(createOrder)return createOrder(p);return {order:{...p,status:'DEPOSIT',amountPaid:p.amountPaid,balanceDue:5500000-p.amountPaid}};}},Date:options.Date||Date,Math,alert:assert.fail});
  vm.runInContext(source.slice(source.indexOf('  function bindBillPicker('),source.indexOf('  function openReceiptPaymentForm(')),context);
  vm.runInContext(source.slice(source.indexOf('  function openAccountingOrderForm('),source.indexOf('  function ensureAccountingOrderStyles()')),context);
  context.openAccountingOrderForm('');node('#aoName').value='Test';node('#aoPhone').value='0901234567';node('#aoProduct').value='product';node('#aoSale').value='sale';node('#aoPayType').value='FULL';node('#aoPayType').onchange();
@@ -112,7 +112,58 @@ test('Reconciliation action is hidden in Orders and shown only in accounting con
  const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{role:'ADMIN'}},esc:String,money:String,fmtDate:String,person:String,shortOrderCode:String,ensureAccountingOrderStyles(){},canChangeReceiptOrder:()=>false,receiptHistoryMarkup:()=>'',bindReceiptImages(){},editor:(title,body)=>{markup=body;return modal;}});
  vm.runInContext(source.slice(source.indexOf('  function openReceiptOrderDetail('),source.indexOf('  function openReceiptPaymentForm(')),ctx);
  ctx.openReceiptOrderDetail(item.id);assert.doesNotMatch(markup,/receiptReconcile|Kiểm tra &amp; đối soát/);
- ctx.openReceiptOrderDetail(item.id,false,true);assert.match(markup,/receiptReconcile/);assert.match(markup,/Kiểm tra &amp; đối soát/);
+ ctx.openReceiptOrderDetail(item.id,false,true);assert.match(markup,/receiptReconcile/);assert.match(markup,/Xác nhận đủ/);assert.match(markup,/id="receiptVat" disabled/);
+});
+
+function confirmationDetail(options={}){
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8');
+ const item={...order(),status:'PAID',amountPaid:5500000,balanceDue:0,receiptsVersion:1,paymentReceipts:[{id:'deposit',amount:500000,kind:'DEPOSIT'},{id:'full',amount:5000000,kind:'FULL'}],...options.order};
+ const calls=[],errors=[],notices=[];let markup='',buttons={};
+ const modal={style:{},querySelector:selector=>selector==='.modal-card'?{classList:{add(){}}}:buttons[selector]||null};
+ const assets=options.images||[[{id:'deposit-bill',imageData:'data:image/png;base64,AA=='}],[{id:'full-bill',imageData:'data:image/png;base64,AQ=='}]];
+ const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{role:options.role||'ACCOUNTING'}},esc:String,money:String,shortOrderCode:String,person:String,
+ ensureAccountingOrderStyles(){},canChangeReceiptOrder:()=>false,receiptHistoryMarkup:()=>'<div>Saved bills</div>',
+ bindReceiptImages:()=>({receipts:payments.receipts(item),loadAll:async()=>assets}),
+ api:{updateOrderAccounting:async(id,input)=>{calls.push({id,input});return options.save?options.save(id,input):{order:{...item,paymentReconciled:true}};}},
+ referenceNotice:message=>notices.push(message),run:async(action,done)=>{try{done(await action());}catch(error){errors.push(error.message);}},
+ editor:(title,body)=>{markup=body;buttons={};for(const id of ['receiptReconcile','receiptVat']){if(body.includes('id="'+id+'"'))buttons['#'+id]={disabled:body.includes('id="'+id+'" disabled'),addEventListener(type,callback){this.click=()=>callback({currentTarget:this});}};}return modal;}});
+ vm.runInContext(source.slice(source.indexOf('  async function confirmReceiptOrder('),source.indexOf('  function openOrderReconciliation(')),ctx);
+ vm.runInContext(source.slice(source.indexOf('  function openReceiptOrderDetail('),source.indexOf('  function openReceiptPaymentForm(')),ctx);
+ ctx.openReceiptOrderDetail(item.id,false,true);
+ return {item,calls,errors,notices,get markup(){return markup;},button:id=>buttons['#'+id]};
+}
+
+test('Confirm enough waits for saved reconciliation, then enables VAT without changing receipt amounts',async()=>{
+ let resolve;const f=confirmationDetail({save:()=>new Promise(done=>{resolve=done;})});
+ assert.ok(f.markup.indexOf('ow-history')<f.markup.indexOf('ow-action-bar'));
+ assert.equal((f.markup.match(/class="ow-missing">Cần bổ sung/g)||[]).length,2);
+ const amounts=f.item.paymentReceipts.map(r=>r.amount),button=f.button('receiptReconcile'),pending=button.click();
+ await new Promise(done=>setImmediate(done));assert.equal(button.disabled,true);assert.equal(f.button('receiptVat').disabled,true);assert.equal(f.item.paymentReconciled,false);
+ await button.click();assert.equal(f.calls.length,1);
+ resolve({order:{...f.item,paymentReconciled:true}});await pending;
+ assert.equal(f.calls[0].input.action,'RECONCILE');assert.equal(f.calls[0].input.confirmed,true);assert.equal(f.calls[0].input.receiptImages.length,2);
+ assert.equal(f.button('receiptVat').disabled,false);assert.equal(f.button('receiptReconcile'),undefined);assert.deepEqual(f.item.paymentReceipts.map(r=>r.amount),amounts);
+});
+
+test('Missing bill or failed save keeps VAT locked and allows confirmation to be retried',async()=>{
+ const missing=confirmationDetail({images:[[],[{id:'full',imageData:'data:image/png;base64,AA=='}]]});
+ await missing.button('receiptReconcile').click();assert.equal(missing.calls.length,0);assert.match(missing.errors[0],/lần thu 1.*500000/);assert.equal(missing.button('receiptVat').disabled,true);
+ let attempt=0;const f=confirmationDetail({save:()=>{if(++attempt===1)throw Error('Save failed');return {order:{...f.item,paymentReconciled:true}};}});
+ await f.button('receiptReconcile').click();assert.equal(f.item.paymentReconciled,false);assert.equal(f.button('receiptVat').disabled,true);assert.equal(f.button('receiptReconcile').disabled,false);
+ await f.button('receiptReconcile').click();assert.equal(f.calls.length,2);assert.equal(f.button('receiptVat').disabled,false);
+});
+
+test('VAT form requires saved reconciliation and submits invoice metadata through accounting API',async()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../reference-crm.js'),'utf8'),item={...order(),status:'PAID',amountPaid:5500000,balanceDue:0};let save,body,payload;
+ const values={'#orderVatNumber':'INV-01','#orderVatTaxCode':'0123456789','#orderVatCompany':'Example Ltd','#orderVatAddress':'Hà Nội','#orderVatEmail':'billing@example.com'};
+ const ctx=vm.createContext({OrderPayments:payments,data:{orders:[item],user:{role:'ACCOUNTING'}},esc:String,shortOrderCode:String,q:key=>({value:values[key]}),referenceNotice(){},setTimeout(){},
+ editor:(title,markup,callback)=>{body=markup;save=callback;return {style:{},querySelector:()=>({textContent:''})};},
+ api:{updateOrderAccounting:async(id,input)=>{payload=input;return {order:{...item,vatIssued:true}};}}});
+ vm.runInContext(source.slice(source.indexOf('  function openOrderVatForm('),source.indexOf('  function openOrderReconciliation(')),ctx);
+ ctx.openOrderVatForm(item.id);assert.equal(save,undefined);
+ item.paymentReconciled=true;ctx.data.user.role='SALE';ctx.openOrderVatForm(item.id);assert.equal(save,undefined);
+ ctx.data.user.role='ACCOUNTING';ctx.openOrderVatForm(item.id);assert.match(body,/pattern="\[0-9\]\{10,13\}"/);await save();
+ assert.equal(payload.action,'ISSUE_VAT');assert.equal(payload.invoiceNumber,'INV-01');assert.equal(payload.companyName,'Example Ltd');assert.equal(item.vatIssued,true);
 });
 
 test('All order-creating roles see Manager, Leader and every active Sale',()=>{

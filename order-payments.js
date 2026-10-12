@@ -33,5 +33,33 @@
   if(!result.length||result.length>10||new Set(result.map(i=>i.id)).size!==result.length||result.some(i=>!/^data:image\/(jpeg|png|webp);base64,/.test(i.imageData))||JSON.stringify(result).length>2800000)throw Error('Chọn từ 1 đến 10 ảnh bill, tổng dung lượng tối đa 2,8 MB.');
   return result;
  }
- return {receipts,paid,balance,events,status,images,amounts,billImages,billLabel};
+ function productKind(product){
+  if(['COURSE','INDICATOR','VIP','OTHER'].includes(product?.kind))return product.kind;
+  const label=String(product?.category||product?.name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase();
+  if(label.includes('vip'))return 'VIP';
+  if(product?.type==='RENTAL'||label.includes('chi bao')||label.includes('indicator')||label.includes('tin hieu'))return 'INDICATOR';
+  return label.includes('khoa hoc')||label.includes('course')?'COURSE':'OTHER';
+ }
+ function customerCourseKey(customer,fields=[]){
+  const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  const field=fields.find(item=>item.active!==false&&normalize(item.label)==='khoa');
+  const value=customer?.customFields?.[field?.id];
+  return String(Array.isArray(value)?value.length===1?value[0]:'':value||'').trim();
+ }
+ function saleCommissionRate(value,fallback=15){const rate=Number(value??fallback);return Math.max(0,Math.min(15,Number.isFinite(rate)?rate:fallback));}
+ function commissionAssignment({product,seller,members=[],customer,fields=[],configs=[],courseKey=''}){
+  const active=member=>member&&member.active!==false&&member.active!==0&&member.active!=='0';
+  const leader=['LEADER','MANAGER'].includes(seller?.role)?seller:members.find(member=>String(member.id)===String(seller?.leaderId||seller?.managerId||seller?.parentId||'')&&['LEADER','MANAGER'].includes(member.role)&&active(member));
+  if(!leader||!active(leader))throw Error('Người phụ trách chưa có Leader hoặc Manager trực tiếp.');
+  if(productKind(product)!=='COURSE')return {commissionLeaderId:leader.id,commissionSellerRole:seller.role};
+  const key=String(courseKey||customerCourseKey(customer,fields)).trim();
+  if(!key)throw Error('Chọn khóa của khách hàng trước khi tạo đơn.');
+  const config=configs.find(item=>String(item.productId)===String(product.id)&&String(item.courseKey)===key);
+  const trainerIds=[...new Set(config?.trainerIds||[])];
+  if(trainerIds.length!==1)throw Error('Khóa '+key+' phải được chọn đúng một người đào tạo trong Cấu hình Đào tạo.');
+  const trainer=members.find(member=>String(member.id)===String(trainerIds[0])&&active(member)&&['MANAGER','LEADER','SALE'].includes(member.role));
+  if(!trainer)throw Error('Người đào tạo của khóa không còn hoạt động.');
+  return {commissionLeaderId:leader.id,commissionSellerRole:seller.role,commissionCourseKey:key,commissionTrainerId:trainer.id};
+ }
+ return {receipts,paid,balance,events,status,images,amounts,billImages,billLabel,productKind,customerCourseKey,saleCommissionRate,commissionAssignment};
 });

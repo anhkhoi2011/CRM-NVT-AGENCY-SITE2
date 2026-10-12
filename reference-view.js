@@ -3,7 +3,7 @@ let appState = { customers: [], orders: [], careGroups: [] };
 const CARE_PAGE_SIZE = 20;
 const carePageByGroup = Object.create(null);
 let customerPage = 1;
-let customerPageSize = 20;
+let customerPageSize = 10;
 let customerFilterSignature = '';
 
 // Keep table filters outside the DOM. The reference renderer rebuilds the
@@ -80,7 +80,7 @@ function renderCustomerPagination(total) {
   host.hidden = false;
   host.innerHTML = '<span class="customer-pagination-summary">Hiển thị ' + from + '–' + to + ' / ' + total + ' data</span><label class="customer-pagination-size">Số dòng <select aria-label="Số khách hàng mỗi trang">' + [10, 20, 50, 100, 200].map(size => '<option value="' + size + '" ' + (size === customerPageSize ? 'selected' : '') + '>' + size + '</option>').join('') + '</select></label><button type="button" class="customer-pagination-button" data-customer-page="prev" aria-label="Trang trước" ' + (customerPage === 1 ? 'disabled' : '') + '>‹</button><span class="customer-pagination-current">' + customerPage + ' / ' + pages + '</span><button type="button" class="customer-pagination-button" data-customer-page="next" aria-label="Trang sau" ' + (customerPage === pages ? 'disabled' : '') + '>›</button>';
   host.querySelector('select').onchange = event => {
-    customerPageSize = Number(event.target.value) || 20;
+    customerPageSize = Number(event.target.value) || 10;
     customerPage = 1;
     renderCustomerTable();
   };

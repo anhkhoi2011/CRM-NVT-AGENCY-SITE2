@@ -250,7 +250,7 @@ const NAVIGATION = {
     ['Kinh doanh', [['orders', 'Đơn hàng', '▤'], ['products', 'Sản phẩm', '□'], ['revenue', 'Doanh thu', '₫'], ['marketing', 'Dữ liệu', '⌁']]],
     ['T\u1ed5 ch\u1ee9c', [['hrProfiles','Quản trị nhân sự','♧'],['team', '\u0110\u1ed9i ng\u0169', '\u2667'], ['feedback', 'Kho Feedback', '\u25c9'], ['processes', 'Quy Tr\u00ecnh', '\u2637'], ['businessReport', 'B\u00e1o c\u00e1o kinh doanh', '\u25eb']]],
     ['K\u1ebf to\u00e1n', [['accounting', 'K\u1ebf to\u00e1n', '\u20ab']]],
-    ['Hệ thống', [['attendance', 'Điểm danh', '✓'], ['notifications', 'Thông báo', '●'], ['audit', 'User log', '◉'], ['settings', 'Cài đặt', '⚙']]]
+    ['Hệ thống', [['attendance', 'Điểm danh', '✓'], ['notifications', 'Thông báo', '●'], ['audit', 'User log', '◉'], ['blacklist', 'Blacklist', '⊘'], ['settings', 'Cài đặt', '⚙']]]
   ],
   MARKETING: [
     ['Marketing', [['marketing', 'Marketing Hub', '⌁']]],
@@ -1000,7 +1000,7 @@ function orderSource(source) {
 }
 
 // Chỉ giữ dữ liệu làm việc trong RAM. Server là nguồn dữ liệu duy nhất.
-const SERVER_LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles'];
+const SERVER_LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles','blacklistIps','blacklistEntries'];
 const SERVER_OBJECTS = ['settings','leaderDistribution','saleDistributionByLeader','productCategories','careGroups'];
 let serverSyncToken = '', serverSyncTimer = null, serverSaveTimer = null;
 let serverAutomationStatus = null;
@@ -4538,8 +4538,12 @@ function newOrderModal(customerId = '') {
     if(billing.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(billing.email)){toast('Email xuất hóa đơn không hợp lệ.');return;}
     if(billing.taxId&&!/^\d{10,13}$/.test(billing.taxId)){toast('MST phải có 10 đến 13 chữ số.');return;}
     if(a.paymentMode==='DEPOSIT'&&(a.depositAmount<=0||a.depositAmount>=a.total)){toast('Tiền đợt 1 phải lớn hơn 0 và nhỏ hơn tổng đơn.');return;}
+    let commission;
+    try { commission=OrderPayments.commissionAssignment({product:a.product,seller:state.members.find(member=>member.id===customer.saleId),members:state.members,customer,fields:state.customFieldDefinitions,configs:state.courseConfigs,courseKey:$('#newOrderCourse').value.trim()}); }
+    catch (error) { toast(error.message); return; }
     const id=makeRecordId('ORD'),createdAt=stamp(),rentalMonths=a.product.type==='RENTAL'?Number(a.product.rentalMonths)||null:null;
     const order={id,code:`NVT-${id.slice(4)}`,customerId:customer.id,customerName:customer.name,saleId:customer.saleId,leaderId:customer.leaderId,teamId:customer.teamId,source:orderSource(customer.source),campaign:customer.campaign||'UNATTRIBUTED',websiteId:customer.websiteId||null,productId:a.product.id,productName:a.product.name,courseCode:$('#newOrderCourse').value.trim(),sku:a.product.sku,qty:a.qty,unitPrice:Number(a.product.price),subtotal:a.subtotal,vatRate:a.vatRate,vatAmount:a.vatAmount,discount:0,total:a.total,paymentMode:a.paymentMode,depositAmount:a.depositAmount,amountPaid:0,balanceDue:a.total,paymentMethod:$('#newOrderPaymentMethod').value,bankReference:$('#newOrderBankReference').value.trim(),billing,rentalMonths,rentalEndsAt:orderRentalEndsAt(createdAt,rentalMonths),refund:0,status:'PENDING',createdAt,depositAt:null,paidAt:null,refundedAt:null,paymentReconciled:false,refundReconciled:null};
+    Object.assign(order,commission,{createdBy:currentAccount.id});
     state.orders.unshift(order);audit('CREATE_ORDER',id,`${order.code} · ${order.productName}`);saveState();if(!await flushServerPersistence()){toast('Chưa lưu được đơn hàng lên máy chủ.');return;}closeModal();render();toast('Đã tạo đơn và chuyển sang sổ kế toán.');
   };
 }

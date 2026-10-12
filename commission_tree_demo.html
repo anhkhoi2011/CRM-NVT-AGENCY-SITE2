@@ -702,6 +702,11 @@
  #vatOrdersTable td:nth-child(n+11):nth-child(-n+14) { font-variant-numeric:tabular-nums; white-space:nowrap; }
  #vatOrdersTable tfoot td { background:#f8fafc !important; font-size:12px; border-top:1px solid #cbd5e1; }
  #vatOrdersTable .order-copy-field { padding:5px 0; font-size:12px; }
+ #vatOrdersTable .order-bill-button { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:7px 13px; border:1px solid #2563eb; border-radius:8px; background:#2563eb; color:#fff; font-family:inherit; font-size:12px; font-weight:600; line-height:1.4; white-space:nowrap; cursor:pointer; box-shadow:0 2px 5px rgba(37,99,235,.18); transition:background .15s,box-shadow .15s; }
+ #vatOrdersTable .order-bill-button:hover:not(:disabled) { background:#1d4ed8; border-color:#1d4ed8; box-shadow:0 3px 8px rgba(37,99,235,.25); }
+ #vatOrdersTable .order-bill-button:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+ #vatOrdersTable .order-bill-button:disabled { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; box-shadow:none; cursor:default; }
+ #vatOrdersTable .order-missing-field { color:#dc2626; font-size:12px; font-weight:600; }
 
  /* Table styling */
  .table-responsive {
@@ -1389,7 +1394,7 @@ body.accounting-modal-open { overflow: hidden; }
     document.documentElement.classList.add('is-embedded');
   }
 </script>
-<script src="order-payments.js?v=20261003-bill-types-6"></script>
+<script src="order-payments.js?v=20261012-revenue-commission"></script>
 <script src="accounting-detail.js?v=20261007-accounting-details-31"></script>
 <link rel="stylesheet" href="crm-mobile.css?v=20261009-reconcile-proof-61">
 </head>
@@ -2096,9 +2101,9 @@ body.accounting-modal-open { overflow: hidden; }
           </div>
 
           <div class="form-group" style="grid-column: span 2;">
-            <label style="font-weight:700; font-size:12px; color:#0369a1;">% Hoa Hồng Sản Phẩm (Chỉ Báo & Khóa Học)</label>
+            <label style="font-weight:700; font-size:12px; color:#0369a1;">% Hoa Hồng Bán Sản Phẩm</label>
             <div style="display:flex; gap:8px; align-items:center;">
-              <input type="number" id="inputProductRate" min="0" max="100" step="1" value="10" oninput="updateModalPreview()" style="width:110px; border:1.5px solid #38bdf8; font-weight:800; color:#0369a1; padding:7px 10px; border-radius:6px; font-size:13.5px;">
+              <input type="number" id="inputProductRate" min="0" max="15" step="1" value="15" oninput="updateModalPreview()" style="width:110px; border:1.5px solid #38bdf8; font-weight:800; color:#0369a1; padding:7px 10px; border-radius:6px; font-size:13.5px;">
               <span style="font-weight:800; color:#0369a1; font-size:14px;">%</span>
             </div>
           </div>
@@ -2188,14 +2193,14 @@ body.accounting-modal-open { overflow: hidden; }
           <div class="form-group">
             <label style="font-size:11.5px; font-weight:700;">DS Chỉ Báo (VNĐ)</label>
             <div style="display:flex; align-items:center; position:relative;">
-    <input type="text" id="inputIndicatorRev" oninput="formatCurrencyInput(this); updateModalPreview();" style="padding:6px 26px 6px 8px; border:1px solid #cbd5e1; border-radius:6px; width:100%; font-family:'JetBrains Mono'; font-weight:700;">
+    <input type="text" id="inputIndicatorRev" readonly style="padding:6px 26px 6px 8px; border:1px solid #cbd5e1; border-radius:6px; width:100%; font-family:'JetBrains Mono'; font-weight:700;">
     <span style="position:absolute; right:8px; font-size:11px; color:#64748b; font-family:'JetBrains Mono';">đ</span>
   </div>
           </div>
           <div class="form-group">
             <label style="font-size:11.5px; font-weight:700;">DS Khóa Học (VNĐ)</label>
             <div style="display:flex; align-items:center; position:relative;">
-    <input type="text" id="inputCourseRev" oninput="formatCurrencyInput(this); updateModalPreview();" style="padding:6px 26px 6px 8px; border:1px solid #cbd5e1; border-radius:6px; width:100%; font-family:'JetBrains Mono'; font-weight:700;">
+    <input type="text" id="inputCourseRev" readonly style="padding:6px 26px 6px 8px; border:1px solid #cbd5e1; border-radius:6px; width:100%; font-family:'JetBrains Mono'; font-weight:700;">
     <span style="position:absolute; right:8px; font-size:11px; color:#64748b; font-family:'JetBrains Mono';">đ</span>
   </div>
           </div>
@@ -2228,6 +2233,12 @@ body.accounting-modal-open { overflow: hidden; }
           <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:12px;">
             <span style="color:#0284c7;">Hoa hồng sản phẩm (% riêng):</span>
             <span id="previewProdHh" style="font-weight:800; color:#0284c7; font-family:'JetBrains Mono';">0 đ</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:12px;">
+            <span>Hoa hồng đào tạo:</span><span id="previewTrainerHh" style="font-weight:800;">0 đ</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:12px;">
+            <span>Hoa hồng quản lý sản phẩm:</span><span id="previewManagementHh" style="font-weight:800;">0 đ</span>
           </div>
           <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:12px;">
             <span style="color:#7e22ce;">Thưởng nóng:</span>
@@ -2418,11 +2429,11 @@ body.accounting-modal-open { overflow: hidden; }
         <div class="form-grid-2">
           <div class="form-group">
             <label style="font-size:11.5px; font-weight:700;">% Hoa hồng sản phẩm mặc định (%)</label>
-            <input type="number" id="cfgProductRate" min="0" max="100" step="1" value="10" style="padding:6px 8px; border:1px solid #7dd3fc; border-radius:6px; width:100%; font-weight:800; color:#0369a1;">
+            <input type="number" id="cfgProductRate" min="0" max="15" step="1" value="15" style="padding:6px 8px; border:1px solid #7dd3fc; border-radius:6px; width:100%; font-weight:800; color:#0369a1;">
           </div>
           <div class="form-group" style="display:flex; flex-direction:column; justify-content:flex-end;">
             <button type="button" class="tool-btn" onclick="resetAllProductRateTo10()" style="font-size:11.5px; font-weight:700; background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; padding:7px 10px;">
-              Đặt lại toàn bộ nhân sự CRM về 10%
+              Đặt lại toàn bộ nhân sự CRM về 15%
             </button>
           </div>
         </div>
@@ -2736,6 +2747,7 @@ Tổng gửi: <span id="sendSelectedTotalMoney" style="color:#059669; font-size:
  // 1. HỆ SỐ QUY ĐỔI LOT & ĐỊNH MỨC HOA HỒNG TOÀN HỆ THỐNG
  // ====================================================================
  let LOT_CONFIG = {
+ defaultProductRate: 15,
  standardMultiplier: 1.0,
  miniMultiplier: 0.8, // 1 lot MINI = 0.8 lot tiêu chuẩn
  microMultiplier: 0.35, // 1 lot Micro = 0.35 lot tiêu chuẩn
@@ -2869,15 +2881,25 @@ Tổng gửi: <span id="sendSelectedTotalMoney" style="color:#059669; font-size:
     return { downlineLots: null, overrideRateStr: '—', downlineCommission: 0, subordinatesCount: 0 };
   }
 
- function calculatePersonnelFinance(item) {
+ function calculatePersonnelFinance(item, previewProductRate) {
     const stdLot = getPersonalStdLot(item);
-    const ratePerLot = item.ratePerLot || (item.roleLevel === 'LV1' ? LOT_CONFIG.rateLv1 : (item.roleLevel === 'LV2' ? LOT_CONFIG.rateLv2 : LOT_CONFIG.rateLv3));
-    const hhLot = Math.round(stdLot * ratePerLot);
+    const ratePerLot = item.ratePerLot ?? (item.roleLevel === 'LV1' ? LOT_CONFIG.rateLv1 : (item.roleLevel === 'LV2' ? LOT_CONFIG.rateLv2 : LOT_CONFIG.rateLv3));
+    let hhLot = Math.round(stdLot * ratePerLot);
 
     // Tuyến dưới lot
-    const dl = getDownlineDetails(item, APEX_DATA);
+    let dl = getDownlineDetails(item, APEX_DATA);
+    if(currentGlobalMonth==='ALL'){
+      const metrics=ACCOUNTING_CRM_STATE.brokerageMetrics||[],periods=[...new Set(metrics.map(metric=>metric.period))];
+      hhLot=0;let lots=0,commission=0;
+      for(const period of periods){
+        const people=APEX_DATA.map(person=>{const metric=metrics.find(row=>String(row.memberId)===String(person.id)&&row.period===period)||{};return {...person,basicLot:Number(metric.basicLots??metric.basicLot)||0,miniLot:Number(metric.miniLots??metric.miniLot)||0,microLot:Number(metric.microLots??metric.microLot)||0,ratePerLot:Number(metric.lotCommissionRate)>0?Number(metric.lotCommissionRate):person.baseRatePerLot??person.ratePerLot};});
+        const person=people.find(person=>String(person.id)===String(item.id));if(!person)continue;
+        hhLot+=Math.round(getPersonalStdLot(person)*person.ratePerLot);const month=getDownlineDetails(person,people);lots+=Number(month.downlineLots)||0;commission+=month.downlineCommission;
+      }
+      dl={...dl,downlineLots:dl.downlineLots===null?null:Number(lots.toFixed(2)),downlineCommission:commission,overrideRateStr:lots?'+'+(commission/lots/1000).toFixed(1)+'k/lot':dl.overrideRateStr};
+    }
 
-    const defaultSaleRate = Number(item.productRate ?? 15);
+    const defaultSaleRate = OrderPayments.saleCommissionRate(item.productRate);
     const monthFactor = 1;
     const courseRev = Number(item.courseRev) || 0;
     const indicatorRev = Number(item.indicatorRev) || 0;
@@ -2885,6 +2907,7 @@ Tổng gửi: <span id="sendSelectedTotalMoney" style="color:#059669; font-size:
     const totalProductRev = courseRev + indicatorRev + vipRev;
     const hhSaleProducts = COURSES_DATA.reduce((sum, crs) => {
       const cfg = crs.salesConfig?.[item.id];
+      if(cfg?.periodRevenue)return sum+Object.values(cfg.periodRevenue).reduce((total,period)=>total+Math.round(period.revenue*OrderPayments.saleCommissionRate(previewProductRate===undefined?period.rateSale:(crs.saleRates?.[item.id]??previewProductRate))/100),0);
       return sum + (cfg ? Math.round((Number(cfg.revenue) || 0) * Number(cfg.rateSale ?? crs.rateSale ?? defaultSaleRate) / 100) : 0);
     }, 0);
 
@@ -3341,7 +3364,7 @@ function renderMindmapTree() {
 
   filtered.forEach((item, index) => {
     const fin = calculatePersonnelFinance(item);
-    const prodRate = (item.productRate !== undefined && item.productRate !== null) ? Number(item.productRate) : 10;
+    const prodRate = OrderPayments.saleCommissionRate(item.productRate);
 
     totalBasicLot += item.basicLot;
     totalMicroLot += item.microLot;
@@ -3408,8 +3431,7 @@ function renderMindmapTree() {
             <input type="text" class="crm-currency-input"
                    id="inp_ind_${item.id}"
                    value="${(item.indicatorRev || 0).toLocaleString('vi-VN')}"
-                   oninput="handleCurrencyInput(this, 'indicator', '${item.id}')"
-                   onchange="commitPersonnelCurrencyInput(this, 'indicator', '${item.id}')"
+                   readonly
                    title="Doanh số chỉ báo của ${item.name} - Tự động định dạng dấu chấm (.) tiền tệ">
             <span class="crm-currency-sub" id="sub_ind_${item.id}">${(item.indicatorRev || 0).toLocaleString('vi-VN')} đ</span>
           </div>
@@ -3419,8 +3441,7 @@ function renderMindmapTree() {
             <input type="text" class="crm-currency-input" style="width:104px;"
                    id="inp_crs_${item.id}"
                    value="${(item.courseRev || 0).toLocaleString('vi-VN')}"
-                   oninput="handleCurrencyInput(this, 'course', '${item.id}')"
-                   onchange="commitPersonnelCurrencyInput(this, 'course', '${item.id}')"
+                   readonly
                    title="Doanh số khóa học của ${item.name} - Tự động định dạng dấu chấm (.) tiền tệ">
             <span class="crm-currency-sub" id="sub_crs_${item.id}">
               ${item.courseRev > 0 ? `(${Math.round(item.courseRev / 5000000)} HV) • ${(item.courseRev || 0).toLocaleString('vi-VN')} đ` : '0 đ'}
@@ -3432,8 +3453,7 @@ function renderMindmapTree() {
             <input type="text" class="crm-currency-input"
                    id="inp_vip_${item.id}"
                    value="${(item.vipRev || 0).toLocaleString('vi-VN')}"
-                   oninput="handleCurrencyInput(this, 'vip', '${item.id}')"
-                   onchange="commitPersonnelCurrencyInput(this, 'vip', '${item.id}')"
+                   readonly
                    title="Doanh số nhóm VIP của ${item.name} - Tự động định dạng dấu chấm (.) tiền tệ">
             <span class="crm-currency-sub" id="sub_vip_${item.id}">${(item.vipRev || 0).toLocaleString('vi-VN')} đ</span>
           </div>
@@ -3475,7 +3495,7 @@ function renderMindmapTree() {
   document.getElementById('footCouRev').textContent = formatMoney(totalCouRev);
   const footVipEl = document.getElementById('footVipRev'); if (footVipEl) footVipEl.textContent = formatMoney(totalVipRev);
   const footTrEl = document.getElementById('footHhTrainer'); if (footTrEl) footTrEl.textContent = formatMoney(totalHhTrainer + totalHhLeader);
-  const avgRate = filtered.length > 0 ? (filtered.reduce((acc, p) => acc + ((p.productRate !== undefined) ? p.productRate : 10), 0) / filtered.length).toFixed(1) : '10.0';
+  const avgRate = filtered.length > 0 ? (filtered.reduce((acc, p) => acc + ((p.productRate !== undefined) ? p.productRate : 15), 0) / filtered.length).toFixed(1) : '15.0';
   const footRateEl = document.getElementById('footProdRate');
   if (footRateEl) footRateEl.textContent = avgRate + '%';
   document.getElementById('footHhProd').textContent = formatMoney(totalHhProd);
@@ -3554,6 +3574,7 @@ function renderMindmapTree() {
 
   function openEditPersonnelModal(id) {
     if (!id) return;
+    if (currentGlobalMonth === 'ALL') { alert('Chọn một tháng để chỉnh sửa cơ chế hoa hồng và số lot.'); return; }
     const person = APEX_DATA.find(p => String(p.id).trim() === String(id).trim());
     if (!person) {
       console.warn('Không tìm thấy nhân sự có ID:', id);
@@ -3584,7 +3605,7 @@ function renderMindmapTree() {
     const rateInput = document.getElementById('inputRatePerLot');
     if (rateInput) rateInput.value = fin.ratePerLot;
     const prodInput = document.getElementById('inputProductRate');
-    if (prodInput) prodInput.value = (person.productRate !== undefined && person.productRate !== null) ? person.productRate : 10;
+    if (prodInput) prodInput.value = (person.productRate !== undefined && person.productRate !== null) ? person.productRate : 15;
 
     const txtRateK = document.getElementById('txtRateK');
     if (txtRateK) txtRateK.textContent = (fin.ratePerLot / 1000) + 'k/lot';
@@ -3673,22 +3694,21 @@ function renderMindmapTree() {
 
     const rateInput = document.getElementById('inputRatePerLot');
     const ratePerLot = rateInput ? (Number(rateInput.value) || 0) : 50000;
-    const productRate = document.getElementById('inputProductRate') ? (Number(document.getElementById('inputProductRate').value) || 0) : 10;
+    const productRate = document.getElementById('inputProductRate') ? (Number(document.getElementById('inputProductRate').value) || 0) : 15;
 
     const basicLot = document.getElementById('inputBasicLot') ? (Number(document.getElementById('inputBasicLot').value) || 0) : 0;
     const miniLot = document.getElementById('inputMiniLot') ? (Number(document.getElementById('inputMiniLot').value) || 0) : 0;
     const microLot = document.getElementById('inputMicroLot') ? (Number(document.getElementById('inputMicroLot').value) || 0) : 0;
 
-    const indicatorRev = document.getElementById('inputIndicatorRev') ? (Number(document.getElementById('inputIndicatorRev').value) || 0) : 0;
-    const courseRev = document.getElementById('inputCourseRev') ? (Number(document.getElementById('inputCourseRev').value) || 0) : 0;
     const bonus = document.getElementById('inputBonus') ? (Number(document.getElementById('inputBonus').value) || 0) : 0;
 
     const txtRateK = document.getElementById('txtRateK');
     if (txtRateK) txtRateK.textContent = (ratePerLot / 1000) + 'k/lot';
 
-    const stdLot = Number((basicLot * LOT_CONFIG.standardMultiplier + miniLot * LOT_CONFIG.miniMultiplier + microLot * LOT_CONFIG.microMultiplier).toFixed(2));
-    const lotComm = Math.round(stdLot * ratePerLot);
-    const prodComm = Math.round((indicatorRev + courseRev) * (productRate / 100));
+    const fin = calculatePersonnelFinance({...person,basicLot,miniLot,microLot,ratePerLot,productRate,bonus},productRate);
+    const stdLot = fin.stdLot;
+    const lotComm = fin.hhLot;
+    const prodComm = fin.hhSaleProducts;
 
     // Tính tuyến dưới với ratePerLot tạm thời
     const dl = getDownlineDetails(person, APEX_DATA, ratePerLot);
@@ -3709,7 +3729,7 @@ function renderMindmapTree() {
       if (dlHhEl) dlHhEl.textContent = formatVND(downlineComm);
     }
 
-    const totalNet = lotComm + downlineComm + prodComm + bonus;
+    const totalNet = fin.netIncome;
 
     const prevTotalLot = document.getElementById('previewTotalLot');
     if (prevTotalLot) prevTotalLot.textContent = stdLot.toFixed(2) + ' lot';
@@ -3722,6 +3742,10 @@ function renderMindmapTree() {
 
     const prevProd = document.getElementById('previewProdHh');
     if (prevProd) prevProd.textContent = formatVND(prodComm);
+    const prevTrainer = document.getElementById('previewTrainerHh');
+    if (prevTrainer) prevTrainer.textContent = formatVND(fin.hhTrainer);
+    const prevManagement = document.getElementById('previewManagementHh');
+    if (prevManagement) prevManagement.textContent = formatVND(fin.hhLeaderCourse);
 
     const prevBonus = document.getElementById('previewBonus');
     if (prevBonus) prevBonus.textContent = formatVND(bonus);
@@ -3742,7 +3766,7 @@ function renderMindmapTree() {
     }
     const prodInput = document.getElementById('inputProductRate');
     if (prodInput) {
-      person.productRate = Math.max(0, Math.min(100, Number(prodInput.value) || 0));
+      person.productRate = Math.max(0, Math.min(15, Number(prodInput.value) || 0));
     }
 
     const bLot = document.getElementById('inputBasicLot');
@@ -3752,10 +3776,6 @@ function renderMindmapTree() {
     const microLot = document.getElementById('inputMicroLot');
     if (microLot) person.microLot = Number(microLot.value) || 0;
 
-    const indRev = document.getElementById('inputIndicatorRev');
-    if (indRev) person.indicatorRev = Number(indRev.value) || 0;
-    const couRev = document.getElementById('inputCourseRev');
-    if (couRev) person.courseRev = Number(couRev.value) || 0;
     const bon = document.getElementById('inputBonus');
     if (bon) person.bonus = Number(bon.value) || 0;
 
@@ -3873,7 +3893,7 @@ function renderMindmapTree() {
     const microEl = document.getElementById('cfgMicro');
     if (microEl) microEl.value = LOT_CONFIG.microMultiplier || 0.35;
     const prodEl = document.getElementById('cfgProductRate');
-    if (prodEl) prodEl.value = LOT_CONFIG.defaultProductRate || 10;
+    if (prodEl) prodEl.value = LOT_CONFIG.defaultProductRate ?? 15;
 
     updateConfigLotPreview();
 
@@ -3919,7 +3939,7 @@ function renderMindmapTree() {
     if (microEl) LOT_CONFIG.microMultiplier = Number(microEl.value) || 0.35;
     const prodEl = document.getElementById('cfgProductRate');
     if (prodEl) {
-      const newRate = Math.max(0, Math.min(100, Number(prodEl.value) || 10));
+      const newRate = OrderPayments.saleCommissionRate(prodEl.value);
       LOT_CONFIG.defaultProductRate = newRate;
       APEX_DATA.forEach(p => {
         p.productRate = newRate;
@@ -3930,21 +3950,21 @@ function renderMindmapTree() {
     renderAllViews();
     postAccountingMessage('ACCOUNTING_LOT_CONFIG_SAVE', { payload: {
       rateApex: LOT_CONFIG.rateApex, rateLv1: LOT_CONFIG.rateLv1, rateLv2: LOT_CONFIG.rateLv2, rateLv3: LOT_CONFIG.rateLv3,
-      miniMultiplier: LOT_CONFIG.miniMultiplier, microMultiplier: LOT_CONFIG.microMultiplier, defaultProductRate: LOT_CONFIG.defaultProductRate || 10
+      miniMultiplier: LOT_CONFIG.miniMultiplier, microMultiplier: LOT_CONFIG.microMultiplier, defaultProductRate: LOT_CONFIG.defaultProductRate ?? 15
     }});
     if (window.parent && window.parent !== window) return; // kết quả lưu hiện qua ACCOUNTING_LOT_CONFIG_RESULT
     alert(`✓ Đã cập nhật thành công: Sàn trả về Apex ${(LOT_CONFIG.rateApex/1000)}k/lot! Tuyến dưới chia: Manager ${(LOT_CONFIG.rateLv1/1000)}k, Leader ${(LOT_CONFIG.rateLv2/1000)}k, Sale ${(LOT_CONFIG.rateLv3/1000)}k. Công ty Apex giữ lại ${((LOT_CONFIG.rateApex - LOT_CONFIG.rateLv1)/1000)}k/lot!`);
   }
 
   function resetAllProductRateTo10() {
-    LOT_CONFIG.defaultProductRate = 10;
+    LOT_CONFIG.defaultProductRate = 15;
     const prodEl = document.getElementById('cfgProductRate');
-    if (prodEl) prodEl.value = 10;
+    if (prodEl) prodEl.value = 15;
     APEX_DATA.forEach(p => {
-      p.productRate = 10;
+      p.productRate = 15;
     });
     renderAllViews();
-    alert('Đã đặt lại tỷ lệ hoa hồng sản phẩm của toàn bộ nhân sự CRM về 10% chuẩn!');
+    alert('Đã đặt lại tỷ lệ hoa hồng bán sản phẩm về 15%.');
   }
 
  // ====================================================================
@@ -4341,7 +4361,7 @@ function renderMindmapTree() {
   function updatePersonnelProductRate(id, newRate) {
     const person = APEX_DATA.find(p => p.id === id);
     if (!person) return;
-    person.productRate = Math.max(0, Math.min(100, Number(newRate) || 0));
+    person.productRate = Math.max(0, Math.min(15, Number(newRate) || 0));
     renderAllViews();
   }
 
@@ -4557,12 +4577,15 @@ function renderMindmapTree() {
         isTrainer = true;
         rate = (crs.rateTrainer !== undefined && crs.rateTrainer !== null && crs.rateTrainer !== '') ? Number(crs.rateTrainer) : 15;
       }
+      if(crs.trainerRevenue&&Object.hasOwn(crs.trainerRevenue,String(personId))){isTrainer=true;rate=Number(crs.trainerRates?.[personId]??rate);}
 
       if (isTrainer) {
-        const comm = Math.round((crs.commissionRevenue || 0) * (rate / 100));
+        const revenue=crs.trainerRevenue?Number(crs.trainerRevenue[String(personId)]||0):Number(crs.commissionRevenue||0);
+        rate=OrderPayments.saleCommissionRate(rate);
+        const comm = crs.trainerPeriodRevenue?Object.values(crs.trainerPeriodRevenue).reduce((sum,period)=>sum+Math.round(Number(period[String(personId)]||0)*rate/100),0):Math.round(revenue * (rate / 100));
         totalTrainerComm += comm;
         trainerCoursesCount++;
-        coursesList.push({ name: crs.name, rev: crs.commissionRevenue || 0, rate: rate, comm: comm });
+        coursesList.push({ name: crs.name, rev: revenue, rate: rate, comm: comm });
       }
     });
 
@@ -4585,8 +4608,8 @@ function renderMindmapTree() {
         if (String(ownerId || '') === String(person.id)) revenue += Number(crs.salesConfig?.[sale.id]?.revenue) || 0;
       }
     }
-    const rate = Number(crs.leaderRates?.[person.id] ?? crs.rateLeader ?? 5);
-    return Math.round(revenue * rate / 100);
+    const rate = Math.min(5,Math.max(0,Number(crs.leaderRates?.[person.id] ?? crs.rateLeader ?? 5)));
+    return crs.leaderPeriodRevenue?Object.values(crs.leaderPeriodRevenue).reduce((sum,period)=>sum+Math.round(Number(period[String(person.id)]||0)*rate/100),0):Math.round(revenue * rate / 100);
   }
 
   function calculateLeaderCourseCommission(person, dataList) {
@@ -4595,9 +4618,9 @@ function renderMindmapTree() {
 
   function courseCommissionSummary(crs) {
     const revenue = Number(crs.totalRevenue) || 0;
-    const sale = Object.values(crs.salesConfig || {}).reduce((sum, cfg) => sum + Math.round((Number(cfg.revenue) || 0) * Number(cfg.rateSale ?? crs.rateSale ?? 15) / 100), 0);
+    const sale = Object.values(crs.salesConfig || {}).reduce((sum, cfg) => sum+(cfg.periodRevenue?Object.values(cfg.periodRevenue).reduce((total,period)=>total+Math.round(period.revenue*period.rateSale/100),0):Math.round((Number(cfg.revenue)||0)*OrderPayments.saleCommissionRate(cfg.rateSale??crs.rateSale)/100)),0);
     const commissionRevenue = Number(crs.commissionRevenue) || 0;
-    const trainer = (crs.trainers || []).reduce((sum, t) => sum + Math.round(commissionRevenue * Number(t.rate ?? crs.rateTrainer ?? 15) / 100), 0);
+    const trainer = crs.trainerRevenue?Object.entries(crs.trainerRevenue).reduce((sum,[id,amount])=>{const rate=OrderPayments.saleCommissionRate(crs.trainerRates?.[id]??crs.trainers?.find(t=>String(t.id)===id)?.rate??crs.rateTrainer);return sum+(crs.trainerPeriodRevenue?Object.values(crs.trainerPeriodRevenue).reduce((total,period)=>total+Math.round(Number(period[id]||0)*rate/100),0):Math.round(amount*rate/100));},0):(crs.trainers || []).reduce((sum, t) => sum + Math.round(commissionRevenue * OrderPayments.saleCommissionRate(t.rate ?? crs.rateTrainer) / 100), 0);
     const leader = APEX_DATA.reduce((sum, person) => sum + courseLeaderCommission(crs, person), 0);
     return {revenue, sale, trainer, leader, company: revenue - sale - trainer - leader};
   }
@@ -4734,7 +4757,9 @@ function renderMindmapTree() {
       const revenue = assigned.reduce((sum,course) => sum + (Number(course.totalRevenue) || 0), 0);
       const commission = assigned.reduce((sum,course) => {
         const trainer = (course.trainers || []).find(item => String(item.id) === trainerId);
-        return sum + Math.round((Number(course.totalRevenue) || 0) * Number(trainer?.rate ?? course.rateTrainer ?? 15) / 100);
+        const amount=course.trainerRevenue?Number(course.trainerRevenue[String(trainerId)]||0):Number(course.commissionRevenue||0);
+        const rate=OrderPayments.saleCommissionRate(course.trainerRates?.[trainerId] ?? trainer?.rate ?? course.rateTrainer);
+        return sum + (course.trainerPeriodRevenue?Object.values(course.trainerPeriodRevenue).reduce((total,period)=>total+Math.round(Number(period[trainerId]||0)*rate/100),0):Math.round(amount*rate/100));
       }, 0);
       if (valueElement) valueElement.textContent = formatMoney(revenue);
       if (detailElement) detailElement.innerHTML = trainerId
@@ -4876,6 +4901,7 @@ function renderMindmapTree() {
     }
 
     const p = APEX_DATA.find(x => x.id === pId);
+    if(crs.category==='course')crs.trainers=[];
     crs.trainers.push({ id: pId, name: p ? p.name : pId, rate: 15 });
     renderCdmTrainersList();
     updateCdmSummary();
@@ -4885,7 +4911,7 @@ function renderMindmapTree() {
     const crs = currentDetailCourseDraft;
     if (!crs || !crs.trainers) return;
     const t = crs.trainers.find(x => x.id === tId);
-    if (t) t.rate = Math.max(0, Math.min(100, Number(newRate) || 0));
+    if (t) t.rate = Math.max(0, Math.min(15, Number(newRate) || 0));
     updateCdmSummary();
   }
 
@@ -5099,9 +5125,9 @@ function renderMindmapTree() {
     const rLeader = Number(document.getElementById('inputRateLeader_' + crsId)?.value || 5);
     const rTrainer = Number(document.getElementById('inputRateTrainer_' + crsId)?.value || 15);
 
-    crs.rateSale = Math.max(0, Math.min(100, rSale));
-    crs.rateLeader = Math.max(0, Math.min(100, rLeader));
-    crs.rateTrainer = Math.max(0, Math.min(100, rTrainer));
+    crs.rateSale = Math.max(0, Math.min(15, rSale));
+    crs.rateLeader = Math.max(0, Math.min(5, rLeader));
+    crs.rateTrainer = Math.max(0, Math.min(15, rTrainer));
 
     crs.rateCompany = Math.max(0, 100 - crs.rateSale - crs.rateLeader - crs.rateTrainer);
 
@@ -5145,7 +5171,7 @@ function renderMindmapTree() {
 
   function persistCourseConfigs(courses,view){
     if(window.__PENDING_COURSE_CONFIG)return;
-    const payload=courses.map(course=>({productId:course.productId,courseKey:course.courseKey||course.id,trainerIds:(course.trainers||[]).map(p=>p.id),leaderIds:(course.leaders||[]).map(p=>p.id),trainerRates:Object.fromEntries((course.trainers||[]).map(p=>[p.id,Number(p.rate)||0])),leaderRates:Object.fromEntries((course.leaders||[]).map(p=>[p.id,Number(p.rate)||0])),saleRates:{...(course.saleRates||{}),...Object.fromEntries(Object.entries(course.salesConfig||{}).map(([id,cfg])=>[id,Number(cfg.rateSale)||0]))},rateSale:course.rateSale,rateLeader:course.rateLeader,rateTrainer:course.rateTrainer,rateCompany:course.rateCompany,startDate:course.startDate||''}));
+    const payload=courses.map(course=>({productId:course.productId,courseKey:course.courseKey||course.id,trainerIds:(course.trainers||[]).map(p=>p.id),leaderIds:(course.leaders||[]).map(p=>p.id),trainerRates:Object.fromEntries((course.trainers||[]).map(p=>[p.id,Number(p.rate)||0])),leaderRates:Object.fromEntries((course.leaders||[]).map(p=>[p.id,Number(p.rate)||0])),saleRates:{...(course.saleRates||{})},rateSale:course.rateSale,rateLeader:course.rateLeader,rateTrainer:course.rateTrainer,rateCompany:course.rateCompany,startDate:course.startDate||''}));
     if(!payload.length){alert('Chưa có sản phẩm để lưu cấu hình.');return;}
     window.__PENDING_COURSE_CONFIG=view;
     postAccountingMessage('ACCOUNTING_COURSE_CONFIG_SAVE',{payload});
@@ -5968,25 +5994,26 @@ function renderVatOrdersTable() {
     // Cột Thao tác: Nút Xác Nhận Đủ kế bên nút Xuất VAT (chỉ bấm được Xuất VAT khi đã xác nhận đủ 100%)
     const billCount = Number(order.billCount) || 0;
     const billButtonHtml = billCount > 0
-      ? '<button type="button" class="btn-action btn-secondary" onclick="event.stopPropagation(); openOrderBills(\'' + order.id + '\')" title="Xem tất cả ảnh bill của đơn">Xem bill' + (billCount > 1 ? ' (' + billCount + ')' : '') + '</button>'
-      : '<button type="button" class="btn-action btn-secondary" disabled title="Đơn hàng chưa có ảnh bill">Chưa có bill</button>';
+      ? '<button type="button" class="order-bill-button" onclick="event.stopPropagation(); openOrderBills(\'' + order.id + '\')" title="Xem tất cả ảnh bill của đơn">Xem bill' + (billCount > 1 ? ' (' + billCount + ')' : '') + '</button>'
+      : '<button type="button" class="order-bill-button" disabled title="Đơn hàng chưa có ảnh bill">Chưa có bill</button>';
     let confirmBtnHtml = '';
     let vatBtnHtml = '';
 
     if(order.paymentReconciled){
-      confirmBtnHtml='<span class="chip chip-green">Đã đối soát</span>';
+      confirmBtnHtml='<span class="chip chip-green">Đã xác nhận đủ</span>';
     }else if(isPaid){
-      confirmBtnHtml=`<button type="button" class="btn-action btn-primary" onclick="event.stopPropagation(); confirmFullPayment('${order.id}')">Kiểm tra & đối soát</button>`;
+      confirmBtnHtml=`<button type="button" class="btn-action btn-primary" onclick="event.stopPropagation(); confirmFullPayment('${order.id}')">Xác nhận đủ</button>`;
     }else{
       confirmBtnHtml='<span class="chip chip-yellow">Chờ Sale ghi nhận đủ</span>';
     }
     if(isVatIssued)vatBtnHtml='<span class="chip chip-green">Đã ghi nhận VAT</span>';
-    else if(isPaid&&order.paymentReconciled)vatBtnHtml=`<button type="button" class="btn-action btn-primary" onclick="event.stopPropagation(); issueVatInvoice('${order.id}')">Ghi nhận VAT</button>`;
-    else vatBtnHtml='<button type="button" class="btn-action btn-secondary" disabled title="Cần đủ tiền và Kế toán đối soát trước">VAT chờ đối soát</button>';
+    else if(isPaid&&order.paymentReconciled)vatBtnHtml=`<button type="button" class="btn-action btn-primary" onclick="event.stopPropagation(); issueVatInvoice('${order.id}')">Xuất VAT</button>`;
+    else vatBtnHtml='<button type="button" class="btn-action btn-secondary" disabled title="Cần xác nhận đủ trước khi xuất VAT">Xuất VAT</button>';
 
     // Contact fields are separate columns with click-to-copy values.
-    const copyField = (value, label) => {
+    const copyField = (value, label, required = false) => {
       const text = String(value || '').trim();
+      if (required && !text) return '<span class="order-missing-field">Cần bổ sung</span>';
       return `<button type="button" class="order-copy-field" data-copy-value="${escapeOrderContact(text)}" onclick="event.stopPropagation(); copyOrderField(this)" title="B\u1ea5m \u0111\u1ec3 copy ${label}">${escapeOrderContact(text || '\u2014')}</button>`;
     };
 
@@ -6021,8 +6048,8 @@ function renderVatOrdersTable() {
       <td><b style="color:#0f172a; font-size:13px;">${order.customerName}</b></td>
       <td>${copyField(order.customerPhone, 's\u1ed1 \u0111i\u1ec7n tho\u1ea1i')}</td>
       <td><span class="chip ${typeChipClass}">${order.typeLabel}</span></td>
-      <td>${copyField(order.customerCccd, 'CCCD')}</td>
-      <td>${copyField(order.customerAddress, '\u0111\u1ecba ch\u1ec9')}</td>
+      <td>${copyField(order.customerCccd, 'CCCD', true)}</td>
+      <td>${copyField(order.customerAddress, '\u0111\u1ecba ch\u1ec9', true)}</td>
       <td>
         <b style="color:#1e293b;">${order.productName}</b>
         <div><small style="color:#94a3b8; font-family:'JetBrains Mono';">${order.productSku}</small></div>
@@ -7113,6 +7140,7 @@ window.printOrderInvoice = printOrderInvoice;
   // XỬ LÝ NHẬP TIỀN TỰ ĐỘNG CÓ DẤU CHẤM (.) VÀ CHỮ 'đ' BÊN DƯỚI
   // ====================================================================
   function handleCurrencyInput(input, type, personId) {
+    if (type !== 'bonus') return;
     const raw = input.value.replace(/\D/g, '');
     const num = Number(raw) || 0;
 
@@ -7780,7 +7808,7 @@ window.printOrderInvoice = printOrderInvoice;
           code:product.sku || '', name:product.name || productId,
           category, categoryLabel:{course:'Khóa học',indicator:'Chỉ báo',vip:'Nhóm VIP'}[category] || 'Sản phẩm khác',
           courseGroup:product.name || '', batchName:cohort,
-          price:Number(product.price) || 0, studentsCount:0, totalRevenue:0, commissionRevenue:0, salesConfig:{}, leaderRevenue:{},
+          price:Number(product.price) || 0, studentsCount:0, totalRevenue:0, commissionRevenue:0, salesConfig:{}, leaderRevenue:{}, trainerRevenue:{}, trainerPeriodRevenue:{}, leaderPeriodRevenue:{},
           trainers:(cfg.trainerIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.trainerRates?.[id] ?? cfg.rateTrainer ?? 15)})),
           leaders:(cfg.leaderIds || []).map(id => ({id,name:members.get(String(id))?.name || id,rate:Number(cfg.leaderRates?.[id] ?? cfg.rateLeader ?? 5)})),
           rateSale:Number(cfg.rateSale ?? 15), hasSaleRate:cfg.rateSale != null, rateTrainer:Number(cfg.rateTrainer ?? 15),
@@ -7806,11 +7834,15 @@ window.printOrderInvoice = printOrderInvoice;
       const customerCourse = customers.get(String(order.customerId))?.customFields?.[state.courseField?.id];
       const selectedCourse = Array.isArray(customerCourse) ? (customerCourse.length === 1 ? customerCourse[0] : '') : customerCourse;
       // Only the customer's actual cohort identifies training; product configuration is not a customer assignment.
-      const cohort = category === 'course' ? String(selectedCourse || '').trim() : '';
+      const cohort = category === 'course' ? String(order.commissionCourseKey || selectedCourse || '').trim() : '';
       const group = ensureGroup(product, cohort);
       group.totalRevenue += amount;
       const commissionEligible = order.vatIssued === true;
       if (commissionEligible) group.commissionRevenue += amount;
+      if(commissionEligible){
+        const trainers=order.commissionTrainerId?[order.commissionTrainerId]:(group.trainers||[]).map(trainer=>trainer.id);
+        for(const id of trainers){group.trainerRevenue[String(id)]=(group.trainerRevenue[String(id)]||0)+amount;for(const event of periodEvents){const month=String(event.occurredAt||'').slice(0,7),values=group.trainerPeriodRevenue[month]||={};values[String(id)]=(values[String(id)]||0)+event.netAmount;}}
+      }
       const studentKey = String(order.customerId || order.id);
       const groupStudents = studentSets.get(group.id) || new Set();
       groupStudents.add(studentKey);
@@ -7818,22 +7850,27 @@ window.printOrderInvoice = printOrderInvoice;
       group.studentsCount = groupStudents.size;
       if (order.saleId && commissionEligible) {
         const savedMetric = state.brokerageMetrics.find(m => String(m.memberId) === String(order.saleId) && m.period === currentGlobalMonth);
-        const personalRate = savedMetric?.productRate ?? members.get(String(order.saleId))?.productRate ?? APEX_DATA.find(p => String(p.id) === String(order.saleId))?.productRate ?? 15;
-        const saleConfig = group.salesConfig[String(order.saleId)] ||= {students:0,revenue:0,rateSale:group.saleRates?.[String(order.saleId)] ?? (group.hasSaleRate ? group.rateSale : personalRate)};
+        const personalRate = savedMetric?.productRate ?? members.get(String(order.saleId))?.productRate ?? (typeof LOT_CONFIG!=='undefined'?LOT_CONFIG.defaultProductRate:15) ?? 15;
+        const saleConfig = group.salesConfig[String(order.saleId)] ||= {students:0,revenue:0,rateSale:OrderPayments.saleCommissionRate(group.saleRates?.[String(order.saleId)] ?? savedMetric?.productRate ?? members.get(String(order.saleId))?.productRate ?? (group.hasSaleRate ? group.rateSale : personalRate))};
         saleConfig.students += 1;
         saleConfig.revenue += amount;
-        const seller = members.get(String(order.saleId));
-        if (seller?.role === 'SALE' || seller?.roleLevel === 'LV3') {
-          const leaderId = order.leaderId || seller.leaderId || seller.parentId || order.managerId || seller.managerId;
-          if (leaderId && String(leaderId) !== String(order.saleId)) group.leaderRevenue[String(leaderId)] = (group.leaderRevenue[String(leaderId)] || 0) + amount;
+        saleConfig.periodRevenue||={};
+        for(const event of periodEvents){
+          const month=String(event.occurredAt||'').slice(0,7),metric=state.brokerageMetrics.find(row=>String(row.memberId)===String(order.saleId)&&row.period===month);
+          const rate=OrderPayments.saleCommissionRate(group.saleRates?.[String(order.saleId)]??metric?.productRate??members.get(String(order.saleId))?.productRate??(group.hasSaleRate?group.rateSale:(typeof LOT_CONFIG!=='undefined'?LOT_CONFIG.defaultProductRate:15)));
+          const bucket=saleConfig.periodRevenue[month]||={revenue:0,rateSale:rate};bucket.revenue+=event.netAmount;
         }
+        const seller = members.get(String(order.saleId));
+        const sellerRole=order.commissionSellerRole||seller?.role||seller?.roleLevel;
+        const isTrainer=order.commissionTrainerId?String(order.commissionTrainerId)===String(order.saleId):(group.trainers||[]).some(trainer=>String(trainer.id)===String(order.saleId));
+        const ownManager=['LEADER','MANAGER','LV1','LV2'].includes(sellerRole);
+        const leaderId=order.commissionLeaderId||(ownManager?order.saleId:order.leaderId||seller?.leaderId||seller?.parentId||order.managerId||seller?.managerId);
+        if(leaderId&&(!ownManager||!isTrainer)){group.leaderRevenue[String(leaderId)]=(group.leaderRevenue[String(leaderId)]||0)+amount;for(const event of periodEvents){const month=String(event.occurredAt||'').slice(0,7),values=group.leaderPeriodRevenue[month]||={};values[String(leaderId)]=(values[String(leaderId)]||0)+event.netAmount;}}
       }
-      if (commissionEligible) {
-        const saleKey = String(order.saleId || '');
-        if (!revenueBySale.has(saleKey)) revenueBySale.set(saleKey, {courseRev:0,indicatorRev:0,vipRev:0,otherRev:0});
-        const field = {course:'courseRev',indicator:'indicatorRev',vip:'vipRev'}[category] || 'otherRev';
-        revenueBySale.get(saleKey)[field] += amount;
-      }
+      const saleKey = String(order.saleId || '');
+      if (!revenueBySale.has(saleKey)) revenueBySale.set(saleKey, {courseRev:0,indicatorRev:0,vipRev:0,otherRev:0});
+      const field = {course:'courseRev',indicator:'indicatorRev',vip:'vipRev'}[category] || 'otherRev';
+      revenueBySale.get(saleKey)[field] += amount;
     }
     COURSES_DATA = [...groups.values()];
     for (const person of APEX_DATA) {
@@ -7842,8 +7879,10 @@ window.printOrderInvoice = printOrderInvoice;
         person[field] = metrics.reduce((sum, m) => sum + (Number(m[source] ?? m[field]) || 0), 0);
       }
       const saved = currentGlobalMonth === 'ALL' ? null : metrics[0];
-      if (saved && Number(saved.lotCommissionRate) > 0) person.ratePerLot = Number(saved.lotCommissionRate);
-      if (saved && saved.productRate !== undefined && Number.isFinite(Number(saved.productRate))) person.productRate = Number(saved.productRate);
+      const roleRates=typeof LOT_CONFIG==='undefined'?{}:{LV1:LOT_CONFIG.rateLv1,LV2:LOT_CONFIG.rateLv2,LV3:LOT_CONFIG.rateLv3};
+      person.baseRatePerLot=roleRates[person.roleLevel]??person.baseRatePerLot??person.ratePerLot??0;
+      person.ratePerLot=saved&&Number(saved.lotCommissionRate)>0?Number(saved.lotCommissionRate):person.baseRatePerLot;
+      person.productRate=OrderPayments.saleCommissionRate(saved?.productRate??members.get(String(person.id))?.productRate??(typeof LOT_CONFIG!=='undefined'?LOT_CONFIG.defaultProductRate:15));
       Object.assign(person, revenueBySale.get(String(person.id)) || {courseRev:0,indicatorRev:0,vipRev:0,otherRev:0});
     }
     window.COURSES_DATA = COURSES_DATA;
@@ -7922,7 +7961,7 @@ window.printOrderInvoice = printOrderInvoice;
         courseRev: courseRev,
         vipRev: Number(m.vipRev) || 0,
         otherRev: Number(m.otherRev) || 0,
-        productRate: m.productRate !== undefined ? Number(m.productRate) : (existing.productRate || 10),
+        productRate: OrderPayments.saleCommissionRate(m.productRate ?? LOT_CONFIG.defaultProductRate),
         bonus: bonus
       };
     });

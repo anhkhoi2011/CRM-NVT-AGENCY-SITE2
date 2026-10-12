@@ -20,7 +20,8 @@ function fixture(failCustomer = false, websites = [{ id: 'WEB-TEST', name: 'Hoan
       if (sql.includes("FROM crm_documents WHERE collection='websites'")) return [websites.map(item => ({ id: item.id, body: JSON.stringify(item) }))];
       if (sql.includes("FROM crm_documents WHERE collection='dataOffers'")) return [[...documents.values()].filter(row => row.collection === 'dataOffers' && !row.deleted).map(row => ({ id: row.id, body: JSON.stringify(row.body) }))];
       if (sql.startsWith('SELECT id, name, phone, email, sale_id, leader_id, team_id, status FROM customers')) return [[...customers.values()].map(values => ({ id: values[0], name: values[1], phone: values[2], email: values[3], sale_id: values[11] || null, leader_id: values[12] || null, team_id: values[13] || null, status: values[7] }))];
-      if (sql.startsWith('SELECT id, body FROM crm_documents')) return [[...documents.values()].map(row => ({ id: row.id, body: JSON.stringify(row.body) }))];
+      if (sql.startsWith('SELECT id, body FROM crm_documents')) return [[...documents.values()].filter(row => !values[0] || row.collection === values[0]).map(row => ({ id: row.id, body: JSON.stringify(row.body) }))];
+      if (sql.startsWith("SELECT body FROM crm_documents WHERE collection='blacklistEntries'")) { const row=documents.get('blacklistEntries:'+values[0]);return [row?[{body:JSON.stringify(row.body)}]:[]]; }
       if (sql.startsWith('SELECT id')) return [events.has(values[0]) ? [{ id: events.get(values[0]), payload_json: payloads.get(events.get(values[0])) }] : []];
       if (sql.startsWith('INSERT INTO customers')) {
         if (failCustomer) throw new Error('Database unavailable');
@@ -149,4 +150,60 @@ test('Replayed duplicate webhook returns the original existing customer and owne
  assert.equal(retry.replay,true);assert.equal(retry.eventId,first.eventId);
  assert.equal(retry.customerId,'EXISTING');assert.equal(retry.ownerSaleId,'sale-original');
  assert.equal(f.customers.size,1);assert.equal(f.notices.length,notices);
+});
+
+
+test('Blocked visitor IP is quarantined before customer matching, notifications or distribution', async () => {
+  const blacklist = require('./blacklist.cjs');
+  const f = fixture();
+  const rule = blacklist.makeRule({id:'ADMIN',role:'ADMIN'}, {ip:record.customer.ipAddress,reason:'Spam'});
+  f.documents.set('blacklistIps:'+rule.id,{collection:'blacklistIps',id:rule.id,body:rule});
+  const result = await f.persistWebhook(record);
+  assert.equal(result.blacklisted,true);
+  assert.equal(result.customerId,null);
+  assert.equal(f.customers.size,0);
+  assert.equal(f.notices.length,0);
+  assert.equal(f.calls.includes('assign'),false);
+  const entry = f.documents.get('blacklistEntries:BL-'+record.id).body;
+  assert.equal(entry.status,'PENDING');
+  assert.equal(entry.customer.phone,record.customer.phone);
+  assert.equal(entry.source.landingPageName,'Hoang Phuc Academy');
+  assert.equal(f.documents.has('notifications:NT-DATA-'+record.id),false);
+  const retry = await f.persistWebhook({...record,id:'RETRY'});
+  assert.equal(retry.blacklisted,true);
+  assert.equal(retry.replay,true);
+  assert.equal([...f.documents.values()].filter(row=>row.collection==='blacklistEntries').length,1);
+});
+
+test('Approval uses original payload, creates and distributes once, and leaves the IP blocked', async () => {
+  const blacklist = require('./blacklist.cjs');
+  const f = fixture(), actor = {id:'ADMIN',role:'ADMIN'};
+  const rule = blacklist.makeRule(actor,{ip:record.customer.ipAddress});
+  f.documents.set('blacklistIps:'+rule.id,{collection:'blacklistIps',id:rule.id,body:rule});
+  await f.persistWebhook(record);
+  const first = await f.persistWebhook({...record,customer:{name:'Tampered',phone:'0999999999'}},{acceptBlacklistId:'BL-'+record.id,actor});
+  assert.ok(first.customerId);
+  assert.equal(f.customers.get(first.customerId)[1],record.customer.name);
+  assert.equal(f.documents.get('blacklistEntries:BL-'+record.id).body.status,'ACCEPTED');
+  const again = await f.persistWebhook(record,{acceptBlacklistId:'BL-'+record.id,actor});
+  assert.equal(again.customerId,first.customerId);
+  assert.equal(again.replay,true);
+  assert.equal(f.customers.size,1);
+  assert.equal(f.calls.filter(call=>call==='assign').length,1);
+  assert.equal(f.notices.filter(row=>row.kind==='WEBHOOK_ADMIN').length,1);
+  assert.ok(f.documents.has('blacklistIps:'+rule.id));
+  const blockedAgain = await f.persistWebhook({...record,id:'ANOTHER',dedupeKey:'another',customer:{...record.customer,phone:'0933333333'}});
+  assert.equal(blockedAgain.blacklisted,true);
+  assert.equal(f.customers.size,1);
+});
+
+test('Sale cannot approve quarantine and invalid leads remain pending', async () => {
+  const blacklist=require('./blacklist.cjs'), actor={id:'ADMIN',role:'ADMIN'}, f=fixture();
+  const rule=blacklist.makeRule(actor,{ip:record.customer.ipAddress});
+  f.documents.set('blacklistIps:'+rule.id,{collection:'blacklistIps',id:rule.id,body:rule});
+  await f.persistWebhook({...record,status:'INVALID'});
+  await assert.rejects(f.persistWebhook(record,{acceptBlacklistId:'BL-'+record.id,actor:{id:'SALE',role:'SALE'}}),{status:403});
+  await assert.rejects(f.persistWebhook(record,{acceptBlacklistId:'BL-'+record.id,actor}),{status:400});
+  assert.equal(f.documents.get('blacklistEntries:BL-'+record.id).body.status,'PENDING');
+  assert.equal(f.customers.size,0);
 });

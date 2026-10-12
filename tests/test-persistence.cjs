@@ -4,6 +4,10 @@ const ROOT=require('node:path').resolve(__dirname,'..');process.chdir(ROOT);
 require=require('node:module').createRequire(ROOT+'/');
 const test=require('node:test'), assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
 // CSDL giả lập giao dịch để kiểm tra logic; không thay thế thử nghiệm MySQL trên hosting.
+function prepareReceiptOrder(f,order){
+ order.createdBy=admin.id;
+ for(const member of [{id:'sale',name:'Sale',role:'SALE',leader_id:'lead',team_id:'T',active:1},{id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1}])if(!f.db.users.some(row=>row.id===member.id))f.db.users.push(member);
+}
 function fixture(){
  let db={docs:[],customers:[],orders:[],products:[{id:'p1',sku:'TEST',name:'Test product',category:'Test',price:120,type:'RENTAL',rental_months:3,active:1,created_at:'2026-08-01 08:00:00'}],users:[],history:[],webhookEvents:[],staffAttendance:[]};let backup,fail=false,failAudit=false;
  const events=[],queries=[];
@@ -15,6 +19,8 @@ function fixture(){
   if(sql.startsWith('INSERT INTO webhook_events')){if(!db.webhookEvents.some(e=>e.dedupe===v[1]))db.webhookEvents.push({id:v[0],dedupe:v[1]});return [{}];}
   if(sql.includes('FROM webhook_events WHERE dedupe_key'))return [db.webhookEvents.filter(e=>e.dedupe===v[0])];
   if(sql.includes("FROM crm_documents WHERE collection='websites'"))return [db.docs.filter(d=>d.collection==='websites'&&!d.deleted)];
+  if(sql.startsWith('SELECT id, body FROM crm_documents WHERE collection=?'))return [structuredClone(db.docs.filter(d=>d.collection===v[0]&&!d.deleted))];
+  if(sql.startsWith("SELECT body FROM crm_documents WHERE collection='blacklistEntries'"))return [structuredClone(db.docs.filter(d=>d.collection==='blacklistEntries'&&d.id===v[0]&&!d.deleted))];
   if(sql.startsWith('SELECT id, name, phone, email, sale_id, leader_id, team_id, status FROM customers'))return [db.customers.filter(row=>v.includes(row.phone)||(!row.email?false:v.includes(row.email)) )];
   if(sql.startsWith('INSERT INTO customers (')){
    if(!db.customers.some(row=>row.id===v[0]))upsert('customers',['id','name','phone','email','source','campaign','website_id','status','note','custom_fields_json','created_at'],[v[0],v[1],v[2],v[3],'Landing Page',v[4],v[5],'NEW',v[6],v[7],v[8]]);
@@ -148,7 +154,7 @@ test('Chỉ Admin, Leader và Manager được đổi tên khách trong phạm v
   assert.equal((await mf.api.read(admin)).state.customers.find(item=>item.id==='c1').name,'Tên Manager cập nhật');
  });
  test('Toàn bộ collection phụ đọc lại được; xóa giữ before-image',async()=>{
- const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});const keys=f.api.LISTS.filter(k=>!['customers','orders','products','members'].includes(k));
+ const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});f.db.users.push({id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1});const keys=f.api.LISTS.filter(k=>!['customers','orders','products','members','blacklistIps','blacklistEntries'].includes(k));
  const changes=keys.map(key=>change(key,key==='courseConfigs'?{id:'row-'+key,courseKey:'K01',trainerIds:[],leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65}:key==='brokerageMetrics'?{id:'row-'+key,memberId:'sale',leaderId:'lead',teamId:'T',period:'2026-09',basicLots:0,microLots:0,nanoLots:0,lotCommissionRate:0,indicatorCommissionRate:0,courseCommissionRate:0,vatRate:.1}:key==='hrProfiles'?{id:'sale',employeeId:'sale',fields:{cccd:'012345678901'},driveFiles:[]}: {id:'row-'+key,value:'giữ lâu dài'}));
  for(const key of f.api.OBJECTS)changes.push({key,id:'$',base:null,value:key==='productCategories'?['Dịch vụ']:{test:'giữ'}});
  await f.api.write(admin,'all',changes);let result=await f.api.read(admin);
@@ -362,7 +368,7 @@ test('Catalog seed rolls back and leaves no marker after failure',async()=>{
  const f=productSeedFixture([], 'IND-BF-R3M');await assert.rejects(f.run(),/Catalog failure/);assert.equal(f.products.length,0);assert.equal(f.marker,false);assert.ok(f.events.includes('rollback'));
 });
 test('Frontend only permits theme and the account-scoped snapshot cache in localStorage',()=>{
- const html=fs.readFileSync('index.html','utf8'),runtime=fs.readFileSync('crm.js','utf8'),reference=fs.readFileSync('reference-crm.js','utf8');assert.doesNotMatch(html,/localStorage\.setItem|nvt-payment-sidecar|const CATALOG/);const runtimeWrites=[...runtime.matchAll(/localStorage\.setItem\(([^,]+)/g)].map(match=>match[1].trim());const referenceWrites=[...reference.matchAll(/localStorage\.setItem\(([^,]+)/g)].map(match=>match[1].trim());assert.deepEqual(runtimeWrites.sort(),['SESSION_KEY','SESSION_KEY','THEME_KEY','pendingWriteStorageKey()']);assert.deepEqual(referenceWrites.sort(),['ACTIVE_TAB_KEY','CACHED_SNAPSHOT_KEY','SESSION_KEY','key']);assert.match(reference,/const draftStore={/);assert.match(reference,/session\.accountId!==accountId\|\|session\.role!==role\)\{clearCachedSnapshot\(\);return null;\}/);
+ const html=fs.readFileSync('index.html','utf8'),runtime=fs.readFileSync('crm.js','utf8'),reference=fs.readFileSync('reference-crm.js','utf8');assert.doesNotMatch(html,/localStorage\.setItem|nvt-payment-sidecar|const CATALOG/);const runtimeWrites=[...runtime.matchAll(/localStorage\.setItem\(([^,]+)/g)].map(match=>match[1].trim());const referenceWrites=[...reference.matchAll(/localStorage\.setItem\(([^,]+)/g)].map(match=>match[1].trim());assert.deepEqual(runtimeWrites.sort(),['SESSION_KEY','SESSION_KEY','THEME_KEY','pendingWriteStorageKey()']);assert.deepEqual(referenceWrites.sort(),['CACHED_SNAPSHOT_KEY','SESSION_KEY','key','key']);assert.match(reference,/const draftStore={/);assert.match(reference,/session\.accountId!==accountId\|\|session\.role!==role\)\{clearCachedSnapshot\(\);return null;\}/);
 });
 function referenceCacheFixture(){
  const source=fs.readFileSync('reference-crm.js','utf8'),start=source.indexOf('  const snapshotRole='),end=source.indexOf('    const esc=',start),values=new Map();
@@ -396,7 +402,7 @@ test('Server rejects a Sale order whose price differs from the MySQL catalog',as
  const f=fixture();await assert.rejects(f.api.write(sale,'bad-price',[change('customers',customer),change('orders',{...order,unitPrice:1,subtotal:3,vatAmount:0,discount:0,total:3,balanceDue:3})]),error=>error.status===400);assert.equal(f.db.orders.length,0);
 });
 test('Sale order form keeps VAT, deposit, billing and rental data in the unified MySQL change',async()=>{
- const c=frontend();vm.runInContext(`applyServerSnapshot({state:{...initialState(),members:[{id:'sale',name:'Sale',role:'SALE',teamId:'T',leaderId:'lead',active:true}],customers:[{id:'c1',name:'Customer',phone:'0912345678',email:'c@example.vn',saleId:'sale',teamId:'T',leaderId:'lead',source:'Direct / Referral'}],products:[{id:'p1',name:'Indicator',sku:'IND-BF-R1M',category:'Indicator',price:1014000,type:'RENTAL',rentalMonths:1,active:true}]},versions:{}});currentAccount=hydrateSessionAccount({id:'sale',name:'Sale',role:'SALE',teamId:'T',leaderId:'lead'});flushServerPersistence=async()=>true;newOrderModal('c1');document.querySelector('#newOrderCustomer').value='c1';document.querySelector('#newOrderProduct').value='p1';document.querySelector('#newOrderQty').value='2';document.querySelector('#newOrderPaymentMode').value='DEPOSIT';document.querySelector('#newOrderDeposit').value='500000';document.querySelector('#newOrderPaymentMethod').value='VietQR';document.querySelector('#newOrderBillingName').value='Customer';document.querySelector('#newOrderBillingPhone').value='0912345678';document.querySelector('#newOrderBillingEmail').value='c@example.vn';`,c);
+ const c=frontend();vm.runInContext(`applyServerSnapshot({state:{...initialState(),members:[{id:'sale',name:'Sale',role:'SALE',teamId:'T',leaderId:'lead',active:true},{id:'lead',name:'Leader',role:'LEADER',teamId:'T',active:true}],customers:[{id:'c1',name:'Customer',phone:'0912345678',email:'c@example.vn',saleId:'sale',teamId:'T',leaderId:'lead',source:'Direct / Referral'}],products:[{id:'p1',name:'Indicator',sku:'IND-BF-R1M',category:'Indicator',price:1014000,type:'RENTAL',rentalMonths:1,active:true}]},versions:{}});currentAccount=hydrateSessionAccount({id:'sale',name:'Sale',role:'SALE',teamId:'T',leaderId:'lead'});flushServerPersistence=async()=>true;newOrderModal('c1');document.querySelector('#newOrderCustomer').value='c1';document.querySelector('#newOrderProduct').value='p1';document.querySelector('#newOrderQty').value='2';document.querySelector('#newOrderPaymentMode').value='DEPOSIT';document.querySelector('#newOrderDeposit').value='500000';document.querySelector('#newOrderPaymentMethod').value='VietQR';document.querySelector('#newOrderBillingName').value='Customer';document.querySelector('#newOrderBillingPhone').value='0912345678';document.querySelector('#newOrderBillingEmail').value='c@example.vn';`,c);
  await vm.runInContext("document.querySelector('#newOrderForm').onsubmit({preventDefault(){}})",c);const saved=vm.runInContext('state.orders[0]',c);assert.equal(saved.subtotal,2028000);assert.equal(saved.vatAmount,202800);assert.equal(saved.total,2230800);assert.equal(saved.depositAmount,500000);assert.equal(saved.billing.phone,'0912345678');assert.equal(saved.rentalMonths,1);assert.ok(saved.rentalEndsAt);assert.equal(saved.status,'PENDING');assert.equal(vm.runInContext("state.audit.some(row=>row.entity===state.orders[0].id)",c),true);
 });
 
@@ -1861,7 +1867,7 @@ test('Customer cell drafts are mirrored to localStorage and reconnecting retries
 
 test('Tạo lại đơn cho cùng SĐT dùng đúng hồ sơ của Sale được chọn, không đổi dữ liệu khách',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- vm.runInContext(`state.members=[{id:'sale1',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'sale2',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[{id:'other',name:'Khách Sale 1',phone:'0912345678',saleId:'sale1',leaderId:'lead',teamId:'T'},{id:'own',name:'Khách Sale 2',phone:'0912345678',saleId:'sale2',leaderId:'lead',teamId:'T'}];`,c);
+ vm.runInContext(`state.members=[{id:'sale1',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'sale2',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[{id:'other',name:'Khách Sale 1',phone:'0912345678',saleId:'sale1',leaderId:'lead',teamId:'T'},{id:'own',name:'Khách Sale 2',phone:'0912345678',saleId:'sale2',leaderId:'lead',teamId:'T'}];`,c);
  const input={source:'accounting-iframe',customerName:'Tên in trên đơn',phone:'+84 912345678',saleId:'sale2',productId:'p',total:5500000,amountPaid:500000,billImage:'data:image/png;base64,AA=='};
  const first=await api.createOrder(input),second=await api.createOrder({...input,customerName:'Tên trên đơn sau'});
  assert.notEqual(first.id,second.id);assert.equal(first.order.customerId,'own');assert.equal(second.order.customerId,'own');
@@ -1872,7 +1878,7 @@ test('Tạo lại đơn cho cùng SĐT dùng đúng hồ sơ của Sale được
 
 test('Trùng SĐT khác Sale hoặc data chưa phân không ngăn tạo đơn và không chuyển chủ data cũ',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- vm.runInContext(`state.members=[{id:'sale1',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'sale2',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[{id:'unassigned',name:'Data chưa phân',phone:'0912345678',saleId:null},{id:'other',name:'Khách Sale 1',phone:'0912345678',saleId:'sale1',leaderId:'lead',teamId:'T'}];`,c);
+ vm.runInContext(`state.members=[{id:'sale1',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'sale2',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[{id:'unassigned',name:'Data chưa phân',phone:'0912345678',saleId:null},{id:'other',name:'Khách Sale 1',phone:'0912345678',saleId:'sale1',leaderId:'lead',teamId:'T'}];`,c);
  const input={source:'accounting-iframe',customerName:'Khách mua',phone:'0912345678',saleId:'sale2',productId:'p',total:5500000,amountPaid:500000,billImage:'data:image/png;base64,AA=='};
  const first=await api.createOrder(input),second=await api.createOrder(input);
  assert.notEqual(first.id,second.id);assert.equal(second.order.customerId,first.customer.id);
@@ -1882,7 +1888,7 @@ test('Trùng SĐT khác Sale hoặc data chưa phân không ngăn tạo đơn v�
 });
 test('Receipt orders apply VAT independently of invoice request and support own Sale updates',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- vm.runInContext(`currentAccount={id:'sale',saleId:'sale',name:'Sale',role:'SALE',scope:'OWN',leaderId:'lead',teamId:'T'};state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
+ vm.runInContext(`currentAccount={id:'sale',saleId:'sale',name:'Sale',role:'SALE',scope:'OWN',leaderId:'lead',teamId:'T'};state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
  const result=await api.createOrder({source:'accounting-iframe',customerName:'Test',phone:'0901234567',saleId:'sale',productId:'p',subtotal:5000000,amountPaid:500000,vatRate:0,requireVat:false,cccd:'',address:'',paymentReference:'NVTTEST',billImage:'data:image/jpeg;base64,AA=='});
  assert.equal(result.order.total,5500000);assert.equal(result.order.balanceDue,5000000);assert.equal(result.order.requireVat,false);assert.equal(result.order.paymentReceipts[0].images[0].note,'Bill cọc');
  const updated=await api.updateOrderAccounting(result.id,{action:'COLLECT',amount:5000000,confirmed:true,billImage:'data:image/jpeg;base64,AA=='});
@@ -1896,7 +1902,7 @@ test('Receipt orders apply VAT independently of invoice request and support own 
 
 test('Receipt API collects multiple bills, refuses overpayment and preserves initial receipt',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- vm.runInContext(`state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
+ vm.runInContext(`state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
  const initial=await api.createOrder({source:'accounting-iframe',customerName:'Test',phone:'0901234567',saleId:'sale',productId:'p',subtotal:5000000,amountPaid:500000,paymentReference:'MULTI',billImage:'data:image/jpeg;base64,AA=='});
  const originalReceipt=JSON.stringify(initial.order.paymentReceipts[0]);
  await assert.rejects(()=>api.updateOrderAccounting(initial.id,{action:'COLLECT',amount:1000000,confirmed:true}),/bill/);
@@ -1910,7 +1916,7 @@ test('Receipt API collects multiple bills, refuses overpayment and preserves ini
 
 test('Receipt images can be replaced and added with individual notes without adding money; accounting review is separate',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- vm.runInContext(`currentAccount={id:'sale',saleId:'sale',role:'SALE',name:'Sale',scope:'OWN',leaderId:'lead',teamId:'T'};state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
+ vm.runInContext(`currentAccount={id:'sale',saleId:'sale',role:'SALE',name:'Sale',scope:'OWN',leaderId:'lead',teamId:'T'};state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
  const result=await api.createOrder({source:'accounting-iframe',customerName:'Customer',phone:'0901234567',saleId:'sale',productId:'p',subtotal:5000000,amountPaid:5500000,paymentReference:'IMAGEEDIT',billImage:'data:image/jpeg;base64,AA==',requireVat:true,taxCode:'0123456789',companyName:'Test Company'});
  const receiptId=result.order.paymentReceipts[0].id,images=require('./order-payments.js').images(result.order.paymentReceipts[0]);
  images[0].imageData='data:image/jpeg;base64,AQ==';images[0].note='Thay ảnh rõ hơn';images.push({id:'supplement',imageData:'data:image/jpeg;base64,Ag==',note:'Chi tiết giao dịch'});
@@ -1931,7 +1937,7 @@ test('Receipt images can be replaced and added with individual notes without add
 
 test('Gross order input persists exact inclusive total through create, edit and collection',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- vm.runInContext(`currentAccount={id:'sale',saleId:'sale',name:'Sale',role:'SALE',scope:'OWN',leaderId:'lead',teamId:'T'};state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
+ vm.runInContext(`currentAccount={id:'sale',saleId:'sale',name:'Sale',role:'SALE',scope:'OWN',leaderId:'lead',teamId:'T'};state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);
  const input={source:'accounting-iframe',customerName:'Test Customer',phone:'0901234567',saleId:'sale',productId:'p',total:5500006,amountPaid:500000,billImage:'data:image/jpeg;base64,AA=='};
  const created=await api.createOrder(input);assert.equal(created.order.total,5500006);assert.equal(created.order.vatAmount,500001);assert.equal(created.order.paymentReference,'Test Customer 0901234567');
  const receipt=JSON.stringify(created.order.paymentReceipts);
@@ -1944,14 +1950,24 @@ test('Invoice email, image notes and accounting settings survive storage roundtr
  const f=fixture(),p=require('./order-payments.js');
  const receipt={id:'r1',amount:5500000,kind:'FULL',at:'2026-10-03T10:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AA==',images:[{id:'i1',imageData:'data:image/png;base64,AA==',note:'Bill gốc'},{id:'i2',imageData:'data:image/png;base64,AQ==',note:'Sao kê bổ sung'}]};
  const o={...order,subtotal:5000000,vatRate:.1,vatAmount:500000,total:5500000,discount:0,amountPaid:5500000,balanceDue:0,status:'PAID',receiptsVersion:1,paymentReceipts:[receipt],billing:{email:'invoice@gmail.com',taxId:'0123456789'},taxCode:'0123456789',companyName:'Test Company',paymentReconciled:false};
- await f.api.write(admin,'invoice-accounting-roundtrip',[change('customers',customer),change('orders',o),change('expenses',{id:'expense-test',date:'2026-10-03',month:'2026-10',title:'Chi phí thử',amount:100000,category:'Marketing'}),change('courseConfigs',{id:'cfg-test',courseKey:'TEST',trainerIds:[],leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65}),change('brokerageMetrics',{id:'metric-test',memberId:'sale',leaderId:'lead',teamId:'T',period:'2026-10',basicLots:2,microLots:0,nanoLots:0,lotCommissionRate:10000,indicatorCommissionRate:0,courseCommissionRate:.1,vatRate:.1})]);
+ prepareReceiptOrder(f,o);await f.api.write(admin,'invoice-accounting-roundtrip',[change('customers',customer),change('orders',o),change('expenses',{id:'expense-test',date:'2026-10-03',month:'2026-10',title:'Chi phí thử',amount:100000,category:'Marketing'}),change('courseConfigs',{id:'cfg-test',courseKey:'TEST',trainerIds:[],leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65}),change('brokerageMetrics',{id:'metric-test',memberId:'sale',leaderId:'lead',teamId:'T',period:'2026-10',basicLots:2,microLots:0,nanoLots:0,lotCommissionRate:10000,indicatorCommissionRate:0,courseCommissionRate:.1,vatRate:.1})]);
  const restored=(await f.api.read(admin)).state,saved=restored.orders.find(r=>r.id===o.id);assert.equal(saved.billing.email,'invoice@gmail.com');assert.equal(saved.paymentReceipts[0].images[1].note,'Sao kê bổ sung');assert.equal(p.paid(saved),5500000);assert.equal(p.events(saved)[0].netAmount,5000000);assert.equal(restored.expenses[0].amount,100000);assert.equal(restored.courseConfigs[0].rateSale,15);assert.equal(restored.brokerageMetrics[0].basicLots,2);
  const projection=JSON.parse(f.db.orders.find(r=>r.id===o.id).items_json);assert.equal(projection.billing.email,'invoice@gmail.com');assert.equal(projection.paymentReceipts[0].images.length,2);
 });
 
-test('Course configuration API preserves individual commission rates through edits',async()=>{const c=referenceBridge(),api=c.window.crmApi;await api.saveCourseConfig({courseKey:'p1',trainerIds:['trainer'],leaderIds:['lead'],trainerRates:{trainer:12},leaderRates:{lead:4},saleRates:{sale:18}});let saved=vm.runInContext('state.courseConfigs.find(c=>c.courseKey==="p1")',c);assert.equal(saved.trainerRates.trainer,12);assert.equal(saved.saleRates.sale,18);await api.saveCourseConfig({courseKey:'p1',rateSale:14});saved=vm.runInContext('state.courseConfigs.find(c=>c.courseKey==="p1")',c);assert.equal(saved.saleRates.sale,18);await assert.rejects(()=>api.saveCourseConfig({courseKey:'p1',saleRates:{sale:101}}),/Tỷ lệ/);});
+test('Course configuration API preserves individual commission rates through edits',async()=>{const c=referenceBridge(),api=c.window.crmApi;await api.saveCourseConfig({courseKey:'p1',trainerIds:['trainer'],leaderIds:['lead'],trainerRates:{trainer:12},leaderRates:{lead:4},saleRates:{sale:12}});let saved=vm.runInContext('state.courseConfigs.find(c=>c.courseKey==="p1")',c);assert.equal(saved.trainerRates.trainer,12);assert.equal(saved.saleRates.sale,12);await api.saveCourseConfig({courseKey:'p1',rateSale:14});saved=vm.runInContext('state.courseConfigs.find(c=>c.courseKey==="p1")',c);assert.equal(saved.saleRates.sale,12);await assert.rejects(()=>api.saveCourseConfig({courseKey:'p1',saleRates:{sale:101}}),/Tỷ lệ/);});
 
-test('Create and collect support many bill images; deletion preserves money and can be replenished',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);const images=[{id:'i1',imageData:'data:image/png;base64,AA==',note:'Bill 1'},{id:'i2',imageData:'data:image/png;base64,AQ==',note:'Bill 2'}];const created=await api.createOrder({source:'accounting-iframe',customerName:'Test',phone:'0901234567',saleId:'sale',productId:'p',total:5500000,amountPaid:500000,images});assert.equal(created.order.paymentReceipts[0].images.length,2);const full=await api.updateOrderAccounting(created.id,{action:'COLLECT',amount:5000000,confirmed:true,images});assert.equal(full.order.paymentReceipts[1].images.length,2);const receiptId=full.order.paymentReceipts[1].id;const removed=await api.updateOrderAccounting(created.id,{action:'SAVE_RECEIPT_IMAGES',receiptId,images:[]});assert.equal(removed.order.amountPaid,5500000);assert.equal(require('./order-payments.js').images(removed.order.paymentReceipts[1]).length,0);assert.equal(removed.order.paymentReceipts[1].imageRevisions[0].images.length,2);await assert.rejects(()=>api.updateOrderAccounting(created.id,{action:'RECONCILE',confirmed:true}),/bổ sung ảnh bill/);const restored=await api.updateOrderAccounting(created.id,{action:'SAVE_RECEIPT_IMAGES',receiptId,images});assert.equal(restored.order.paymentReceipts[1].images.length,2);assert.equal(restored.order.amountPaid,5500000);});
+test('Course creation refuses absent or multiple trainers without adding an order or customer',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext("state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',role:'LEADER',active:true,teamId:'T'},{id:'trainer',role:'SALE',active:true,leaderId:'lead',teamId:'T'}];state.products=[{id:'course',name:'Course',kind:'COURSE',price:1000,active:true,type:'SALE'}];state.customers=[];state.courseConfigs=[];",c);
+ const input={source:'accounting-iframe',customerName:'Khách',phone:'0901234567',saleId:'sale',productId:'course',courseKey:'K03',total:1100,amountPaid:100,billImage:'data:image/png;base64,AA=='};
+ await assert.rejects(()=>api.createOrder(input),/đúng một người đào tạo/);assert.equal(vm.runInContext('state.orders.length',c),0);assert.equal(vm.runInContext('state.customers.length',c),0);
+ await assert.rejects(()=>api.saveCourseConfig({productId:'course',courseKey:'K03',trainerIds:['trainer','lead']}),/một người đào tạo/);
+ await api.saveCourseConfig({productId:'course',courseKey:'K03',trainerIds:['trainer']});
+ const result=await api.createOrder(input);assert.equal(result.order.commissionTrainerId,'trainer');assert.equal(result.order.commissionLeaderId,'lead');assert.equal(result.order.commissionCourseKey,'K03');
+});
+
+test('Create and collect support many bill images; deletion preserves money and can be replenished',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:5000000,active:true,type:'SALE'}];state.customers=[];`,c);const images=[{id:'i1',imageData:'data:image/png;base64,AA==',note:'Bill 1'},{id:'i2',imageData:'data:image/png;base64,AQ==',note:'Bill 2'}];const created=await api.createOrder({source:'accounting-iframe',customerName:'Test',phone:'0901234567',saleId:'sale',productId:'p',total:5500000,amountPaid:500000,images});assert.equal(created.order.paymentReceipts[0].images.length,2);const full=await api.updateOrderAccounting(created.id,{action:'COLLECT',amount:5000000,confirmed:true,images});assert.equal(full.order.paymentReceipts[1].images.length,2);const receiptId=full.order.paymentReceipts[1].id;const removed=await api.updateOrderAccounting(created.id,{action:'SAVE_RECEIPT_IMAGES',receiptId,images:[]});assert.equal(removed.order.amountPaid,5500000);assert.equal(require('./order-payments.js').images(removed.order.paymentReceipts[1]).length,0);assert.equal(removed.order.paymentReceipts[1].imageRevisions[0].images.length,2);await assert.rejects(()=>api.updateOrderAccounting(created.id,{action:'RECONCILE',confirmed:true}),/bổ sung ảnh bill/);const restored=await api.updateOrderAccounting(created.id,{action:'SAVE_RECEIPT_IMAGES',receiptId,images});assert.equal(restored.order.paymentReceipts[1].images.length,2);assert.equal(restored.order.amountPaid,5500000);});
 
 test('Accountant reads and writes the four accounting collections without changing users or private settings',async()=>{
  const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'};
@@ -1964,7 +1980,7 @@ test('Accountant reads and writes the four accounting collections without changi
  await f.api.write(actor,'acct-delete',[{key:'expenses',id:'acct-exp',base:r.versions['expenses/acct-exp'],value:null}]);assert.equal((await f.api.read(actor)).state.expenses.length,0);assert.equal(f.db.history.at(-1).changes_json[0].before.amount,100000);
 });
 test('Accounting runtime opens accounting and notifications and can manage expense, course and lot configuration',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`currentAccount={id:'accountant',name:'Kế toán',role:'ACCOUNTING',scope:'ALL'};state.members=[{id:'sale',name:'Sale',role:'SALE',active:true}];`,c);assert.deepEqual(Array.from(vm.runInContext('allowedViews()',c)),['accounting','audit','notifications','profile']);const expense=await api.saveExpense({date:'2026-10-03',title:'Office',amount:1000});await api.saveCourseConfig({courseKey:'p1'});await api.saveBrokerageMetric({memberId:'sale',period:'2026-10',basicLots:2});await api.settings({accountingLotConfig:{rateApex:90000}});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('state.courseConfigs.length',c),1);assert.equal(vm.runInContext('state.brokerageMetrics[0].basicLots',c),2);await api.removeExpense(expense.id);assert.equal(vm.runInContext('state.expenses.length',c),0);await assert.rejects(()=>api.settings({dataBotToken:'tamper'}),/Kế toán/);await assert.rejects(()=>api.saveMember(null,{}),/quyền/);});
-test('Image deletion commits to SQL projection and rereads without altering receipts or original images',async()=>{const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'},payments=require('./order-payments.js');f.db.users.push({id:'sale',name:'Sale',role:'SALE',leader_id:'lead',team_id:'T',active:1});const o={...order,subtotal:5000000,total:5500000,vatAmount:500000,discount:0,amountPaid:500000,depositAmount:500000,balanceDue:5000000,status:'DEPOSIT',receiptsVersion:1,paymentReceipts:[{id:'r',kind:'DEPOSIT',amount:500000,at:'2026-10-03T10:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AA=='}]};await f.api.write(admin,'bill-seed',[change('customers',customer),change('orders',o)]);let r=await f.api.read(actor);const next=structuredClone(r.state.orders[0]),receipt=next.paymentReceipts[0];const beforeImages=payments.images(receipt);receipt.images=[];receipt.imageRevisions=[{id:'rev',by:actor.id,at:'2026-10-03T11:00:00Z',images:beforeImages}];await f.api.write(actor,'bill-delete',[change('orders',next,r.versions['orders/o1'])]);r=await f.api.read(actor);assert.equal(payments.images(r.state.orders[0].paymentReceipts[0]).length,0);assert.equal(r.state.orders[0].amountPaid,500000);const projection=JSON.parse(f.db.orders[0].items_json);assert.equal(projection.paymentReceipts[0].images.length,0);assert.equal(projection.paymentReceipts[0].imageRevisions[0].images[0].imageData,'data:image/png;base64,AA==');});
+test('Image deletion commits to SQL projection and rereads without altering receipts or original images',async()=>{const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'},payments=require('./order-payments.js');f.db.users.push({id:'sale',name:'Sale',role:'SALE',leader_id:'lead',team_id:'T',active:1});const o={...order,subtotal:5000000,total:5500000,vatAmount:500000,discount:0,amountPaid:500000,depositAmount:500000,balanceDue:5000000,status:'DEPOSIT',receiptsVersion:1,paymentReceipts:[{id:'r',kind:'DEPOSIT',amount:500000,at:'2026-10-03T10:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AA=='}]};prepareReceiptOrder(f,o);await f.api.write(admin,'bill-seed',[change('customers',customer),change('orders',o)]);let r=await f.api.read(actor);const next=structuredClone(r.state.orders[0]),receipt=next.paymentReceipts[0];const beforeImages=payments.images(receipt);receipt.images=[];receipt.imageRevisions=[{id:'rev',by:actor.id,at:'2026-10-03T11:00:00Z',images:beforeImages}];await f.api.write(actor,'bill-delete',[change('orders',next,r.versions['orders/o1'])]);r=await f.api.read(actor);assert.equal(payments.images(r.state.orders[0].paymentReceipts[0]).length,0);assert.equal(r.state.orders[0].amountPaid,500000);const projection=JSON.parse(f.db.orders[0].items_json);assert.equal(projection.paymentReceipts[0].images.length,0);assert.equal(projection.paymentReceipts[0].imageRevisions[0].images[0].imageData,'data:image/png;base64,AA==');});
 test('Retry after server update clears old rejection and preserves pending bill edit exactly once',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`let tries=0;flushServerPersistence=async()=>{tries++;if(tries===2){serverConflict=true;serverSaveError='Máy chủ từ chối ảnh bill';return false;}return true;};resolveServerConflict=async()=>{serverConflict=false;return true;};`,c);await assert.rejects(()=>api.saveExpense({date:'2026-10-03',title:'Retry',amount:1000}),/Máy chủ từ chối ảnh bill/);await api.saveExpense({date:'2026-10-03',title:'Retry',amount:1000});assert.equal(vm.runInContext('state.expenses.length',c),1);assert.equal(vm.runInContext('serverConflict',c),false);});
 
 test('Editing expense keeps original author/date and updates report month',async()=>{const c=referenceBridge(),api=c.window.crmApi;vm.runInContext(`state.expenses=[{id:'exp',date:'2026-09-01',month:'2026-09',title:'Old',amount:1000,createdBy:'original-user',createdAt:'2026-09-01T01:00:00Z'}];currentAccount={id:'accountant',role:'ACCOUNTING',scope:'ALL'};`,c);await api.saveExpense({id:'exp',date:'2026-10-03',title:'Updated',amount:2000});const result=vm.runInContext('state.expenses[0]',c);assert.equal(result.createdBy,'original-user');assert.equal(result.createdAt,'2026-09-01T01:00:00Z');assert.equal(result.month,'2026-10');});
@@ -2073,7 +2089,7 @@ test('Product supports multiple cohort selections and SQL reload retains every s
 test('Course trainer configurations persist separately by product plus cohort for Admin and Accounting',async()=>{
  const c=referenceBridge();const api=c.window.crmApi;vm.runInContext('state.products=[{id:"p1",name:"One",kind:"COURSE"},{id:"p2",name:"Two",kind:"COURSE"}]',c);
  await api.saveCourseConfig({productId:'p1',courseKey:'K03',trainerIds:['t1'],trainerRates:{t1:10}});
- await api.saveCourseConfig({productId:'p2',courseKey:'K03',trainerIds:['t2'],trainerRates:{t2:20}});
+ await api.saveCourseConfig({productId:'p2',courseKey:'K03',trainerIds:['t2'],trainerRates:{t2:15}});
  await api.saveCourseConfig({productId:'p1',courseKey:'K01',trainerIds:['t3'],trainerRates:{t3:15}});
  let rows=JSON.parse(vm.runInContext('JSON.stringify(state.courseConfigs)',c));assert.equal(rows.length,3);
  const f=fixture();await f.api.write(admin,'product-cohort-configs',rows.map(row=>change('courseConfigs',row)));
@@ -2143,7 +2159,7 @@ test('Read-all and delete APIs await persistence and retry the same notification
 });
 test('Payment notices are generated inside the SQL transaction for deposits, new receipts and reconciliation exactly once',async()=>{
  const f=fixture(),paidOrder={...order,rentalEndsAt:null,status:'DEPOSIT',subtotal:5000000,vatAmount:500000,total:5500000,discount:0,amountPaid:500000,balanceDue:5000000,paidAt:null,receiptsVersion:1,paymentReceipts:[{id:'r1',kind:'DEPOSIT',amount:500000,at:'2026-10-07 08:00',createdBy:'admin',billImage:'data:image/png;base64,AA=='}],paymentReconciled:false};
- let result=await f.api.write(admin,'payment-notice-create',[change('customers',customer),change('orders',paidOrder)]);
+ prepareReceiptOrder(f,paidOrder);let result=await f.api.write(admin,'payment-notice-create',[change('customers',customer),change('orders',paidOrder)]);
  assert.equal(result.state.notifications.filter(n=>n.kind==='PAYMENT_REVIEW').length,1);
  result=await f.api.write(admin,'payment-notice-full',[change('orders',{...result.state.orders[0],status:'PAID',amountPaid:5500000,balanceDue:0,paidAt:'2026-10-07 09:00',paymentReceipts:[...paidOrder.paymentReceipts,{id:'r2',kind:'FULL',amount:5000000,at:'2026-10-07 09:00',createdBy:'admin',billImage:'data:image/png;base64,AA=='}]},result.versions['orders/o1'])]);
  assert.equal(result.state.notifications.filter(n=>n.kind==='PAYMENT_REVIEW').length,2);
@@ -2197,7 +2213,7 @@ test('Process titles save uppercase while content, line breaks and existing imag
 
 
 test('SQL saves identity edits from compact order snapshots and retains every original bill after reload',async()=>{
- const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});f.db.users.push({id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1});
  const receipt={id:'receipt-identity',amount:100,kind:'DEPOSIT',at:'2026-10-07T08:00:00Z',billImage:'data:image/png;base64,AA==',createdBy:'admin',images:[{id:'original',imageData:'data:image/png;base64,AQ==',note:'Bill gốc'}]};
  const o={...order,discount:0,subtotal:360,vatAmount:36,total:396,amountPaid:100,depositAmount:100,balanceDue:296,status:'DEPOSIT',receiptsVersion:1,paymentReceipts:[receipt],billImage:'',paymentReference:'Khách thử 0912345678',createdBy:'admin',paymentReconciled:false,vatIssued:false};
  await f.api.write(admin,'seed-info',[change('customers',customer),change('orders',o)]);
@@ -2211,7 +2227,7 @@ test('SQL saves identity edits from compact order snapshots and retains every or
 });
 test('Order UPDATE accepts form and billing aliases while preserving omitted contact fields',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- vm.runInContext("state.members=[{id:'sale',role:'SALE',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:1000,active:true,type:'SALE'}];state.customers=[];",c);
+ vm.runInContext("state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:1000,active:true,type:'SALE'}];state.customers=[];",c);
  const made=await api.createOrder({source:'accounting-iframe',customerName:'Khách',phone:'0901234567',saleId:'sale',productId:'p',total:1100,amountPaid:100,billImage:'data:image/png;base64,AA==',cccd:'012345678901',address:'Địa chỉ gốc',email:'original@example.test'});
  const receipts=JSON.stringify(made.order.paymentReceipts);
  const changed=await api.updateOrderAccounting(made.id,{action:'UPDATE',billing:{cccd:'098765432109',email:'new@example.test',address:'Địa chỉ mới'},saleNote:'Ghi chú'});
@@ -2222,7 +2238,7 @@ test('Order UPDATE accepts form and billing aliases while preserving omitted con
  await assert.rejects(()=>api.updateOrderAccounting(made.id,{action:'UPDATE',cccd:'123'}),/CCCD/);
 });
 test('Retrying a failed order info save applies the latest draft after confirming the prior write',async()=>{
- const c=referenceBridge(),api=c.window.crmApi;vm.runInContext("state.members=[{id:'sale',role:'SALE',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:1000,active:true,type:'SALE'}];state.customers=[];",c);
+ const c=referenceBridge(),api=c.window.crmApi;vm.runInContext("state.members=[{id:'sale',role:'SALE',active:true,leaderId:'lead',teamId:'T'},{id:'lead',name:'Leader',role:'LEADER',active:true,teamId:'T'}];state.products=[{id:'p',name:'Product',price:1000,active:true,type:'SALE'}];state.customers=[];",c);
  const made=await api.createOrder({source:'accounting-iframe',customerName:'Khách',phone:'0901234567',saleId:'sale',productId:'p',total:1100,amountPaid:100,billImage:'data:image/png;base64,AA=='});
  vm.runInContext('let attempts=0;flushServerPersistence=async()=>++attempts!==2',c);
  await assert.rejects(()=>api.updateOrderAccounting(made.id,{action:'UPDATE',cccd:'012345678901'}),/Chưa lưu/);
@@ -2232,7 +2248,7 @@ test('Retrying a failed order info save applies the latest draft after confirmin
 
 
 test('Compact and full asset snapshots share revisions and stale order edits still conflict',async()=>{
- const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ const f=fixture();f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});f.db.users.push({id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1});
  const o={...order,subtotal:360,vatAmount:36,total:396,discount:0,amountPaid:100,depositAmount:100,balanceDue:296,status:'DEPOSIT',billImage:'data:image/png;base64,AA=='};
  await f.api.write(admin,'asset-seed',[change('customers',customer),change('orders',o),change('processes',{id:'proc-revision',title:'PROCESS',content:'Content',summary:'',link:'',imageData:['data:image/png;base64,AA==']}),change('feedbacks',{id:'feedback-revision',createdAt:'2026-10-07 08:00:00',category:'COURSE',note:'Feedback',authorId:'admin',imageData:'data:image/png;base64,AQ=='})]);
  const compact=await f.api.read(admin,{passive:true}),full=await f.api.read(admin,{passive:true,full:true});
@@ -2258,10 +2274,10 @@ test('Reference product deletion preserves existing orders, requires Admin and r
 
 for(const role of ['ADMIN','ACCOUNTING'])test(role+' reconciles compact paid orders and SQL preserves all receipt assets',async()=>{
  const f=fixture(),actor={id:role==='ADMIN'?'admin':'accountant',role};
- f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});f.db.users.push({id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1});
  const receipts=[{id:'deposit-review',amount:100,kind:'DEPOSIT',at:'2026-10-08T08:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AA==',images:[{id:'deposit-image',imageData:'data:image/png;base64,AA==',note:'Deposit'}]},{id:'full-review',amount:296,kind:'FULL',at:'2026-10-08T09:00:00Z',createdBy:'admin',billImage:'data:image/png;base64,AQ==',images:[{id:'full-image',imageData:'data:image/png;base64,AQ==',note:'Balance'},{id:'extra-image',imageData:'data:image/png;base64,Ag==',note:'Statement'}]}];
  const o={...order,subtotal:360,vatAmount:36,total:396,discount:0,status:'PAID',paymentMode:'FULL',amountPaid:396,depositAmount:100,balanceDue:0,receiptsVersion:1,paymentReceipts:receipts,billImage:'',paymentReconciled:false,vatIssued:false};
- await f.api.write(admin,'review-seed',[change('customers',customer),change('orders',o)]);
+ prepareReceiptOrder(f,o);await f.api.write(admin,'review-seed',[change('customers',customer),change('orders',o)]);
  const snapshot=await f.api.read(actor,{passive:true}),compact=snapshot.state.orders[0];
  assert.equal(compact.paymentReceipts[0].images,undefined);assert.equal(compact.paymentReceipts[0].hasBill,true);assert.equal(compact.paymentReceipts[1].billCount,2);
  const c=referenceBridge();c.reviewOrder=compact;c.reviewActor=actor;
@@ -2296,7 +2312,7 @@ for(const ledger of ['legacy-order','receipt-billImage'])test('Reconciliation pr
  const bill='data:image/png;base64,AA==';
  const receipt={id:'original-payment',amount:396,kind:'FULL',at:'2026-10-09T01:00:00Z',createdBy:'admin',billImage:bill};
  const original={...order,discount:0,subtotal:360,vatAmount:36,total:396,status:'PAID',paymentMode:'FULL',amountPaid:396,balanceDue:0,depositAmount:0,billImage:ledger==='legacy-order'?bill:'',paymentReconciled:false,vatIssued:false,...(ledger==='receipt-billImage'?{receiptsVersion:1,paymentReceipts:[receipt]}:{})};
- await f.api.write(admin,'reconcile-structure-seed',[change('customers',customer),change('orders',original)]);
+ prepareReceiptOrder(f,original);await f.api.write(admin,'reconcile-structure-seed',[change('customers',customer),change('orders',original)]);
  const snapshot=await f.api.read(actor,{passive:true}),compact=snapshot.state.orders.find(o=>o.id===original.id),full=(await f.api.read(actor,{passive:true,full:true})).state.orders.find(o=>o.id===original.id);
  const before=structuredClone(compact);
  const c=referenceBridge();c.reviewOrder=compact;c.reviewActor=actor;
@@ -2317,7 +2333,7 @@ test('Reconciliation cannot use supplied proof to restore a bill deleted on the 
  const f=fixture(),actor={id:'accountant',role:'ACCOUNTING'},bill='data:image/png;base64,AA==';
  const receipt={id:'deleted-bill',amount:396,kind:'FULL',at:'2026-10-09T01:00:00Z',createdBy:'admin',billImage:bill,images:[]};
  const original={...order,discount:0,subtotal:360,vatAmount:36,total:396,status:'PAID',paymentMode:'FULL',amountPaid:396,balanceDue:0,receiptsVersion:1,paymentReceipts:[receipt],paymentReconciled:false,vatIssued:false};
- await f.api.write(admin,'reconcile-missing-seed',[change('customers',customer),change('orders',original)]);
+ prepareReceiptOrder(f,original);await f.api.write(admin,'reconcile-missing-seed',[change('customers',customer),change('orders',original)]);
  const snapshot=await f.api.read(actor,{passive:true}),c=referenceBridge();c.reviewOrder=snapshot.state.orders[0];c.reviewActor=actor;
  vm.runInContext('state.orders=[reviewOrder];currentAccount={...reviewActor,scope:"ALL"};',c);
  const result=await c.window.crmApi.updateOrderAccounting(original.id,{action:'RECONCILE',confirmed:true,receiptImages:[{id:receipt.id,images:[{id:'fake-proof',imageData:bill}]}]});
@@ -2328,7 +2344,7 @@ test('Reconciliation cannot use supplied proof to restore a bill deleted on the 
 
 test('Order changes create trusted SQL history visible to Accounting and reject forged history',async()=>{
  const f=fixture(),accounting={id:'accountant',name:'Kế toán',role:'ACCOUNTING'};
- f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});
+ f.db.users.push({id:'sale',name:'Sale',role:'SALE',team_id:'T',leader_id:'lead',active:1});f.db.users.push({id:'lead',name:'Leader',role:'LEADER',team_id:'T',active:1});
  const original={...order,total:396,discount:0,createdBy:admin.id,billImage:'data:image/png;base64,AA==',paymentReceipts:[{id:'receipt-1',amount:100,kind:'DEPOSIT',at:'2026-10-09T01:00:00Z',createdBy:admin.id,billImage:'data:image/png;base64,AA==',images:[{id:'image-1',imageData:'data:image/png;base64,AA==',note:'Ảnh gốc'}]}],receiptsVersion:1,amountPaid:100,status:'DEPOSIT',balanceDue:296};
  await f.api.write(admin,'order-audit-create',[change('customers',customer),change('orders',original)]);
  const created=(await f.api.read(accounting,{passive:true,full:true})).state.audit.filter(item=>item.source==='ORDER_SQL'&&item.orderId===order.id);
@@ -2415,4 +2431,18 @@ test('Marketing initial read does not expire offers or change existing customer 
  const before=JSON.stringify(f.db);
  await f.api.read(marketing);
  assert.equal(JSON.stringify(f.db),before);
+});
+
+
+test('Blacklist quarantine and approval roll back atomically when document writes fail',async()=>{
+ const blacklist=require('./blacklist.cjs'),f=fixture();
+ const rule=blacklist.makeRule(admin,{ip:'203.0.113.50'});
+ f.db.docs.push({collection:'blacklistIps',id:rule.id,body:rule,deleted:0});
+ const incoming={id:'WHE-BL-ATOMIC',dedupeKey:'blacklist-atomic',status:'NEW',slug:'DS-TEST',receivedAt:'2026-10-12 10:00:00',customer:{name:'Pending',phone:'0891234505',email:'',ipAddress:rule.ip}};
+ const blocked=await f.webhook.persistWebhook(incoming);assert.equal(blocked.blacklisted,true);
+ const original=structuredClone(f.db);f.fail();
+ await assert.rejects(f.webhook.persistWebhook(incoming,{acceptBlacklistId:'BL-'+incoming.id,actor:admin}),/failure/);
+ assert.deepEqual(f.db,original);
+ assert.equal(f.db.customers.length,0);
+ assert.equal(f.db.docs.find(row=>row.collection==='blacklistEntries').body.status,'PENDING');
 });

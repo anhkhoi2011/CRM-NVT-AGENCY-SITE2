@@ -19,7 +19,7 @@
   }
   return true;
  }
- function emptyMetric(member,period){return {id:'BRK-'+period+'-'+member.id,memberId:member.id,leaderId:member.role==='SALE'?(member.leaderId||member.managerId||member.id):member.id,teamId:member.teamId||'',memberRole:member.role,period,basicLots:0,miniLots:0,microLots:0,nanoLots:0,productRate:0,lotCommissionRate:0,indicatorCommissionRate:0,courseCommissionRate:0,bonus:0,vatRate:0};}
+ function emptyMetric(member,period){return {id:'BRK-'+period+'-'+member.id,memberId:member.id,leaderId:member.role==='SALE'?(member.leaderId||member.managerId||member.id):member.id,teamId:member.teamId||'',memberRole:member.role,period,basicLots:0,miniLots:0,microLots:0,nanoLots:0,productRate:15,lotCommissionRate:0,indicatorCommissionRate:0,courseCommissionRate:0,bonus:0,vatRate:0};}
  function columnKey(label){
   const raw=normalize(label).replace(/[^a-z0-9]/g,'');
   const aliases={id:'id',idtaikhoan:'accountId',accountid:'accountId',mataikhoan:'accountId',manhanvien:'accountId',employeeid:'accountId',hovaten:'name',hoten:'name',tennhanvien:'name',nhanvien:'name',name:'name',email:'email',gmail:'email',sodienthoai:'phone',sdt:'phone',phone:'phone',chucvu:'role',role:'role',team:'team',cccd:'cccd',socccd:'cccd',cmnd:'cccd',diachi:'address',diachithuongtru:'address',ngaysinh:'birthDate',nganhang:'bankName',sotaikhoan:'bankAccount',sotaikhoannganhang:'bankAccount',bankaccount:'bankAccount',hopdong:'contract',masothuecanhan:'personalTaxCode',mst:'personalTaxCode',ghichu:'note',linkdrive:'driveUrl',drive:'driveUrl',driveurl:'driveUrl',tailieu:'driveUrl'};

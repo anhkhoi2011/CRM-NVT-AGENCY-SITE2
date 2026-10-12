@@ -76,6 +76,24 @@ test('HTML runtime có version vẫn phải kiểm tra lại cache khi deploy',(
  assert.match(server,/'Cache-Control':extension==='\.html' \? 'no-cache'/);
  assert.match(html,/crm-runtime\.html\?v=[\w-]+/);
 });
+test('Tab đã mở được lưu riêng theo tài khoản, không kế thừa tab Marketing sang Admin',()=>{
+ const start=source.indexOf('  const activeTabStorageKey=');
+ const end=source.indexOf('  const tabAllowedForSnapshot=',start);
+ const values=new Map([['nvt-crm-active-tab-v1','tab-marketing'],['nvt-crm-active-tab-v1:marketing-1','tab-marketing']]);
+ const storage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)};
+ const context={ACTIVE_TAB_KEY:'nvt-crm-active-tab-v1',data:{user:{id:'admin-1',role:'ADMIN'}},sessionStorage:storage,localStorage:storage,snapshotRole:value=>value?.user?.actualRole||value?.user?.role||''};
+ vm.createContext(context);
+ const tabs=vm.runInContext(source.slice(start,end)+';({activeTabStorageKey,rememberActiveTab,savedActiveTab})',context);
+ assert.equal(tabs.savedActiveTab(),'','Admin không đọc tab Marketing cũ dùng chung');
+ context.data={user:{id:'marketing-1',role:'MARKETING'}};
+ assert.equal(tabs.savedActiveTab(),'tab-marketing','Tài khoản Marketing vẫn giữ tab của chính nó');
+ tabs.rememberActiveTab('tab-profile');
+ context.data={user:{id:'admin-1',role:'ADMIN'}};
+ tabs.rememberActiveTab('tab-customers');
+ assert.equal(tabs.savedActiveTab(),'tab-customers');
+ context.data={user:{id:'marketing-1',role:'MARKETING'}};
+ assert.equal(tabs.savedActiveTab(),'tab-profile');
+});
 test('Actions re-render immediately after save instead of waiting for the 15s poll',()=>{
  const src=require('node:fs').readFileSync('reference-crm.js','utf8');
  const body=src.slice(src.indexOf('async function run(action,done)'),src.indexOf('function project()'));
