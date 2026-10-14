@@ -45,7 +45,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261012-revenue-commission';
+const BUILD_VERSION = '20261013-webhook-designated-sales';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -229,7 +229,8 @@ const demoUsers = [
   { id: 'demo-admin', accountId: 'ADMIN-DEMO', phone: '0900000001', email: 'admin.demo@local.test', name: 'Admin Demo', role: 'ADMIN', teamId: '', leaderId: null, active: true },
   { id: 'demo-manager', accountId: 'MANAGER-DEMO', phone: '0900000004', email: 'manager.demo@local.test', name: 'Manager Demo', role: 'MANAGER', teamId: '', leaderId: null, active: true },
   { id: 'demo-leader', accountId: 'LEADER-DEMO', phone: '0900000002', email: 'leader.demo@local.test', name: 'Leader Demo', role: 'LEADER', teamId: 'DEMO', leaderId: null, managerId: 'demo-manager', active: true },
-  { id: 'demo-sale', accountId: 'SALE-DEMO', phone: '0900000003', email: 'sale.demo@local.test', name: 'Sale Demo', role: 'SALE', teamId: 'DEMO', leaderId: 'demo-leader', active: true }
+  { id: 'demo-sale', accountId: 'SALE-DEMO', phone: '0900000003', email: 'sale.demo@local.test', name: 'Sale Demo', role: 'SALE', teamId: 'DEMO', leaderId: 'demo-leader', active: true },
+  { id: 'demo-sale-2', accountId: 'SALE-DEMO-2', phone: '0900000008', email: 'sale2.demo@local.test', name: 'Sale Demo 2', role: 'SALE', teamId: 'DEMO', leaderId: 'demo-leader', active: true }
 ];
 const demoPasswords = {
   'marketing.demo@local.test': 'MarketingDemo2026!',
@@ -239,7 +240,8 @@ const demoPasswords = {
   'admin.demo@local.test': 'AdminDemo2026!',
   'manager.demo@local.test': 'ManagerDemo2026!',
   'leader.demo@local.test': 'LeaderDemo2026!',
-  'sale.demo@local.test': 'SaleDemo2026!'
+  'sale.demo@local.test': 'SaleDemo2026!',
+  'sale2.demo@local.test': 'SaleDemo2026!'
 };
 const demoSessions = new Map();
 const demoSessionActivity = new Map();
@@ -628,6 +630,10 @@ async function handleDemoApi(request, response, pathname) {
         const pending=key==='customers'&&user.role==='SALE'&&old&&demoState.dataOffers.some(o=>o.customerId===id&&o.saleId===user.id&&o.status==='PENDING');
         if(pending&&value)value={...old,saleId:user.id,saleAcceptedAt:value.saleAcceptedAt,updatedAt:value.updatedAt,status:value.status||old.status,note:value.note!==undefined?value.note:old.note};
         crmData.validate(key,value,id);crmData.authorize(user,key,old,value,demoData(next));
+        if(key==='websites'&&value){
+          if(value.designatedSalesEnabled&&value.designatedSaleIds.some(id=>!next.members.some(member=>member.id===id&&member.role==='SALE'&&member.active!==false)))throw Error('Sale chỉ định không tồn tại hoặc đã ngừng hoạt động');
+          value={...value,designatedSalesCursor:old?.designatedSalesCursor||{}};
+        }
         if(crmData.OBJECTS.includes(key)){next[key]=(user.role==='MANAGER'&&['settings','saleDistributionByLeader'].includes(key)||user.role==='ACCOUNTING'&&key==='settings')?{...next[key],...value}:value;}
         else{next[key]=(next[key]||[]).filter(r=>r.id!==id);if(value)next[key].push(value);}
       }

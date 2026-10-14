@@ -609,6 +609,11 @@ function validate(key,value,id){
  if(value===null)return;
  if(!value||typeof value!=='object'||(LISTS.includes(key)&&(Array.isArray(value)||value.id!==id)))error(400,'Bản ghi không hợp lệ');
  if(key==='hrProfiles'){try{HrProfiles.validate(value);}catch(err){error(400,err.message);}}
+ if(key==='websites'){
+  if(Object.hasOwn(value,'designatedSalesEnabled')&&typeof value.designatedSalesEnabled!=='boolean')error(400,'Tùy chọn Sale chỉ định không hợp lệ');
+  if(Object.hasOwn(value,'designatedSaleIds')&&(!Array.isArray(value.designatedSaleIds)||value.designatedSaleIds.length>10000||value.designatedSaleIds.some(id=>typeof id!=='string'||!/^[-\w.$:]{1,96}$/.test(id))))error(400,'Danh sách Sale chỉ định không hợp lệ');
+  if(value.designatedSalesEnabled&&(value.provider==='NOTIFICATION'||!value.designatedSaleIds?.length))error(400,'Vui lòng chọn ít nhất một Sale cho webhook nhận data');
+ }
  if(['members','customers','products'].includes(key)&&(typeof value.name!=='string'||!value.name.trim()||value.name.length>(key==='products'?200:160)))error(400,'Tên không hợp lệ');
  if(key==='members'&&!['ADMIN','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','MANAGER','HRM'].includes(value.role))error(400,'Chức vụ không hợp lệ');
  if(key==='members'&&Object.hasOwn(value,'accountId')&&value.accountId&&!/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(String(value.accountId)))error(400,'ID tài khoản không hợp lệ');
@@ -808,20 +813,24 @@ function automaticLeaders(data,config){
 // Kiểm tra trước trên dữ liệu đã có trong RAM để lượt lưu bình thường không phải quét lại DB khi giữ khóa.
 function automaticPending(data){
  const config=data.leaderDistribution.get('$')||{};
- if(config.enabled!==true)return false;
  const offered=new Set([...data.dataOffers.values()].filter(o=>o.status==='PENDING').map(o=>o.customerId));
- const waiting=[...data.customers.values()].some(row=>!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&!offered.has(row.id));
- return waiting&&automaticLeaders(data,config).leaders.length>0;
+ const waiting=[...data.customers.values()].filter(row=>!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&row.assignmentSource!=='WEBHOOK_DESIGNATED'&&!offered.has(row.id));
+ if(waiting.some(row=>designatedWebsite(data,row)?.designatedSaleIds?.some(id=>{const member=data.members.get(id);return member?.role==='SALE'&&member.active!==false;})))return true;
+ return config.enabled===true&&waiting.some(row=>!designatedWebsite(data,row))&&automaticLeaders(data,config).leaders.length>0;
+}
+function designatedWebsite(data,row){
+ // Manual/imported customers with the same source are not webhook intake.
+ if(!row.webhookSlug&&!row.webhookEventId)return null;
+ const website=data.websites.get(row.websiteId)||[...data.websites.values()].find(w=>w.webhookSlug&&String(w.webhookSlug).toUpperCase()===String(row.webhookSlug).toUpperCase());
+ return website?.provider!=='NOTIFICATION'&&website?.designatedSalesEnabled===true?website:null;
 }
 async function distributeAutomatic(c, data = null, options = {}) {
  data ||= await allData(c);
  const config = data.leaderDistribution.get('$') || {};
  const settings = JSON.parse(JSON.stringify(data.settings.get('$') || {}));
- if (config.enabled !== true) return 0;
  const mode = settings.assignmentMode;
- const automatic = ['EQUAL','ROUND_ROBIN','BALANCED'].includes(mode);
+ const automatic = config.enabled===true&&['EQUAL','ROUND_ROBIN','BALANCED'].includes(mode);
  const {members,leaders,saleConfigs,directSales} = automaticLeaders(data,config);
- if(!leaders.length)return 0;
  const history = [];
  const at = new Date().toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19);
  const cursor = settings.assignmentCursor ||= {leaders:0,salesByTeam:{}};
@@ -860,9 +869,34 @@ async function distributeAutomatic(c, data = null, options = {}) {
  // Chi chia hang cho Admin. Khach da vao Team (ke ca het han 24h) de Leader phan lai.
  const customerIds=Array.isArray(options.customerIds)?new Set(options.customerIds.map(String)):null;
  const waiting = [...data.customers.values()].filter(row=>(!customerIds||customerIds.has(String(row.id)))&&!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&![...data.dataOffers.values()].some(o=>o.customerId===row.id&&o.status==='PENDING'))
+  .filter(row=>row.assignmentSource!=='WEBHOOK_DESIGNATED')
   .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||''))||a.id.localeCompare(b.id));
- let count = 0;
+ let count = 0, systemCount = 0;
  for (const row of waiting) {
+  const website=designatedWebsite(data,row);
+  if(website){
+   const recipients=[...new Set(website.designatedSaleIds||[])].map(id=>members.find(p=>p.id===id&&p.role==='SALE')).filter(Boolean);
+   // Never fall back to the system round when the selected people are unavailable.
+   if(!recipients.length)continue;
+   const previous=recipients.findIndex(p=>p.id===website.designatedSalesCursor?.lastSaleId);
+   const recipient=recipients[(previous+1)%recipients.length];
+   const supervisor=members.find(p=>p.id===recipient.leaderId);
+   const leader=supervisor?.role==='LEADER'?supervisor:null;
+   const managerId=leader?.managerId||(supervisor?.role==='MANAGER'?supervisor.id:recipient.managerId)||null;
+   const leaderId=leader?.id||null,teamId=leader?.teamId||recipient.teamId||null;
+   const reason=`Webhook ${website.name||website.id} · vòng Sale chỉ định`;
+   await put('customers',row.id,{...row,leaderId,teamId,managerId,saleId:null,updatedAt:at,note:reason,assignmentSource:'WEBHOOK_DESIGNATED'});
+   const offerId='OFR-'+crypto.randomUUID();
+   await put('dataOffers',offerId,{id:offerId,customerId:row.id,saleId:recipient.id,leaderId,teamId,offeredAt:at,status:'PENDING',resolvedAt:'',source:'WEBHOOK_DESIGNATED',websiteId:website.id});
+   const assignmentId='ASN-'+crypto.randomUUID();
+   await put('assignmentHistory',assignmentId,{id:assignmentId,customerId:row.id,fromSaleId:null,fromLeaderId:null,toSaleId:null,toLeaderId:leaderId,toLeaderName:leader?.name||'',toSaleName:'',offeredSaleId:recipient.id,managerId,teamId,actorId:'SYSTEM',actor:'Hệ thống',source:'WEBHOOK_DESIGNATED',reason,at});
+   const notificationId='NT-'+crypto.randomUUID();
+   await put('notifications',notificationId,{id:notificationId,kind:'DATA_ARRIVAL',role:'OWN',saleId:recipient.id,managerId,leaderId,teamId,title:'Data mới từ webhook chỉ định',text:row.name,at,readBy:[]});
+   await put('websites',website.id,{...website,designatedSalesCursor:{lastSaleId:recipient.id,assignedCount:(Number(website.designatedSalesCursor?.assignedCount)||0)+1}});
+   count++;
+   continue;
+  }
+  if(!automatic||!leaders.length||row.assignmentSource==='WEBHOOK_DESIGNATED')continue;
   const sourceRule = (config.sourceRules || []).find(rule => {
    if (rule.active === false || !leaders.some(leader => leader.id === rule.targetLeaderId)) return false;
    const value = rule.matchType === 'WEBSITE' ? row.websiteId : rule.matchType === 'CAMPAIGN' ? row.campaign : row.source;
@@ -893,6 +927,7 @@ async function distributeAutomatic(c, data = null, options = {}) {
    const id='ASN-'+crypto.randomUUID();await put('assignmentHistory',id,{id,customerId:row.id,fromSaleId:null,fromLeaderId:null,toSaleId:next.saleId,toLeaderId:assignedLeaderId,toLeaderName:assignedLeaderId?members.find(p=>p.id===assignedLeaderId)?.name||'':'',toSaleName:direct||managerDirect?recipient.name:'',offeredSaleId:direct||managerDirect?null:recipient.id,managerId:assignedManagerId,teamId:assignedTeamId,actorId:'SYSTEM',actor:'He thong',source:'AUTO',reason:next.note,at});
    const notificationId='NT-'+crypto.randomUUID();await put('notifications',notificationId,{id:notificationId,kind:'DATA_ARRIVAL',role:managerDirect?'MANAGER':'OWN',saleId:managerDirect?null:recipient.id,managerId:assignedManagerId,leaderId:assignedLeaderId,teamId:assignedTeamId,title:'Data moi duoc phan',text:row.name,at,readBy:[]});
    count++;
+   systemCount++;
    continue;
   }
   const leader = automatic ? (sourceRule ? leaders.find(item => item.id === sourceRule.targetLeaderId) : pick(leaders,config.weights,'leaders',false)) : null;
@@ -938,10 +973,11 @@ async function distributeAutomatic(c, data = null, options = {}) {
   const notificationId='NT-'+crypto.randomUUID();
   await put('notifications',notificationId,{id:notificationId,kind:'DATA_ARRIVAL',role:managerDirect?'MANAGER':recipient?'OWN':'LEADER',saleId:managerDirect?null:recipient?.id||null,managerId:leader.directManagerBranch?leader.id:managerDirect?recipient.id:null,leaderId:assignedLeaderId,teamId:assignedTeamId,title:recipient?'Data m\u1edbi \u0111\u01b0\u1ee3c ph\u00e2n':'Kh\u00e1ch m\u1edbi trong Team',text:row.name,at,readBy:[]});
   count++;
+  systemCount++;
  }
  if (count || roundsChanged) {
   if(roundsChanged)await put('saleDistributionByLeader','$',{...saleConfigs,$:globalConfig});
-  await put('settings','$',settings);
+  if(systemCount||roundsChanged)await put('settings','$',settings);
   await c.execute('INSERT INTO crm_changes(request_id,actor_id,changes_json) VALUES (?,?,?)',['auto-'+crypto.randomUUID(),'SYSTEM',JSON.stringify(history)]);
  }
  return count || (roundsChanged?1:0);
@@ -1134,6 +1170,11 @@ async function writeLocked(user,requestId,changes,options={}){
    if(key==='members'&&old?.role==='ADMIN'&&old.active!==false&&(!value||value.role!=='ADMIN'||value.active===false)&&[...data.members.values()].filter(r=>r.role==='ADMIN'&&r.active!==false).length<=1)error(400,'Phải giữ ít nhất một Admin hoạt động');
    if(revision(old===undefined?undefined:publicValue(user,key,old,data))!==base)error(409,`Bản ghi ${key}/${id} đã được máy khác cập nhật. Xuất bản nháp rồi tải lại.`);
    authorize(user,key,key==='settings'&&old?publicValue(user,key,old,data):old,change.value,key==='customers'?data:prospective);
+   if(key==='websites'&&value){
+    if(value.designatedSalesEnabled&&value.designatedSaleIds.some(id=>{const member=data.members.get(id);return member?.role!=='SALE'||member.active===false;}))error(400,'Sale chỉ định không tồn tại hoặc đã ngừng hoạt động');
+    // The webhook transaction owns this cursor; clients cannot rewind it.
+    change.value=value={...value,designatedSalesCursor:old?.designatedSalesCursor||{}};
+   }
    if(key==='attendance'&&value&&user.role==='ADMIN'&&value.editedById){
     const date=String(value.date||''),at=String(value.at||'');
     if(!prospective.members.has(value.accountId))error(400,'Nhân viên không tồn tại');

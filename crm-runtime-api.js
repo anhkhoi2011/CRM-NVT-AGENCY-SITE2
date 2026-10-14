@@ -661,7 +661,8 @@
         if(!name||name.length>200||!sourceUrl||!domain||!provider)throw Error('Tên, URL nguồn hoặc loại webhook không hợp lệ.');
         if(state.websites.some(w=>w.id!==id&&w.sourceUrl===sourceUrl))throw Error('URL nguồn đã tồn tại.');
         const website=existing||normalizeWebsiteRecord({id:makeRecordId('WEB'),name,sourceUrl,provider,webhookSlug:generateWebhookSlug()});
-        Object.assign(website,{name,sourceUrl,domain,provider});
+        const routing=websiteSaleRouting({...input,provider},website);
+        Object.assign(website,{name,sourceUrl,domain,provider},routing);
         if(!existing)state.websites.unshift(website);
         audit(existing?'UPDATE_SOURCE_URL':'CREATE_WEBSITE',website.id,sourceUrl);return {id:website.id};
       },'website:'+ (id||'new'));
@@ -780,7 +781,8 @@
         if(state.websites.some(w=>w.id!==id&&w.webhookSlug?.toUpperCase()===slug.toUpperCase()))throw Error('Mã webhook đã thuộc website khác.');
         if(override&&!cleanWebhookOverride(override))throw Error('URL ghi đè phải dùng HTTPS.');
         if(base&&!/^https?:\/\/[^\s]+$/.test(base))throw Error('Domain công khai không hợp lệ.');
-        w.webhookSlug=slug;w.webhookUrlOverride=cleanWebhookOverride(override);state.settings.webhookPublicBase=cleanWebhookBase(base,DEFAULT_WEBHOOK_BASE);audit('UPDATE_WEBHOOK',id,w.domain);return {id};
+        const routing=websiteSaleRouting({...input,provider:w.provider},w);
+        Object.assign(w,routing);w.webhookSlug=slug;w.webhookUrlOverride=cleanWebhookOverride(override);state.settings.webhookPublicBase=cleanWebhookBase(base,DEFAULT_WEBHOOK_BASE);audit('UPDATE_WEBHOOK',id,w.domain);return {id};
       },'webhook:'+id);
     },
     async settings(input) { requireRole(['ADMIN','ACCOUNTING']);if(permissionRole()==='ACCOUNTING'&&Object.keys(input||{}).some(key=>!['accountingLotConfig','brokeragePublishedPeriods'].includes(key)))throw Error('Kế toán chỉ được sửa cấu hình kế toán và hoa hồng.'); return persist(()=>{state.settings={...state.settings,...input};return {ok:true};},'settings'); },

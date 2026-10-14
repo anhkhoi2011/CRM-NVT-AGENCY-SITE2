@@ -459,6 +459,9 @@ function normalizeWebsiteRecord(item) {
     sourceUrl: cleanSourceUrl(item.sourceUrl) || (cleanText(item.domain, '', 253) ? `https://${cleanText(item.domain, '', 253).replace(/^https?:\/\//, '').replace(/\/+$/, '')}/` : ''),
     status: item.status === 'ACTIVE' && connectionStatus === 'VERIFIED' ? 'ACTIVE' : 'PAUSED',
     provider: ['LANDING_API', 'NOTIFICATION'].includes(item.provider) ? item.provider : 'LANDING_API',
+    designatedSalesEnabled: item.provider !== 'NOTIFICATION' && item.designatedSalesEnabled === true,
+    designatedSaleIds: Array.isArray(item.designatedSaleIds) ? [...new Set(item.designatedSaleIds.map(String))] : [],
+    designatedSalesCursor: item.designatedSalesCursor || {},
     endpoint: cleanText(item.endpoint, '', 500),
     externalAccountId: cleanText(item.externalAccountId, '', 160),
     campaignId: cleanText(item.campaignId, '', 160),
@@ -717,6 +720,7 @@ function webhookIngestFields(item, website) {
     email: item.email,
     ipAddress: item.ipAddress || item.ip || '',
     websiteId: website.id,
+    webhookSlug: website.webhookSlug,
     source: 'Landing Page',
     campaign: website.campaignId || 'UNATTRIBUTED',
     landingPageName: website.name,
@@ -2876,21 +2880,14 @@ function reportsView() {
 function websitesView() {
   if (currentAccount.role !== 'ADMIN') return accessDeniedView('Chỉ Admin được quản lý website và landing page.');
   const newData = state.customers.filter(customer => !customer.saleId && !customer.leaderId && !customer.teamId).length;
-  const statusLabel = {
-    UNCONFIGURED: ['Chưa cấu hình', 'pending'],
-    PENDING_BACKEND: ['Chờ backend', 'info'],
-    VERIFIED: ['Đã xác minh', 'paid'],
-    ERROR: ['Lỗi kết nối', 'cancelled']
-  };
   const providerLabel = { LANDING_API: 'Landing API', NOTIFICATION: 'Thông Báo' };
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const cards = state.websites.map(website => {
     const customers = websiteCustomerRows(website.id);
     const todayCount = customers.filter(customer => String(customer.createdAt || '').slice(0, 10) === today).length;
     const fresh = customers.filter(customer => !customer.saleId && !customer.leaderId && !customer.teamId).length;
-    const connection = statusLabel[website.connectionStatus] || statusLabel.UNCONFIGURED;
     return `<article class="info-card integration-card">
-      <div class="info-card-top"><div><h3>${escapeHtml(website.name)}</h3><div class="cell-sub">${escapeHtml(website.domain)} · ${escapeHtml(providerLabel[website.provider] || website.provider)}</div><div class="cell-sub mono">URL nguồn: ${website.sourceUrl ? `<a href="${escapeHtml(website.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(website.sourceUrl)}</a>` : 'Chưa cấu hình'}</div></div><span class="status status-${connection[1]}">${connection[0]}</span></div>
+      <div class="info-card-top"><div><h3>${escapeHtml(website.name)}</h3><div class="cell-sub">${escapeHtml(website.domain)} · ${escapeHtml(providerLabel[website.provider] || website.provider)}</div><div class="cell-sub mono">URL nguồn: ${website.sourceUrl ? `<a href="${escapeHtml(website.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(website.sourceUrl)}</a>` : 'Chưa cấu hình'}</div></div></div>
       <p>${number(fresh)} data mới · ${number(customers.length - fresh)} đã phân công</p>
       <div class="stat-row"><div><small>Data hôm nay</small><b>${number(todayCount)}</b></div><div><small>Data tổng</small><b>${number(customers.length)}</b></div></div>
       <div class="connection-actions"><button class="button button-small" type="button" data-edit-source="${escapeHtml(website.id)}">Sửa URL nguồn</button><button class="button button-small button-danger" type="button" data-delete-website="${escapeHtml(website.id)}">Xóa website</button></div>
@@ -4316,6 +4313,7 @@ function ingestCustomer(record, context = {}) {
     landingPageDomain: cleanText(record.landingPageDomain || website?.domain || '', website?.domain || '', 253),
     productName: cleanText(record.productName || record.product || record.sanpham, 'Chưa xác định sản phẩm', 200),
     websiteId: website?.id || null,
+    webhookSlug: cleanWebhookSlug(record.webhookSlug) || null,
     manualEntry: context.intakeType === 'MANUAL',
     status: Object.hasOwn(STATUS_META, record.status) ? record.status : 'NEW',
     saleId: null,
@@ -4841,6 +4839,10 @@ function applyCustomerAssignment(customer, target, reason, source = 'MANUAL', di
 
 function autoAssignCustomer(customer) {
   if (!customer || customer.saleId || state.dataOffers.some(o => o.customerId === customer.id && o.status === 'PENDING')) return false;
+  // The webhook server advances its own cursor atomically; the browser must
+  // not consume a system turn for this intake, including pending source fixes.
+  if (customer.webhookSlug && websiteById(customer.websiteId)?.designatedSalesEnabled) return false;
+  if (customer.assignmentSource === 'WEBHOOK_DESIGNATED') return false;
   if (!customer.leaderId && !state.leaderDistribution.enabled) return false;
   const mode = assignmentModeFor(customer);
   const target = chooseAssignmentTarget(customer, mode);
@@ -5040,6 +5042,14 @@ function revokeCustomer(id) {
   recordAssignmentChange(customer, previous, customer.note);
   audit('REVOKE_CUSTOMER', customer.id, customer.note);
   saveState(); closeDrawer(); render(); toast('Đã thu hồi khách về Khách mới');
+}
+
+function websiteSaleRouting(input, existing = {}) {
+  if (!Object.hasOwn(input, 'designatedSalesEnabled')) return {};
+  const enabled = input.provider !== 'NOTIFICATION' && input.designatedSalesEnabled === true;
+  const ids = [...new Set(Array.isArray(input.designatedSaleIds) ? input.designatedSaleIds.map(String) : [])];
+  if (enabled && (!ids.length || ids.some(id => !state.members.some(p => p.id === id && p.role === 'SALE' && p.active !== false)))) throw Error('Vui lòng chọn ít nhất một Sale đang hoạt động.');
+  return { designatedSalesEnabled: enabled, designatedSaleIds: enabled ? ids : [], designatedSalesCursor: existing.designatedSalesCursor || {} };
 }
 
 function newWebsiteModal() {

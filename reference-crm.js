@@ -856,9 +856,46 @@
     qa('#carePanelsContainer > div').slice(4).forEach((panel,i)=>{const group=data.careGroups[i];if(!group)return;const bar=panel.firstElementChild.lastElementChild;addCareAdminControls(bar,group,i);panel.firstElementChild.style.borderLeft='4px solid '+validColor(group.color);});
   }
   const websiteCard=q('#tab-websites input[readonly]')?.closest('.widget-box'),websiteTemplate=websiteCard?.cloneNode(true),websiteContainer=websiteCard?.parentElement;
+  function websiteSalePicker(w){
+    const ids=new Set(w.designatedSaleIds||[]),sales=data.members.filter(p=>p.role==='SALE').sort((a,b)=>(a.name||'').localeCompare(b.name||'','vi'));
+    const options=sales.map(p=>`<label class="webhook-sale-option" data-sale-search="${esc([p.name,p.accountId,p.teamId,p.phone].filter(Boolean).join(' ').toLocaleLowerCase('vi'))}"><input type="checkbox" data-webhook-sale="${esc(p.id)}" ${ids.has(p.id)?'checked':''} ${p.active===false?'disabled':''}><span><b>${esc(p.name)}</b><small>${esc([p.accountId||p.id,p.teamId,p.active===false?'Ngừng hoạt động':null].filter(Boolean).join(' · '))}</small></span></label>`).join('');
+    return `<section class="webhook-sale-routing">
+      <div class="webhook-routing-head"><b>Cách chia data</b><small>Chọn cách phân data đến từ link webhook này.</small></div>
+      <div id="refRoutingState" class="webhook-route-state ${w.designatedSalesEnabled?'is-designated':''}"></div>
+      <label class="webhook-route-toggle"><input id="refDesignatedSales" type="checkbox" ${w.designatedSalesEnabled?'checked':''}><span class="webhook-route-switch" aria-hidden="true"></span><span class="webhook-route-toggle-text"><b>Chia đều cho Sale được chọn</b></span></label>
+      <div id="refDesignatedSalePanel" ${w.designatedSalesEnabled?'':'hidden'}>
+        <input id="refSaleSearch" type="search" placeholder="Tìm Sale theo tên, mã hoặc team…" aria-label="Tìm Sale">
+        <div class="webhook-sale-toolbar"><span id="refSaleSelectedCount"></span><button type="button" class="btn-action btn-secondary" id="refSelectAllSales">Chọn tất cả</button></div>
+        <div class="webhook-sale-list">${options||'<p class="webhook-routing-hint">Chưa có Sale trong hệ thống. Thêm Sale tại mục Đội ngũ.</p>'}</div>
+        <p id="refSaleSearchEmpty" class="webhook-routing-hint" hidden>Không tìm thấy Sale phù hợp.</p>
+      </div>
+    </section>`;
+  }
+  function bindWebsiteSalePicker(modal,provider){
+    const toggle=modal.querySelector('#refDesignatedSales'),panel=modal.querySelector('#refDesignatedSalePanel'),state=modal.querySelector('#refRoutingState');
+    const controls=()=>[...modal.querySelectorAll('[data-webhook-sale]')];
+    const selected=()=>controls().filter(p=>p.checked&&!p.disabled).length;
+    const render=()=>{
+      const n=selected();
+      modal.querySelector('#refSaleSelectedCount').textContent=`Đã chọn ${n} Sale`;
+      const on=toggle.checked;
+      state.classList.toggle('is-designated',on);
+      state.innerHTML=on
+        ?`<span class="webhook-route-dot"></span><div><b>Chia đều · ${n} Sale</b></div>`
+        :`<span class="webhook-route-dot"></span><div><b>Vòng tỷ trọng hệ thống</b></div>`;
+    };
+    const update=()=>{const notification=provider?.value==='NOTIFICATION';toggle.closest('section').hidden=notification;panel.hidden=!toggle.checked;render();};
+    toggle.onchange=update;if(provider)provider.addEventListener('change',update);
+    controls().forEach(p=>p.onchange=render);
+    modal.querySelector('#refSelectAllSales').onclick=()=>{const inputs=controls().filter(p=>!p.disabled&&!p.closest('label').hidden),all=inputs.length&&inputs.every(p=>p.checked);inputs.forEach(p=>p.checked=!all);render();};
+    modal.querySelector('#refSaleSearch').oninput=e=>{const term=e.target.value.trim().toLocaleLowerCase('vi');controls().forEach(p=>p.closest('label').hidden=!p.closest('label').dataset.saleSearch.includes(term));modal.querySelector('#refSaleSearchEmpty').hidden=controls().some(p=>!p.closest('label').hidden);};
+    update();
+  }
+  function websiteSalePickerValue(){return {designatedSalesEnabled:q('#refDesignatedSales').checked,designatedSaleIds:qa('[data-webhook-sale]').filter(p=>p.checked&&!p.disabled).map(p=>p.dataset.webhookSale)};}
   function websiteEditor(id=null) {
     if(data.user.role!=='ADMIN')return;const w=data.websites.find(w=>w.id===id)||{name:'',sourceUrl:'',provider:'LANDING_API'};
-    editor(id?'Sửa website / landing page':'Thêm website / landing page',formField('Tên tài sản',`<input id="refWebsiteName" required maxlength="200" value="${esc(w.name)}">`)+formField('URL nguồn / Landing page',`<input id="refWebsiteUrl" type="url" required maxlength="500" placeholder="https://www.hoangphucacademy.vn/" value="${esc(w.sourceUrl)}">`)+formField('Nguồn nhận data',`<select id="refWebsiteProvider">${Object.entries({LANDING_API:'Landing API',NOTIFICATION:'Thông Báo'}).map(([k,v])=>opt(k,v,w.provider)).join('')}</select>`),()=>api.saveWebsite(id,{name:q('#refWebsiteName').value,sourceUrl:q('#refWebsiteUrl').value,provider:q('#refWebsiteProvider').value}));
+    const modal=editor(id?'Sửa website / landing page':'Thêm website / landing page',formField('Tên tài sản',`<input id="refWebsiteName" required maxlength="200" value="${esc(w.name)}">`)+formField('URL nguồn / Landing page',`<input id="refWebsiteUrl" type="url" required maxlength="500" placeholder="https://www.hoangphucacademy.vn/" value="${esc(w.sourceUrl)}">`)+formField('Nguồn nhận data',`<select id="refWebsiteProvider">${Object.entries({LANDING_API:'Landing API',NOTIFICATION:'Thông Báo'}).map(([k,v])=>opt(k,v,w.provider)).join('')}</select>`)+websiteSalePicker(w),()=>api.saveWebsite(id,{name:q('#refWebsiteName').value,sourceUrl:q('#refWebsiteUrl').value,provider:q('#refWebsiteProvider').value,...websiteSalePickerValue()}));
+    bindWebsiteSalePicker(modal,q('#refWebsiteProvider'));
   }
   function pendingSources() {
     const items=data.webhookPending||[];
@@ -870,7 +907,8 @@
     const sourceFilter=q('#funnelLpSelect'),previous=sourceFilter?.value;if(sourceFilter){sourceFilter.innerHTML=opt('all','Tất cả Landing page',previous)+data.websites.map(w=>opt(w.id,w.name,previous)).join('');renderFunnelChart();}
     data.websites.forEach(w=>{const card=websiteTemplate.cloneNode(true),pool=data.customers.filter(c=>c.websiteId===w.id);card.dataset.websiteId=w.id;
       card.querySelector('b').textContent=w.name;const details=card.firstElementChild.firstElementChild.lastElementChild;details.textContent=w.sourceUrl+' · '+w.provider;details.style.overflowWrap='anywhere';
-      const chip=card.querySelector('.chip');chip.textContent={UNCONFIGURED:'Chưa cấu hình',PENDING_BACKEND:'Chờ backend',VERIFIED:'Đã xác minh',ERROR:'Lỗi kết nối'}[w.connectionStatus]||'Chưa cấu hình';
+      card.querySelector('.chip')?.remove();
+      if(w.provider!=='NOTIFICATION'){const routing=document.createElement('div');routing.className='webhook-routing-summary'+(w.designatedSalesEnabled?' is-designated':'');routing.textContent=w.designatedSalesEnabled?'Chia đều · '+(w.designatedSaleIds||[]).map(id=>data.members.find(p=>p.id===id)?.name||id).join(', '):'Vòng tỷ trọng hệ thống';details.after(routing);}
       card.children[1].querySelectorAll('b').forEach((n,i)=>n.textContent=i?pool.length:pool.filter(c=>c.createdAt?.slice(0,10)===data.today).length);
       const remove=card.querySelector('button');remove.removeAttribute('onclick');remove.disabled=data.user.role!=='ADMIN';remove.onclick=()=>{if(confirm('Xóa website chưa có dữ liệu này?'))run(()=>api.removeWebsite(w.id));};
       const edit=remove.cloneNode(true);edit.textContent='Sửa website / URL';edit.style.color='var(--text-main)';edit.style.marginRight='8px';edit.onclick=()=>websiteEditor(w.id);remove.before(edit);const config=edit.cloneNode(true);config.textContent='Cấu hình webhook';config.onclick=()=>webhookEditor(w.id);remove.before(config);
@@ -2228,7 +2266,7 @@
     qa('[data-notice-read]').forEach(button=>button.onclick=()=>run(()=>api.readNotice(button.dataset.noticeRead)));
     qa('[data-notice-delete]').forEach(button=>button.onclick=()=>run(()=>api.deleteNotice(button.dataset.noticeDelete)));
   }
-  function webhookEditor(id){const w=data.websites.find(w=>w.id===id);const modal=editor('Cấu hình URL webhook',formField('Mã webhook (slug)',`<input id="refWebhookSlug" required maxlength="60" value="${esc(w.webhookSlug)}">`)+formField('URL công khai ghi đè (HTTPS, tùy chọn)',`<input id="refWebhookOverride" type="url" value="${esc(w.webhookUrlOverride||'')}">`)+formField('Domain công khai dùng chung',`<input id="refWebhookBase" type="url" value="${esc(data.settings.webhookPublicBase||'')}">`)+`<button type="button" id="refGenerateWebhook" class="btn-action btn-secondary">Tạo mã mới</button>`,()=>api.saveWebhook(id,{slug:q('#refWebhookSlug').value,override:q('#refWebhookOverride').value,base:q('#refWebhookBase').value}));q('#refGenerateWebhook').onclick=()=>{q('#refWebhookSlug').value=api.newWebhookSlug();q('#refWebhookOverride').value='';};}
+  function webhookEditor(id){const w=data.websites.find(w=>w.id===id);const modal=editor('Cấu hình URL webhook',formField('Mã webhook (slug)',`<input id="refWebhookSlug" required maxlength="60" value="${esc(w.webhookSlug)}">`)+formField('URL công khai ghi đè (HTTPS, tùy chọn)',`<input id="refWebhookOverride" type="url" value="${esc(w.webhookUrlOverride||'')}">`)+formField('Domain công khai dùng chung',`<input id="refWebhookBase" type="url" value="${esc(data.settings.webhookPublicBase||'')}">`)+`<button type="button" id="refGenerateWebhook" class="btn-action btn-secondary">Tạo mã mới</button>`+(w.provider!=='NOTIFICATION'?websiteSalePicker(w):''),()=>api.saveWebhook(id,{slug:q('#refWebhookSlug').value,override:q('#refWebhookOverride').value,base:q('#refWebhookBase').value,...(w.provider!=='NOTIFICATION'?websiteSalePickerValue():{})}));if(w.provider!=='NOTIFICATION')bindWebsiteSalePicker(modal);q('#refGenerateWebhook').onclick=()=>{q('#refWebhookSlug').value=api.newWebhookSlug();q('#refWebhookOverride').value='';};}
   // Dùng form nghiệp vụ hiện có, trình bày bằng thành phần của mẫu mới.
   let workflowModal=null,workflowPairs=[],workflowMarkup='',workflowBusy=false;
   function styleWorkflow(root){

@@ -19,6 +19,7 @@ function fixture(){
   if(sql.startsWith('INSERT INTO webhook_events')){if(!db.webhookEvents.some(e=>e.dedupe===v[1]))db.webhookEvents.push({id:v[0],dedupe:v[1]});return [{}];}
   if(sql.includes('FROM webhook_events WHERE dedupe_key'))return [db.webhookEvents.filter(e=>e.dedupe===v[0])];
   if(sql.includes("FROM crm_documents WHERE collection='websites'"))return [db.docs.filter(d=>d.collection==='websites'&&!d.deleted)];
+  if(sql.includes("FROM crm_documents WHERE collection='dataOffers'"))return [db.docs.filter(d=>d.collection==='dataOffers'&&!d.deleted)];
   if(sql.startsWith('SELECT id, body FROM crm_documents WHERE collection=?'))return [structuredClone(db.docs.filter(d=>d.collection===v[0]&&!d.deleted))];
   if(sql.startsWith("SELECT body FROM crm_documents WHERE collection='blacklistEntries'"))return [structuredClone(db.docs.filter(d=>d.collection==='blacklistEntries'&&d.id===v[0]&&!d.deleted))];
   if(sql.startsWith('SELECT id, name, phone, email, sale_id, leader_id, team_id, status FROM customers'))return [db.customers.filter(row=>v.includes(row.phone)||(!row.email?false:v.includes(row.email)) )];
@@ -564,6 +565,66 @@ function landingRecord(n) {return {id:'WHE-'+n,dedupeKey:'dedupe-'+n,status:'NEW
 function recipientCounts(snapshot) {
  return Object.fromEntries(['lead','s1','s2','s3','s4'].map(id=>[id,snapshot.state.customers.filter(c=>c.saleId===id).length+snapshot.state.dataOffers.filter(o=>o.saleId===id&&o.status==='PENDING').length]));
 }
+
+async function addDesignatedWebsite(f,id='WEB-DESIGNATED',slug='DS-DESIGNATED',ids=['s2','s4']){
+ await f.api.write(admin,'website-'+id,[change('websites',{id,name:'Webhook chỉ định',provider:'LANDING_API',sourceUrl:'https://example.test/'+id,webhookSlug:slug,designatedSalesEnabled:true,designatedSaleIds:ids})]);
+ return n=>({...landingRecord(n),slug});
+}
+test('Designated webhook alternates only selected sales and never advances the system weighted round',async()=>{
+ const f=await automaticFixture('BALANCED',2),record=await addDesignatedWebsite(f);
+ const before=(await f.api.read(admin)).state.settings.assignmentCursor;
+ for(let i=901;i<907;i++)await f.webhook.persistWebhook(record(i));
+ let snapshot=await f.api.read(admin);
+ assert.deepEqual(recipientCounts(snapshot),{lead:0,s1:0,s2:3,s3:0,s4:3});
+ assert.deepEqual(snapshot.state.settings.assignmentCursor,before);
+ assert.equal(snapshot.state.websites[0].designatedSalesCursor.assignedCount,6);
+ const cursor=structuredClone(snapshot.state.websites[0].designatedSalesCursor);
+ await f.webhook.persistWebhook(record(901));
+ assert.deepEqual((await f.api.read(admin)).state.websites[0].designatedSalesCursor,cursor);
+ await f.webhook.persistWebhook({...record(910),customer:record(901).customer});
+ snapshot=await f.api.read(admin);assert.deepEqual(snapshot.state.websites[0].designatedSalesCursor,cursor);
+ await f.webhook.persistWebhook(landingRecord(911));
+ snapshot=await f.api.read(admin);assert.equal(snapshot.state.customers.find(c=>c.id==='CUS-WHE-911').saleId,'lead');
+});
+test('Each webhook owns an independent round and designated routing works with system distribution disabled',async()=>{
+ const f=await automaticFixture(),a=await addDesignatedWebsite(f),b=await addDesignatedWebsite(f,'WEB-B','DS-B');
+ let snapshot=await f.api.read(admin);
+ await f.api.write(admin,'disable-system-designated',[
+  {key:'leaderDistribution',id:'$',base:snapshot.versions['leaderDistribution/$'],value:{...snapshot.state.leaderDistribution,enabled:false,enabledLeaderIds:[]}},
+  {key:'settings',id:'$',base:snapshot.versions['settings/$'],value:{...snapshot.state.settings,assignmentMode:'MANUAL'}}
+ ]);
+ for(const record of [a(921),a(922),b(923)])await f.webhook.persistWebhook(record);
+ snapshot=await f.api.read(admin);assert.deepEqual(recipientCounts(snapshot),{lead:0,s1:0,s2:2,s3:0,s4:1});
+ assert.equal(snapshot.state.websites.find(w=>w.id==='WEB-B').designatedSalesCursor.lastSaleId,'s2');
+ await f.webhook.persistWebhook(landingRecord(924));snapshot=await f.api.read(admin);
+ assert.equal(snapshot.state.dataOffers.some(o=>o.customerId==='CUS-WHE-924'),false);
+});
+test('Turning off designated sales restores the original system round; changing recipients keeps the webhook cursor',async()=>{
+ const f=await automaticFixture(),record=await addDesignatedWebsite(f);await f.webhook.persistWebhook(record(931));
+ let snapshot=await f.api.read(admin),website=snapshot.state.websites[0];
+ await f.api.write(admin,'edit-designated-list',[{key:'websites',id:website.id,base:snapshot.versions['websites/'+website.id],value:{...website,designatedSaleIds:['s2','s3','s4'],designatedSalesCursor:{lastSaleId:'s4',assignedCount:0}}}]);
+ await f.webhook.persistWebhook(record(932));snapshot=await f.api.read(admin);website=snapshot.state.websites[0];
+ assert.equal(website.designatedSalesCursor.lastSaleId,'s3');assert.equal(website.designatedSalesCursor.assignedCount,2);
+ await f.api.write(admin,'off-designated',[{key:'websites',id:website.id,base:snapshot.versions['websites/'+website.id],value:{...website,designatedSalesEnabled:false,designatedSaleIds:[]}}]);
+ await f.webhook.persistWebhook(record(933));snapshot=await f.api.read(admin);
+ assert.equal(snapshot.state.customers.find(c=>c.id==='CUS-WHE-933').saleId,'lead');
+ assert.equal(snapshot.state.websites[0].designatedSalesCursor.assignedCount,2);
+});
+test('Unavailable designated sales keep data queued without leaking into the system round; routing resumes when available',async()=>{
+ const f=await automaticFixture(),record=await addDesignatedWebsite(f);
+ for(const member of f.db.users.filter(p=>['s2','s4'].includes(p.id)))member.active=0;
+ await f.webhook.persistWebhook(record(941));let snapshot=await f.api.read(admin);
+ assert.equal(snapshot.state.dataOffers.length,0);assert.equal(snapshot.state.customers[0].leaderId,null);
+ f.db.users.find(p=>p.id==='s4').active=1;snapshot=await f.api.read(admin);
+ assert.equal(snapshot.state.dataOffers[0].saleId,'s4');assert.equal(snapshot.state.websites[0].designatedSalesCursor.assignedCount,1);
+});
+test('Designated routing rejects empty or non-sale selections and rolls back allocation failures',async()=>{
+ const f=await automaticFixture();
+ await assert.rejects(()=>addDesignatedWebsite(f,'INVALID-EMPTY','DS-EMPTY',[]),/chọn ít nhất/);
+ await assert.rejects(()=>addDesignatedWebsite(f,'INVALID-ROLE','DS-ROLE',['lead']),/Sale chỉ định/);
+ const record=await addDesignatedWebsite(f),before=structuredClone(f.db);f.fail();
+ await assert.rejects(()=>f.webhook.persistWebhook(record(951)),/failure/);assert.deepEqual(f.db,before);
+});
 test('Actual webhook routes and commits without an Admin browser; replay preserves assignment and cursor',async()=>{
  const f=await automaticFixture();
  for(let i=0;i<10;i++)await f.webhook.persistWebhook(landingRecord(i));
@@ -785,6 +846,25 @@ test('Reference product retry returns original ID without duplicate products',as
 });
 
 function referenceBridge(){const c=frontend();vm.runInContext(fs.readFileSync('crm-runtime-api.js','utf8'),c);vm.runInContext(`currentAccount={id:'admin',name:'Admin',role:'ADMIN',scope:'ALL'};serverStateLoaded=true;state=initialState();state.websites=[];flushServerPersistence=async()=>true;`,c);return c;}
+
+test('Website and webhook editors validate designated recipients and retain routing after snapshot reload',async()=>{
+ const c=referenceBridge();vm.runInContext("state.members=[{id:'sale-a',name:'Sale A',role:'SALE',active:true},{id:'sale-b',name:'Sale B',role:'SALE',active:true},{id:'lead',name:'Leader',role:'LEADER',active:true}];",c);
+ const input={name:'Landing riêng',sourceUrl:'https://example.test/designated',provider:'LANDING_API',designatedSalesEnabled:true,designatedSaleIds:[]};
+ await assert.rejects(()=>c.window.crmApi.saveWebsite(null,input),/chọn ít nhất/);
+ assert.equal(vm.runInContext('state.websites.length',c),0);
+ await assert.rejects(()=>c.window.crmApi.saveWebsite(null,{...input,designatedSaleIds:['lead']}),/Sale đang hoạt động/);
+ const {id}=await c.window.crmApi.saveWebsite(null,{...input,designatedSaleIds:['sale-a','sale-b','sale-a']});
+ let website=vm.runInContext('state.websites[0]',c);assert.deepEqual(Array.from(website.designatedSaleIds),['sale-a','sale-b']);
+ const reload=c.normalizeWebsiteRecord({...website,designatedSalesCursor:{lastSaleId:'sale-a',assignedCount:3}});
+ assert.equal(reload.designatedSalesEnabled,true);assert.equal(reload.designatedSalesCursor.assignedCount,3);
+ vm.runInContext("state.websites[0].designatedSalesCursor={lastSaleId:'sale-a',assignedCount:3}",c);
+ await c.window.crmApi.saveWebhook(id,{slug:website.webhookSlug,override:'',base:'http://localhost:4173',designatedSalesEnabled:false,designatedSaleIds:[]});
+ website=vm.runInContext('state.websites[0]',c);assert.equal(website.designatedSalesEnabled,false);assert.equal(website.designatedSalesCursor.assignedCount,3);
+ await c.window.crmApi.saveWebsite(id,{...input,provider:'NOTIFICATION',designatedSaleIds:['sale-a']});
+ assert.equal(vm.runInContext('state.websites[0].designatedSalesEnabled',c),false);
+ vm.runInContext("currentAccount={id:'sale-a',role:'SALE'}",c);
+ await assert.rejects(()=>c.window.crmApi.saveWebsite(id,input),/không có quyền/);
+});
 test('Reference care reorder persists for Admin and denies non-admin',async()=>{
  const c=frontend();vm.runInContext(fs.readFileSync('crm-runtime-api.js','utf8'),c);
  vm.runInContext(`currentAccount={id:'admin',role:'ADMIN'};serverStateLoaded=true;state=initialState();state.careGroups=[{id:'a',name:'A',fieldId:'customerClass',values:['Premium']},{id:'b',name:'B',fieldId:'customerClass',values:['Whale']}];flushServerPersistence=async()=>true;`,c);
