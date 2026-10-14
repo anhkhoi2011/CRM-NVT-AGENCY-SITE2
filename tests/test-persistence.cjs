@@ -618,10 +618,30 @@ test('Unavailable designated sales keep data queued without leaking into the sys
  f.db.users.find(p=>p.id==='s4').active=1;snapshot=await f.api.read(admin);
  assert.equal(snapshot.state.dataOffers[0].saleId,'s4');assert.equal(snapshot.state.websites[0].designatedSalesCursor.assignedCount,1);
 });
+test('Designated webhook assigns Manager and Leader directly without offers while Sale still gets an offer',async()=>{
+ const f=await automaticFixture();
+ f.db.users.push({id:'mgr',name:'Manager',role:'MANAGER',team_id:'M',active:1});
+ const record=await addDesignatedWebsite(f,'WEB-MIXED','DS-MIXED',['s1','lead','mgr']);
+ await f.webhook.persistWebhook(record(951));
+ await f.webhook.persistWebhook(record(952));
+ await f.webhook.persistWebhook(record(953));
+ const snapshot=await f.api.read(admin);
+ const customers=Object.fromEntries(snapshot.state.customers.map(c=>[c.id,c]));
+ const s1=customers['CUS-WHE-951'],lead=customers['CUS-WHE-952'],mgr=customers['CUS-WHE-953'];
+ assert.equal(snapshot.state.dataOffers.filter(o=>o.status==='PENDING'&&['CUS-WHE-951','CUS-WHE-952','CUS-WHE-953'].includes(o.customerId)).length,1);
+ assert.equal(snapshot.state.dataOffers.find(o=>o.customerId==='CUS-WHE-951').saleId,'s1');
+ assert.equal(s1.saleId,null);assert.equal(s1.saleAcceptedAt,null);assert.equal(s1.assignmentSource,'WEBHOOK_DESIGNATED');
+ assert.equal(lead.saleId,'lead');assert.equal(lead.leaderId,'lead');assert.equal(lead.teamId,'T');
+ assert.ok(lead.saleAcceptedAt);assert.equal(lead.assignmentSource,'WEBHOOK_DESIGNATED');
+ assert.ok(snapshot.state.tasks.some(t=>t.customerId==='CUS-WHE-952'&&t.ownerId==='lead'&&t.status==='OPEN'));
+ assert.equal(mgr.managerId,'mgr');assert.equal(mgr.saleId,null);assert.equal(mgr.leaderId,null);
+ assert.ok(mgr.saleAcceptedAt);assert.equal(mgr.assignmentSource,'WEBHOOK_DESIGNATED');
+ assert.equal(snapshot.state.websites.find(w=>w.id==='WEB-MIXED').designatedSalesCursor.assignedCount,3);
+});
 test('Designated routing rejects empty or non-sale selections and rolls back allocation failures',async()=>{
  const f=await automaticFixture();
  await assert.rejects(()=>addDesignatedWebsite(f,'INVALID-EMPTY','DS-EMPTY',[]),/chọn ít nhất/);
- await assert.rejects(()=>addDesignatedWebsite(f,'INVALID-ROLE','DS-ROLE',['lead']),/Sale chỉ định/);
+ await assert.rejects(()=>addDesignatedWebsite(f,'INVALID-ROLE','DS-ROLE',['ghost']),/Người nhận chỉ định/);
  const record=await addDesignatedWebsite(f),before=structuredClone(f.db);f.fail();
  await assert.rejects(()=>f.webhook.persistWebhook(record(951)),/failure/);assert.deepEqual(f.db,before);
 });
@@ -852,9 +872,9 @@ test('Website and webhook editors validate designated recipients and retain rout
  const input={name:'Landing riêng',sourceUrl:'https://example.test/designated',provider:'LANDING_API',designatedSalesEnabled:true,designatedSaleIds:[]};
  await assert.rejects(()=>c.window.crmApi.saveWebsite(null,input),/chọn ít nhất/);
  assert.equal(vm.runInContext('state.websites.length',c),0);
- await assert.rejects(()=>c.window.crmApi.saveWebsite(null,{...input,designatedSaleIds:['lead']}),/Sale đang hoạt động/);
- const {id}=await c.window.crmApi.saveWebsite(null,{...input,designatedSaleIds:['sale-a','sale-b','sale-a']});
- let website=vm.runInContext('state.websites[0]',c);assert.deepEqual(Array.from(website.designatedSaleIds),['sale-a','sale-b']);
+ await assert.rejects(()=>c.window.crmApi.saveWebsite(null,{...input,designatedSaleIds:['ghost']}),/người nhận đang hoạt động/);
+ const {id}=await c.window.crmApi.saveWebsite(null,{...input,designatedSaleIds:['sale-a','lead','sale-b','sale-a']});
+ let website=vm.runInContext('state.websites[0]',c);assert.deepEqual(Array.from(website.designatedSaleIds),['sale-a','lead','sale-b']);
  const reload=c.normalizeWebsiteRecord({...website,designatedSalesCursor:{lastSaleId:'sale-a',assignedCount:3}});
  assert.equal(reload.designatedSalesEnabled,true);assert.equal(reload.designatedSalesCursor.assignedCount,3);
  vm.runInContext("state.websites[0].designatedSalesCursor={lastSaleId:'sale-a',assignedCount:3}",c);

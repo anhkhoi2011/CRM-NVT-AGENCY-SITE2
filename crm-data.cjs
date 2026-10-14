@@ -612,7 +612,7 @@ function validate(key,value,id){
  if(key==='websites'){
   if(Object.hasOwn(value,'designatedSalesEnabled')&&typeof value.designatedSalesEnabled!=='boolean')error(400,'Tùy chọn Sale chỉ định không hợp lệ');
   if(Object.hasOwn(value,'designatedSaleIds')&&(!Array.isArray(value.designatedSaleIds)||value.designatedSaleIds.length>10000||value.designatedSaleIds.some(id=>typeof id!=='string'||!/^[-\w.$:]{1,96}$/.test(id))))error(400,'Danh sách Sale chỉ định không hợp lệ');
-  if(value.designatedSalesEnabled&&(value.provider==='NOTIFICATION'||!value.designatedSaleIds?.length))error(400,'Vui lòng chọn ít nhất một Sale cho webhook nhận data');
+  if(value.designatedSalesEnabled&&(value.provider==='NOTIFICATION'||!value.designatedSaleIds?.length))error(400,'Vui lòng chọn ít nhất một người nhận cho webhook');
  }
  if(['members','customers','products'].includes(key)&&(typeof value.name!=='string'||!value.name.trim()||value.name.length>(key==='products'?200:160)))error(400,'Tên không hợp lệ');
  if(key==='members'&&!['ADMIN','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','MANAGER','HRM'].includes(value.role))error(400,'Chức vụ không hợp lệ');
@@ -815,7 +815,7 @@ function automaticPending(data){
  const config=data.leaderDistribution.get('$')||{};
  const offered=new Set([...data.dataOffers.values()].filter(o=>o.status==='PENDING').map(o=>o.customerId));
  const waiting=[...data.customers.values()].filter(row=>!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&row.assignmentSource!=='WEBHOOK_DESIGNATED'&&!offered.has(row.id));
- if(waiting.some(row=>designatedWebsite(data,row)?.designatedSaleIds?.some(id=>{const member=data.members.get(id);return member?.role==='SALE'&&member.active!==false;})))return true;
+ if(waiting.some(row=>designatedWebsite(data,row)?.designatedSaleIds?.some(id=>{const member=data.members.get(id);return ['SALE','LEADER','MANAGER'].includes(member?.role)&&member.active!==false;})))return true;
  return config.enabled===true&&waiting.some(row=>!designatedWebsite(data,row))&&automaticLeaders(data,config).leaders.length>0;
 }
 function designatedWebsite(data,row){
@@ -875,23 +875,24 @@ async function distributeAutomatic(c, data = null, options = {}) {
  for (const row of waiting) {
   const website=designatedWebsite(data,row);
   if(website){
-   const recipients=[...new Set(website.designatedSaleIds||[])].map(id=>members.find(p=>p.id===id&&p.role==='SALE')).filter(Boolean);
+   const recipients=[...new Set(website.designatedSaleIds||[])].map(id=>members.find(p=>p.id===id&&['SALE','LEADER','MANAGER'].includes(p.role))).filter(Boolean);
    // Never fall back to the system round when the selected people are unavailable.
    if(!recipients.length)continue;
    const previous=recipients.findIndex(p=>p.id===website.designatedSalesCursor?.lastSaleId);
    const recipient=recipients[(previous+1)%recipients.length];
+   const direct=recipient.role==='LEADER',managerDirect=recipient.role==='MANAGER';
    const supervisor=members.find(p=>p.id===recipient.leaderId);
-   const leader=supervisor?.role==='LEADER'?supervisor:null;
-   const managerId=leader?.managerId||(supervisor?.role==='MANAGER'?supervisor.id:recipient.managerId)||null;
+   const leader=direct?recipient:(supervisor?.role==='LEADER'?supervisor:null);
+   const managerId=managerDirect?recipient.id:(leader?.managerId||(supervisor?.role==='MANAGER'?supervisor.id:recipient.managerId)||null);
    const leaderId=leader?.id||null,teamId=leader?.teamId||recipient.teamId||null;
    const reason=`Webhook ${website.name||website.id} · vòng Sale chỉ định`;
-   await put('customers',row.id,{...row,leaderId,teamId,managerId,saleId:null,updatedAt:at,note:reason,assignmentSource:'WEBHOOK_DESIGNATED'});
-   const offerId='OFR-'+crypto.randomUUID();
-   await put('dataOffers',offerId,{id:offerId,customerId:row.id,saleId:recipient.id,leaderId,teamId,offeredAt:at,status:'PENDING',resolvedAt:'',source:'WEBHOOK_DESIGNATED',websiteId:website.id});
+   await put('customers',row.id,{...row,leaderId,teamId,managerId,saleId:direct?recipient.id:null,saleAcceptedAt:(direct||managerDirect)?at:null,updatedAt:at,note:reason,assignmentSource:'WEBHOOK_DESIGNATED'});
+   if(!direct&&!managerDirect){const offerId='OFR-'+crypto.randomUUID();await put('dataOffers',offerId,{id:offerId,customerId:row.id,saleId:recipient.id,leaderId,teamId,offeredAt:at,status:'PENDING',resolvedAt:'',source:'WEBHOOK_DESIGNATED',websiteId:website.id});}
+   if(direct){const taskId='TSK-'+crypto.randomUUID();const dueAt=new Date(Date.parse(at.replace(' ','T')+'+07:00')+(Number(settings.slaMinutes)||30)*60000).toLocaleString('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).slice(0,19);await put('tasks',taskId,{id:taskId,customerId:row.id,customerName:row.name,ownerId:recipient.id,leaderId,teamId,type:'Lien he data moi',createdAt:at,dueAt,slaBased:true,status:'OPEN',priority:'HIGH'});}
    const assignmentId='ASN-'+crypto.randomUUID();
-   await put('assignmentHistory',assignmentId,{id:assignmentId,customerId:row.id,fromSaleId:null,fromLeaderId:null,toSaleId:null,toLeaderId:leaderId,toLeaderName:leader?.name||'',toSaleName:'',offeredSaleId:recipient.id,managerId,teamId,actorId:'SYSTEM',actor:'Hệ thống',source:'WEBHOOK_DESIGNATED',reason,at});
+   await put('assignmentHistory',assignmentId,{id:assignmentId,customerId:row.id,fromSaleId:null,fromLeaderId:null,toSaleId:direct?recipient.id:null,toLeaderId:leaderId,toLeaderName:leader?.name||'',toSaleName:(direct||managerDirect)?recipient.name:'',offeredSaleId:(direct||managerDirect)?null:recipient.id,managerId,teamId,actorId:'SYSTEM',actor:'Hệ thống',source:'WEBHOOK_DESIGNATED',reason,at});
    const notificationId='NT-'+crypto.randomUUID();
-   await put('notifications',notificationId,{id:notificationId,kind:'DATA_ARRIVAL',role:'OWN',saleId:recipient.id,managerId,leaderId,teamId,title:'Data mới từ webhook chỉ định',text:row.name,at,readBy:[]});
+   await put('notifications',notificationId,{id:notificationId,kind:'DATA_ARRIVAL',role:managerDirect?'MANAGER':'OWN',saleId:managerDirect?null:recipient.id,managerId,leaderId,teamId,title:'Data mới từ webhook chỉ định',text:row.name,at,readBy:[]});
    await put('websites',website.id,{...website,designatedSalesCursor:{lastSaleId:recipient.id,assignedCount:(Number(website.designatedSalesCursor?.assignedCount)||0)+1}});
    count++;
    continue;
@@ -1171,7 +1172,7 @@ async function writeLocked(user,requestId,changes,options={}){
    if(revision(old===undefined?undefined:publicValue(user,key,old,data))!==base)error(409,`Bản ghi ${key}/${id} đã được máy khác cập nhật. Xuất bản nháp rồi tải lại.`);
    authorize(user,key,key==='settings'&&old?publicValue(user,key,old,data):old,change.value,key==='customers'?data:prospective);
    if(key==='websites'&&value){
-    if(value.designatedSalesEnabled&&value.designatedSaleIds.some(id=>{const member=data.members.get(id);return member?.role!=='SALE'||member.active===false;}))error(400,'Sale chỉ định không tồn tại hoặc đã ngừng hoạt động');
+    if(value.designatedSalesEnabled&&value.designatedSaleIds.some(id=>{const member=data.members.get(id);return !['SALE','LEADER','MANAGER'].includes(member?.role)||member.active===false;}))error(400,'Người nhận chỉ định không tồn tại hoặc đã ngừng hoạt động');
     // The webhook transaction owns this cursor; clients cannot rewind it.
     change.value=value={...value,designatedSalesCursor:old?.designatedSalesCursor||{}};
    }

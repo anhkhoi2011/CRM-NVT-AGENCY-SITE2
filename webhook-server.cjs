@@ -45,7 +45,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261013-webhook-designated-sales';
+const BUILD_VERSION = '20261014-designated-roles';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -631,7 +631,7 @@ async function handleDemoApi(request, response, pathname) {
         if(pending&&value)value={...old,saleId:user.id,saleAcceptedAt:value.saleAcceptedAt,updatedAt:value.updatedAt,status:value.status||old.status,note:value.note!==undefined?value.note:old.note};
         crmData.validate(key,value,id);crmData.authorize(user,key,old,value,demoData(next));
         if(key==='websites'&&value){
-          if(value.designatedSalesEnabled&&value.designatedSaleIds.some(id=>!next.members.some(member=>member.id===id&&member.role==='SALE'&&member.active!==false)))throw Error('Sale chỉ định không tồn tại hoặc đã ngừng hoạt động');
+          if(value.designatedSalesEnabled&&value.designatedSaleIds.some(id=>!next.members.some(member=>member.id===id&&['SALE','LEADER','MANAGER'].includes(member.role)&&member.active!==false)))throw Error('Người nhận chỉ định không tồn tại hoặc đã ngừng hoạt động');
           value={...value,designatedSalesCursor:old?.designatedSalesCursor||{}};
         }
         if(crmData.OBJECTS.includes(key)){next[key]=(user.role==='MANAGER'&&['settings','saleDistributionByLeader'].includes(key)||user.role==='ACCOUNTING'&&key==='settings')?{...next[key],...value}:value;}

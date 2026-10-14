@@ -857,17 +857,17 @@
   }
   const websiteCard=q('#tab-websites input[readonly]')?.closest('.widget-box'),websiteTemplate=websiteCard?.cloneNode(true),websiteContainer=websiteCard?.parentElement;
   function websiteSalePicker(w){
-    const ids=new Set(w.designatedSaleIds||[]),sales=data.members.filter(p=>p.role==='SALE').sort((a,b)=>(a.name||'').localeCompare(b.name||'','vi'));
-    const options=sales.map(p=>`<label class="webhook-sale-option" data-sale-search="${esc([p.name,p.accountId,p.teamId,p.phone].filter(Boolean).join(' ').toLocaleLowerCase('vi'))}"><input type="checkbox" data-webhook-sale="${esc(p.id)}" ${ids.has(p.id)?'checked':''} ${p.active===false?'disabled':''}><span><b>${esc(p.name)}</b><small>${esc([p.accountId||p.id,p.teamId,p.active===false?'Ngừng hoạt động':null].filter(Boolean).join(' · '))}</small></span></label>`).join('');
+    const ids=new Set(w.designatedSaleIds||[]),roleLabel={MANAGER:'Manager',LEADER:'Leader',SALE:'Sale'},sales=data.members.filter(p=>['SALE','LEADER','MANAGER'].includes(p.role)).sort((a,b)=>(a.name||'').localeCompare(b.name||'','vi'));
+    const options=sales.map(p=>`<label class="webhook-sale-option" data-sale-search="${esc([p.name,roleLabel[p.role],p.accountId,p.teamId,p.phone].filter(Boolean).join(' ').toLocaleLowerCase('vi'))}"><input type="checkbox" data-webhook-sale="${esc(p.id)}" ${ids.has(p.id)?'checked':''} ${p.active===false?'disabled':''}><span><b>${esc(p.name)}</b><small>${esc([roleLabel[p.role]||p.role,p.accountId||p.id,p.teamId,p.active===false?'Ngừng hoạt động':null].filter(Boolean).join(' · '))}</small></span></label>`).join('');
     return `<section class="webhook-sale-routing">
       <div class="webhook-routing-head"><b>Cách chia data</b><small>Chọn cách phân data đến từ link webhook này.</small></div>
       <div id="refRoutingState" class="webhook-route-state ${w.designatedSalesEnabled?'is-designated':''}"></div>
-      <label class="webhook-route-toggle"><input id="refDesignatedSales" type="checkbox" ${w.designatedSalesEnabled?'checked':''}><span class="webhook-route-switch" aria-hidden="true"></span><span class="webhook-route-toggle-text"><b>Chia đều cho Sale được chọn</b></span></label>
+      <label class="webhook-route-toggle"><input id="refDesignatedSales" type="checkbox" ${w.designatedSalesEnabled?'checked':''}><span class="webhook-route-switch" aria-hidden="true"></span><span class="webhook-route-toggle-text"><b>Chia đều cho người được chọn</b></span></label>
       <div id="refDesignatedSalePanel" ${w.designatedSalesEnabled?'':'hidden'}>
         <input id="refSaleSearch" type="search" placeholder="Tìm Sale theo tên, mã hoặc team…" aria-label="Tìm Sale">
         <div class="webhook-sale-toolbar"><span id="refSaleSelectedCount"></span><button type="button" class="btn-action btn-secondary" id="refSelectAllSales">Chọn tất cả</button></div>
-        <div class="webhook-sale-list">${options||'<p class="webhook-routing-hint">Chưa có Sale trong hệ thống. Thêm Sale tại mục Đội ngũ.</p>'}</div>
-        <p id="refSaleSearchEmpty" class="webhook-routing-hint" hidden>Không tìm thấy Sale phù hợp.</p>
+        <div class="webhook-sale-list">${options||'<p class="webhook-routing-hint">Chưa có người nhận phù hợp. Thêm Sale/Leader/Manager tại mục Đội ngũ.</p>'}</div>
+        <p id="refSaleSearchEmpty" class="webhook-routing-hint" hidden>Không tìm thấy người nhận phù hợp.</p>
       </div>
     </section>`;
   }
@@ -877,11 +877,11 @@
     const selected=()=>controls().filter(p=>p.checked&&!p.disabled).length;
     const render=()=>{
       const n=selected();
-      modal.querySelector('#refSaleSelectedCount').textContent=`Đã chọn ${n} Sale`;
+      modal.querySelector('#refSaleSelectedCount').textContent=`Đã chọn ${n} người nhận`;
       const on=toggle.checked;
       state.classList.toggle('is-designated',on);
       state.innerHTML=on
-        ?`<span class="webhook-route-dot"></span><div><b>Chia đều · ${n} Sale</b></div>`
+        ?`<span class="webhook-route-dot"></span><div><b>Chia đều · ${n} người nhận</b></div>`
         :`<span class="webhook-route-dot"></span><div><b>Vòng tỷ trọng hệ thống</b></div>`;
     };
     const update=()=>{const notification=provider?.value==='NOTIFICATION';toggle.closest('section').hidden=notification;panel.hidden=!toggle.checked;render();};

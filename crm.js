@@ -5048,7 +5048,7 @@ function websiteSaleRouting(input, existing = {}) {
   if (!Object.hasOwn(input, 'designatedSalesEnabled')) return {};
   const enabled = input.provider !== 'NOTIFICATION' && input.designatedSalesEnabled === true;
   const ids = [...new Set(Array.isArray(input.designatedSaleIds) ? input.designatedSaleIds.map(String) : [])];
-  if (enabled && (!ids.length || ids.some(id => !state.members.some(p => p.id === id && p.role === 'SALE' && p.active !== false)))) throw Error('Vui lòng chọn ít nhất một Sale đang hoạt động.');
+  if (enabled && (!ids.length || ids.some(id => !state.members.some(p => p.id === id && ['SALE', 'LEADER', 'MANAGER'].includes(p.role) && p.active !== false)))) throw Error('Vui lòng chọn ít nhất một người nhận đang hoạt động.');
   return { designatedSalesEnabled: enabled, designatedSaleIds: enabled ? ids : [], designatedSalesCursor: existing.designatedSalesCursor || {} };
 }
 
