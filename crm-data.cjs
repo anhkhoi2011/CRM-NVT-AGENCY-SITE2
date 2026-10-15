@@ -6,7 +6,7 @@ const OrderAudit = require('./order-audit.cjs');
 const crypto = require('node:crypto');
 const distributionRounds = require('./distribution-rounds.js');
 const { pool } = require('./db.js');
-const LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles','blacklistIps','blacklistEntries'];
+const LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles','blacklistIps','blacklistEntries','bankStatements'];
 const OBJECTS = ['settings','leaderDistribution','saleDistributionByLeader','productCategories','careGroups'];
 const ADMIN_ONLY = new Set(['products','members','registrations','customFieldDefinitions','imports','traffic','websites','integrations','webhookPending','productCategories','leaderDistribution','careGroups','processes','expenses','courseConfigs']);
 const SCHEMA = [
@@ -302,7 +302,7 @@ function readable(user,key,r,data){
  if(key==='notifications'&&(r.deletedBy||[]).includes(user.id))return false;
  if(key==='hrProfiles')return ['ADMIN','HRM'].includes(user.role);
  if(user.role==='HRM')return ['members','attendance','orders','products','brokerageMetrics','settings'].includes(key);
- if(key==='feedbacks'||key==='processes')return true;
+ if(key==='feedbacks'||key==='processes'||key==='bankStatements')return true;
  if(user.role==='MANAGER')return managerReadable(user,key,r,data);
  if(user.role==='ADMIN')return true;
 
@@ -374,6 +374,7 @@ function compactAssetValue(key, value) {
   const next = {...value}; delete next.imageData; next.hasImage = images.length > 0; next.imageCount = images.length; return next;
  }
  if (key === 'feedbacks') { const next = {...value}; next.hasImage = Boolean(next.imageData); delete next.imageData; return next; }
+ if (key === 'bankStatements') { const next = {...value}; next.hasFile = Boolean(next.fileData); delete next.fileData; return next; }
  if (key === 'orders') {
   const next = {...value}; const receipts = Array.isArray(next.paymentReceipts) ? next.paymentReceipts : [];
   if(Array.isArray(value.paymentReceipts))next.paymentReceipts = receipts.map(receipt => {
@@ -542,6 +543,12 @@ function authorize(user,key,old,next,data){
   if(!next&&old?.authorId===user.id)return;
   error(403,'Chỉ được sửa hoặc xóa feedback do chính mình tạo');
  }
+ if(key==='bankStatements'){
+  if(user.role==='ADMIN')return;
+  if(next&&next.authorId===user.id&&(!old||old.authorId===user.id))return;
+  if(!next&&old?.authorId===user.id)return;
+  error(403,'Chỉ được sửa hoặc xóa sao kê do chính mình tạo');
+ }
  if(key==='processes'&&user.role!=='ADMIN')error(403,'Chỉ Admin được quản lý Quy Trình');
  if(user.role==='MANAGER')return authorizeManager(user,key,old,next,data);
  if(user.role==='ADMIN')return;
@@ -638,6 +645,16 @@ function validate(key,value,id){
   if(typeof value.note!=='string'||value.note.trim().length>2000)error(400,'Ghi ch\u00fa feedback kh\u00f4ng h\u1ee3p l\u1ec7');
   if(typeof value.imageData!=='string'||(value.imageData!==''&&(!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.imageData)||value.imageData.length>2_800_000)))error(400,'\u1ea2nh feedback kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c qu\u00e1 l\u1edbn');
   if(typeof value.createdAt!=='string'||!/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(value.createdAt))error(400,'Ng\u00e0y feedback kh\u00f4ng h\u1ee3p l\u1ec7');
+ }
+ if(key==='bankStatements'&&(Object.hasOwn(value,'title')||Object.hasOwn(value,'result')||Object.hasOwn(value,'fileData')||Object.hasOwn(value,'authorId'))){
+  if(typeof value.title!=='string'||!value.title.trim()||value.title.length>200)error(400,'Ti\u00eau \u0111\u1ec1 sao k\u00ea kh\u00f4ng h\u1ee3p l\u1ec7');
+  if(typeof value.note!=='string'||value.note.length>2000)error(400,'Ghi ch\u00fa sao k\u00ea kh\u00f4ng h\u1ee3p l\u1ec7');
+  if(!['PROFIT','LOSS','NEUTRAL'].includes(String(value.result||'')))error(400,'K\u1ebft qu\u1ea3 l\u00e3i/l\u1ed7 kh\u00f4ng h\u1ee3p l\u1ec7');
+  if(typeof value.fileName!=='string'||value.fileName.length>200)error(400,'T\u00ean file sao k\u00ea kh\u00f4ng h\u1ee3p l\u1ec7');
+  if(typeof value.fileType!=='string'||value.fileType.length>120)error(400,'\u0110\u1ecbnh d\u1ea1ng file sao k\u00ea kh\u00f4ng h\u1ee3p l\u1ec7');
+  // Ch\u1ea5p nh\u1eadn m\u1ecdi lo\u1ea1i file (\u1ea3nh, Excel, CSV, PDF...) d\u01b0\u1edbi d\u1ea1ng data-URL, gi\u1edbi h\u1ea1n ~5 MB.
+  if(typeof value.fileData!=='string'||(value.fileData!==''&&!/^data:[^;,]{1,120};base64,[A-Za-z0-9+/]+={0,2}$/.test(value.fileData))||value.fileData.length>7_000_000)error(400,'File sao k\u00ea kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c qu\u00e1 l\u1edbn');
+  if(typeof value.createdAt!=='string'||!/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(value.createdAt))error(400,'Ng\u00e0y sao k\u00ea kh\u00f4ng h\u1ee3p l\u1ec7');
  }
  if(key==='processes'&&(Object.hasOwn(value,'title')||Object.hasOwn(value,'summary')||Object.hasOwn(value,'content')||Object.hasOwn(value,'link')||Object.hasOwn(value,'imageData'))){
   if(typeof value.title!=='string'||!value.title.trim()||value.title.length>200)error(400,'Ti\u00eau \u0111\u1ec1 quy tr\u00ecnh kh\u00f4ng h\u1ee3p l\u1ec7');
@@ -1245,12 +1262,13 @@ async function writeLocked(user,requestId,changes,options={}){
 // Mọi lượt ghi qua CRM làm mới bộ đệm snapshot dùng chung (kể cả khi lỗi giữa chừng).
 async function write(user,requestId,changes,options={}){try{return await writeLocked(user,requestId,changes,options);}finally{invalidateSnapshotCache();}}
 function assetFromData(user, data, type, id, childId = null) {
- const key = type === 'process' ? 'processes' : type === 'feedback' ? 'feedbacks' : 'orders';
+ const key = type === 'process' ? 'processes' : type === 'feedback' ? 'feedbacks' : type === 'bank-statement' ? 'bankStatements' : 'orders';
  const source=data.state||data; const row = source[key]?.get ? source[key].get(id) : (source[key]||[]).find(item => String(item.id)===String(id));
  if (!row) error(404,'Khong tim thay du lieu anh.');
  if(!data.state&&source[key] instanceof Map&&!readable(user,key,row,data))error(403,'Không có quyền xem ảnh này');
  if (type === 'process') { const images=Array.isArray(row.imageData)?row.imageData:(row.imageData?[row.imageData]:[]); return {id:row.id,images}; }
  if (type === 'feedback') return {id:row.id,imageData:row.imageData||''};
+ if (type === 'bank-statement') return {id:row.id,fileName:row.fileName||'',fileType:row.fileType||'',fileData:row.fileData||''};
  const receipt=(row.paymentReceipts||[]).find(item=>String(item.id)===String(childId))||OrderPayments.receipts(row).find(item=>String(item.id)===String(childId));
  if(!receipt)error(404,'Khong tim thay bill.');
  const images=OrderPayments.images(receipt);

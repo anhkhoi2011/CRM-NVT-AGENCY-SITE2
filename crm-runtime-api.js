@@ -347,7 +347,7 @@
       const autoLevelSources=new Set(['API','FORM','IMPORT','SYSTEM']);
       const levelChosenIds=new Set(state.customerFieldHistory.filter(h=>h.fieldId==='customerLevel'&&h.to!==''&&h.to!=null&&!autoLevelSources.has(h.source)).map(h=>h.customerId));
       const markLevel=list=>(list||[]).forEach(c=>{const level=String(c.customFields?.customerLevel??'');c.levelChosen=levelChosenIds.has(c.id)||(level!==''&&level!=='L0');});
-      const view=structuredClone({user:currentAccount,distributionRoundViews:distributionRoundViews(),distributionExtraTurnPeople:CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader).people,managerHierarchy,fonts:referenceFonts,assignedDataStats:currentAccount.role==='SALE'?assignedDataStatsForMe():null,pendingOffers:currentAccount.role==='SALE'?pendingOffersForMe().map(o=>({id:o.id,name:customerById(o.customerId)?.name||'',offeredAt:o.offeredAt,minutesLeft:offerMinutesLeft(o)})):[],customers,orders:visibleOrders,products:state.products,productCategories:state.productCategories,members:state.members,hrRoster:['ADMIN','HRM'].includes(permissionRole())?(state.accounts||state.members):[],hrProfiles:['ADMIN','HRM'].includes(permissionRole())?(state.hrProfiles||[]):[],orderAssignees:state.orderAssignees||state.members,registeredAccounts:state.registeredAccounts,fields:state.customFieldDefinitions,careGroups:state.careGroups,imports:currentAccount.role==='ADMIN'?state.imports:[],resubmissions:state.resubmissions,assignmentHistory,websites:state.websites.map(w=>({...w,publicWebhookUrl:webhookUrlFor(w)})),traffic:state.traffic||[],notes:permissionRole()==='MARKETING'?state.notes:[],customerFieldHistory:permissionRole()==='MARKETING'?state.customerFieldHistory:[],marketingDemo:permissionRole()==='MARKETING'&&serverSyncToken.startsWith('demo-'),blacklistIps:permissionRole()==='ADMIN'?(state.blacklistIps||[]):[],blacklistEntries:permissionRole()==='ADMIN'?(state.blacklistEntries||[]):[],webhookPending,webhookTransport:{...webhookTransport,label:(WEBHOOK_TRANSPORT_META[webhookTransport.mode]||WEBHOOK_TRANSPORT_META.idle)[0]},settings:state.settings,notifications:visibleNotifications(),audit:state.audit,attendance:state.attendance,brokerageMetrics:state.brokerageMetrics,feedbacks:state.feedbacks,processes:state.processes,expenses:['ADMIN','ACCOUNTING'].includes(permissionRole())?state.expenses:[],courseConfigs:state.courseConfigs||[],tasks:scopedTasks(),leaderDistribution:state.leaderDistribution,saleDistributionByLeader:state.saleDistributionByLeader,offers:state.dataOffers,financialEvents:financialEvents(visibleOrders),navigation:allowedViews(),today:dayIso(0)});
+      const view=structuredClone({user:currentAccount,distributionRoundViews:distributionRoundViews(),distributionExtraTurnPeople:CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader).people,managerHierarchy,fonts:referenceFonts,assignedDataStats:currentAccount.role==='SALE'?assignedDataStatsForMe():null,pendingOffers:currentAccount.role==='SALE'?pendingOffersForMe().map(o=>({id:o.id,name:customerById(o.customerId)?.name||'',offeredAt:o.offeredAt,minutesLeft:offerMinutesLeft(o)})):[],customers,orders:visibleOrders,products:state.products,productCategories:state.productCategories,members:state.members,hrRoster:['ADMIN','HRM'].includes(permissionRole())?(state.accounts||state.members):[],hrProfiles:['ADMIN','HRM'].includes(permissionRole())?(state.hrProfiles||[]):[],orderAssignees:state.orderAssignees||state.members,registeredAccounts:state.registeredAccounts,fields:state.customFieldDefinitions,careGroups:state.careGroups,imports:currentAccount.role==='ADMIN'?state.imports:[],resubmissions:state.resubmissions,assignmentHistory,websites:state.websites.map(w=>({...w,publicWebhookUrl:webhookUrlFor(w)})),traffic:state.traffic||[],notes:permissionRole()==='MARKETING'?state.notes:[],customerFieldHistory:permissionRole()==='MARKETING'?state.customerFieldHistory:[],marketingDemo:permissionRole()==='MARKETING'&&serverSyncToken.startsWith('demo-'),blacklistIps:permissionRole()==='ADMIN'?(state.blacklistIps||[]):[],blacklistEntries:permissionRole()==='ADMIN'?(state.blacklistEntries||[]):[],webhookPending,webhookTransport:{...webhookTransport,label:(WEBHOOK_TRANSPORT_META[webhookTransport.mode]||WEBHOOK_TRANSPORT_META.idle)[0]},settings:state.settings,notifications:visibleNotifications(),audit:state.audit,attendance:state.attendance,brokerageMetrics:state.brokerageMetrics,feedbacks:state.feedbacks,processes:state.processes,bankStatements:state.bankStatements||[],expenses:['ADMIN','ACCOUNTING'].includes(permissionRole())?state.expenses:[],courseConfigs:state.courseConfigs||[],tasks:scopedTasks(),leaderDistribution:state.leaderDistribution,saleDistributionByLeader:state.saleDistributionByLeader,offers:state.dataOffers,financialEvents:financialEvents(visibleOrders),navigation:allowedViews(),today:dayIso(0)});
       markLevel(view.customers);markLevel(view.managerHierarchy?.customers);
       return view;
     },
@@ -622,6 +622,37 @@
         if(permissionRole()!=='ADMIN'&&item.authorId!==currentAccount.id)throw Error('Bạn chỉ được xóa feedback do mình tạo.');
         state.feedbacks=state.feedbacks.filter(row=>row.id!==id);audit('DELETE_FEEDBACK',id,item.category);return {ok:true};
       },'remove-feedback:'+id);
+    },
+    async saveBankStatement(id,input) {
+      requireRole(['ADMIN','MANAGER','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','HRM']);
+      return persist(()=>{
+        const existing=(state.bankStatements||[]).find(item=>item.id===id);
+        if(id&&!existing)throw Error('Sao kê không còn tồn tại.');
+        if(existing&&permissionRole()!=='ADMIN'&&existing.authorId!==currentAccount.id)throw Error('Bạn chỉ được sửa sao kê do mình tạo.');
+        const title=String(input.title||'').trim();
+        const note=String(input.note||'').trim();
+        const result=['PROFIT','LOSS','NEUTRAL'].includes(String(input.result||''))?String(input.result):'NEUTRAL';
+        const fileName=String(input.fileName||'').slice(0,200);
+        const fileType=String(input.fileType||'').slice(0,120);
+        const fileData=String(input.fileData||'');
+        if(!title)throw Error('Nhập tiêu đề sao kê.');
+        if(note.length>2000)throw Error('Ghi chú sao kê quá dài.');
+        if(fileData&&(!/^data:[^;,]{1,120};base64,[A-Za-z0-9+/]+={0,2}$/.test(fileData)||fileData.length>7_000_000))throw Error('File sao kê không hợp lệ hoặc quá lớn (tối đa ~5 MB).');
+        if(!fileData&&!existing?.fileData)throw Error('Vui lòng đính kèm file sao kê (ảnh hoặc file dữ liệu).');
+        const item=existing||{id:makeRecordId('BST'),authorId:currentAccount.id,authorName:currentAccount.name};
+        Object.assign(item,{title,note,result,fileName:fileData?fileName:(fileName||item.fileName||''),fileType:fileData?fileType:(fileType||item.fileType||''),fileData:fileData||item.fileData||'',authorId:item.authorId||currentAccount.id,authorName:item.authorName||currentAccount.name,createdAt:existing?.createdAt||stamp(),updatedAt:stamp()});
+        if(existing){const index=state.bankStatements.findIndex(row=>row.id===id);state.bankStatements[index]=item;}else state.bankStatements.unshift(item);
+        audit(existing?'UPDATE_BANK_STATEMENT':'CREATE_BANK_STATEMENT',item.id,item.title);return {id:item.id};
+      },'bank-statement:'+(id||'new'));
+    },
+    async removeBankStatement(id) {
+      requireRole(['ADMIN','MANAGER','LEADER','SALE','MARKETING','ACCOUNTING','UNASSIGNED','HRM']);
+      return persist(()=>{
+        const item=(state.bankStatements||[]).find(row=>row.id===id);
+        if(!item)throw Error('Sao kê không còn tồn tại.');
+        if(permissionRole()!=='ADMIN'&&item.authorId!==currentAccount.id)throw Error('Bạn chỉ được xóa sao kê do mình tạo.');
+        state.bankStatements=state.bankStatements.filter(row=>row.id!==id);audit('DELETE_BANK_STATEMENT',id,item.title);return {ok:true};
+      },'remove-bank-statement:'+id);
     },
     async saveProcess(id,input) {
       requireRole(['ADMIN']);

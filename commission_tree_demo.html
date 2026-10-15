@@ -5490,11 +5490,25 @@ function _old_navigateAccountingMonth(direction) {
     }
 
     if(window.parent!==window){
-      if(window.__PENDING_EXPENSE)return;
+      if(window.__PENDING_EXPENSE){
+        if(Date.now()-(window.__PENDING_EXPENSE.at||0)<15000){if(typeof showToast==='function')showToast('Đang xử lý thao tác chi phí trước đó. Vui lòng chờ…','warning','Đang xử lý');return;}
+        window.__PENDING_EXPENSE=null;
+      }
       const id=(idInput&&idInput.value)||('EXP_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8));if(idInput)idInput.value=id;
-      window.__PENDING_EXPENSE={action:'save',month,id};
+      window.__PENDING_EXPENSE={action:'save',month,id,at:Date.now()};
       const button=document.querySelector('#expenseModal button[onclick="saveExpense()"]');if(button){button.disabled=true;button.textContent='Đang lưu…';}
-      postAccountingMessage('ACCOUNTING_EXPENSE_SAVE',{payload:{id,date,title,category,amount,month,payer,note}});return;
+      postAccountingMessage('ACCOUNTING_EXPENSE_SAVE',{payload:{id,date,title,category,amount,month,payer,note}});
+      const _setT=(globalThis&&globalThis.setTimeout)||(typeof setTimeout==='function'&&setTimeout);
+      const _clearT=(globalThis&&globalThis.clearTimeout)||(typeof clearTimeout==='function'&&clearTimeout);
+      if(window.__EXPENSE_RESULT_TIMER&&_clearT)_clearT(window.__EXPENSE_RESULT_TIMER);
+      if(_setT)window.__EXPENSE_RESULT_TIMER=_setT(()=>{
+        if(window.__PENDING_EXPENSE&&window.__PENDING_EXPENSE.id===id){
+          window.__PENDING_EXPENSE=null;
+          const btn=document.querySelector('#expenseModal button[onclick="saveExpense()"]');if(btn){btn.disabled=false;btn.textContent='Lưu khoản chi';}
+          if(typeof showToast==='function')showToast('Không nhận được xác nhận từ CRM. Nội dung đã nhập được giữ lại để thử lại.','warning','Chưa lưu được');
+        }
+      },8000);
+      return;
     }
     const editId = idInput ? idInput.value : '';
     let savedExpenseId = editId;
@@ -5528,16 +5542,6 @@ function _old_navigateAccountingMonth(direction) {
     renderAccountingView();
     postAccountingMessage('ACCOUNTING_EXPENSE_SAVE', { payload: { id: savedExpenseId, date, title, category, amount, month, payer, note } });
     alert(`✓ Đã lưu thành công khoản chi vào ${formatMonthDisplay(month)}! Hệ thống đã tự động tính lại lợi nhuận ròng P&L.`);
-  }
-
-  function deleteExpense(id) {
-    const exp = ADMIN_EXPENSES_DATA.find(e => e.id === id);
-    if (!exp) return;
-    if (!confirm(`Bạn có chắc chắn muốn xóa khoản chi "${exp.title}" (${formatMoney(exp.amount)}) khỏi ${formatMonthDisplay(exp.month)}?`)) {
-      return;
-    }
-    ADMIN_EXPENSES_DATA = ADMIN_EXPENSES_DATA.filter(e => e.id !== id);
-    renderAccountingView();
   }
 
   function handleExpenseSearch(q) {
@@ -6893,8 +6897,11 @@ window.printOrderInvoice = printOrderInvoice;
     customConfirmCallback = onConfirm;
 
     confirmBtn.onclick = function() {
+      // Lấy callback ra biến cục bộ trước khi đóng modal — closeCustomConfirmModal()
+      // đặt customConfirmCallback = null nên nếu gọi sau sẽ không chạy được onConfirm.
+      const callback = customConfirmCallback;
       closeCustomConfirmModal();
-      if (customConfirmCallback) customConfirmCallback();
+      if (callback) callback();
     };
 
     setAccountingModalOpen('customConfirmModal', true);
@@ -7124,7 +7131,26 @@ window.printOrderInvoice = printOrderInvoice;
       confirmText: 'Xác Nhận Xóa Chi Phí',
       isDanger: true,
       onConfirm: () => {
-        if(window.parent!==window){if(window.__PENDING_EXPENSE)return;window.__PENDING_EXPENSE={action:'delete',id};postAccountingMessage('ACCOUNTING_EXPENSE_DELETE',{id});return;}
+        if(window.parent!==window){
+          // Tự khôi phục cờ pending bị kẹt (kết quả trước đó không về tới), tránh nút Xóa "chết" im lặng.
+          if(window.__PENDING_EXPENSE){
+            if(Date.now()-(window.__PENDING_EXPENSE.at||0)<15000){if(typeof showToast==='function')showToast('Đang xử lý thao tác chi phí trước đó. Vui lòng chờ…','warning','Đang xử lý');return;}
+            window.__PENDING_EXPENSE=null;
+          }
+          window.__PENDING_EXPENSE={action:'delete',id,at:Date.now()};
+          postAccountingMessage('ACCOUNTING_EXPENSE_DELETE',{id});
+          // Dự phòng: nếu parent không trả ACCOUNTING_EXPENSE_RESULT trong 8s thì tự mở khóa + báo lỗi.
+          const _setT=(globalThis&&globalThis.setTimeout)||(typeof setTimeout==='function'&&setTimeout);
+          const _clearT=(globalThis&&globalThis.clearTimeout)||(typeof clearTimeout==='function'&&clearTimeout);
+          if(window.__EXPENSE_RESULT_TIMER&&_clearT)_clearT(window.__EXPENSE_RESULT_TIMER);
+          if(_setT)window.__EXPENSE_RESULT_TIMER=_setT(()=>{
+            if(window.__PENDING_EXPENSE&&window.__PENDING_EXPENSE.id===id){
+              window.__PENDING_EXPENSE=null;
+              if(typeof showToast==='function')showToast('Không nhận được xác nhận từ CRM. Đồng bộ lại rồi thử lại.','warning','Chưa xóa được');
+            }
+          },8000);
+          return;
+        }
         ADMIN_EXPENSES_DATA = ADMIN_EXPENSES_DATA.filter(e => e.id !== id);
         renderAccountingView();
         postAccountingMessage('ACCOUNTING_EXPENSE_DELETE', { id });
@@ -8132,13 +8158,16 @@ window.printOrderInvoice = printOrderInvoice;
       if(msg.ok){if(view==='detail')closeCoursePersonnelDetailModal();else closeTrainingConfigModal();renderTrainingConfigTable();if(typeof showToast==='function')showToast('Máy chủ đã xác nhận lưu cấu hình hoa hồng.','success','Đã lưu');}
       else if(typeof showToast==='function')showToast(msg.error||'Chưa lưu được cấu hình. Giữ cửa sổ để thử lại.','warning','Chưa lưu');
     } else if (msg.type === 'ACCOUNTING_EXPENSE_RESULT') {
+      const _clearT=(globalThis&&globalThis.clearTimeout)||(typeof clearTimeout==='function'&&clearTimeout);
+      if(window.__EXPENSE_RESULT_TIMER&&_clearT){_clearT(window.__EXPENSE_RESULT_TIMER);window.__EXPENSE_RESULT_TIMER=null;}
       const pending=window.__PENDING_EXPENSE;window.__PENDING_EXPENSE=null;
       const button=document.querySelector('#expenseModal button[onclick="saveExpense()"]');if(button){button.disabled=false;button.textContent='Lưu khoản chi';}
       if (msg.ok) {
+        if(msg.action==='delete'&&msg.id){ADMIN_EXPENSES_DATA=ADMIN_EXPENSES_DATA.filter(e=>String(e.id)!==String(msg.id));renderAccountingView();}
         if(pending?.action==='save'){closeExpenseModal();if(currentAccountingMonth!=='ALL'&&pending.month!==currentAccountingMonth)setGlobalMonth(pending.month);}
         if (typeof showToast === 'function') showToast(msg.action === 'delete' ? 'Đã xóa khoản chi khỏi CRM.' : 'Đã lưu khoản chi vào CRM.', 'success', 'Thành Công');
       } else {
-        if (typeof showToast === 'function') showToast(msg.error || 'Chưa lưu được khoản chi. Nội dung đã nhập được giữ lại để thử lại.', 'warning', 'Chưa lưu khoản chi');
+        if (typeof showToast === 'function') showToast(msg.error || (msg.action==='delete'?'Chưa xóa được khoản chi. Đồng bộ lại rồi thử lại.':'Chưa lưu được khoản chi. Nội dung đã nhập được giữ lại để thử lại.'), 'warning', msg.action==='delete'?'Chưa xóa khoản chi':'Chưa lưu khoản chi');
       }
     } else if (msg.type === 'ACCOUNTING_ACTION_RESULT') {
       if (!msg.ok && typeof showToast === 'function') showToast(msg.error || 'Không thể lưu thao tác kế toán.', 'warning', 'Lỗi Kế Toán');

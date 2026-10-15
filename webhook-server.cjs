@@ -262,7 +262,7 @@ const demoState = {
   customFieldDefinitions: DEMO_MODE ? structuredClone(require('./crm-defaults.json').customFieldDefinitions) : [], customerFieldHistory: [], assignmentHistory: [],
   resubmissions: [], notes: [], imports: [], attendance: [], dataOffers: [],
   traffic: [], tasks: [], notifications: [], audit: [], websites: [{ id: 'WEB-DEMO', name: 'Nguồn local', domain: 'localhost:4173', sourceUrl: 'http://localhost:4173/', status: 'ACTIVE' }],
-  integrations: [], webhookPending: [], blacklistIps: [], blacklistEntries: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [],
+  integrations: [], webhookPending: [], blacklistIps: [], blacklistEntries: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [], bankStatements: [],
   settings: { assignmentMode: 'BALANCED', leaderCanUpdate: true, leaderAttendanceRequired: true },
   leaderDistribution: { enabled: true, enabledLeaderIds: ['demo-leader'], weights: { 'demo-leader': 1 }, sourceRules: [] },
   saleDistributionByLeader: { 'demo-leader': { leaderEnabled: true, enabledSaleIds: ['demo-sale'], weights: { 'demo-leader': 1, 'demo-sale': 1 } } }
@@ -590,10 +590,10 @@ async function handleDemoApi(request, response, pathname) {
   if (!user) return dbJson(request, response, 401, { error: 'Đăng nhập demo trước' });
   demoTouchSession(request);
   if (pathname.startsWith('/api/admin/blacklist')) return handleBlacklistApi(request, response, pathname, user);
-  const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/);
-  if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch)){
+  const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/), statementMatch=pathname.match(/^\/api\/bank-statement-file\/([^/]+)$/);
+  if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch||statementMatch)){
     try{
-      const type=processMatch?'process':feedbackMatch?'feedback':'order',id=decodeURIComponent((processMatch||feedbackMatch||receiptMatch)[1]),childId=receiptMatch?decodeURIComponent(receiptMatch[2]):null;
+      const type=processMatch?'process':feedbackMatch?'feedback':statementMatch?'bank-statement':'order',id=decodeURIComponent((processMatch||feedbackMatch||statementMatch||receiptMatch)[1]),childId=receiptMatch?decodeURIComponent(receiptMatch[2]):null;
       return dbJson(request,response,200,crmData.assetFromData(user,demoData(),type,id,childId));
     }catch(error){return dbJson(request,response,error.status||404,{error:error.message});}
   }
@@ -792,9 +792,9 @@ async function handleDbApi(request, response, pathname) {
     }
     // Máy khác vừa ghi gì chưa: chỉ đọc id lớn nhất của crm_changes để các vai trò đồng bộ sau vài giây
     // mà không phải tải lại toàn bộ snapshot (SSE tắt trên shared hosting).
-    const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/);
-    if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch)){
-      try{const type=processMatch?'process':feedbackMatch?'feedback':'order',id=decodeURIComponent((processMatch||feedbackMatch||receiptMatch)[1]),childId=receiptMatch?decodeURIComponent(receiptMatch[2]):null;return dbJson(request,response,200,await crmData.readAsset(user,type,id,childId));}
+    const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/), statementMatch=pathname.match(/^\/api\/bank-statement-file\/([^/]+)$/);
+    if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch||statementMatch)){
+      try{const type=processMatch?'process':feedbackMatch?'feedback':statementMatch?'bank-statement':'order',id=decodeURIComponent((processMatch||feedbackMatch||statementMatch||receiptMatch)[1]),childId=receiptMatch?decodeURIComponent(receiptMatch[2]):null;return dbJson(request,response,200,await crmData.readAsset(user,type,id,childId));}
       catch(error){return dbJson(request,response,error.status||404,{error:error.message});}
     }
     if(pathname==='/api/audit'&&request.method==='GET'){
@@ -2021,7 +2021,7 @@ const server = http.createServer(async (request, response) => {
     if (pathname === '/api/leads/push') return await handleLeadsPushApi(request, response, url);
     if (pathname === '/api/leads/export' || pathname === '/api/leads/export-all' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
-    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/')) return await handleDbApi(request, response, pathname);
+    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/') || pathname.startsWith('/api/bank-statement-file/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
       return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), webhookStorage: { ready: true, fallback: webhookStorage.fallback || inboxStorage.fallback }, instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
     }
