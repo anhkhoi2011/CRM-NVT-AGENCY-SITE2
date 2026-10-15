@@ -600,7 +600,8 @@
   const validColor=color=>/^#[a-f0-9]{6}$/i.test(color)?color:'#64748b';
   function fieldControl(cell,field,customer) {
     let value=customerDraftValues.has('field:'+customer.id+':'+field.id)?customerDraftValues.get('field:'+customer.id+':'+field.id):(customer.customFields?.[field.id]??'');if(field.id==='customerLevel'){const legacy=field.options?.find(option=>option.label===value);if(legacy)value=legacy.value;}const editable=api?.sessionIdentity()?.id===data.user.id&&['ADMIN','MANAGER','LEADER','SALE'].includes(data.user.actualRole||data.user.role);
-    const control=document.createElement(field.type==='SELECT'?'select':field.type==='NOTE'?'textarea':field.type==='MULTI_SELECT'?'button':'input');
+    const noteLike=field.type==='NOTE'||['van de kh','van de khach hang'].includes(String(field.label||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').trim().toLowerCase());
+    const control=document.createElement(field.type==='SELECT'?'select':noteLike?'textarea':field.type==='MULTI_SELECT'?'button':'input');
     control.className='chip';control.style.cssText='width:210px;max-width:210px;padding:5px 8px;border-radius:6px;font:inherit;font-size:11px;font-weight:700;border:1px solid var(--border);';
     const applyOptionColor=next=>{const color=validColor(field.options?.find(o=>o.value===next)?.color);control.style.color=color;control.style.backgroundColor=color+'18';};
     applyOptionColor(value);
@@ -614,7 +615,7 @@
       control.type='button';control.textContent=(field.options||[]).filter(o=>[].concat(value).includes(o.value)).map(o=>o.label).join(', ')||'— Chọn —';
       control.onclick=()=>{const modal=editor(field.label,`<div style="display:flex;flex-wrap:wrap;gap:12px">${field.options.map(o=>`<label class="chip" style="color:${validColor(o.color)};background:${validColor(o.color)}18"><input type="checkbox" value="${esc(o.value)}" ${[].concat(value).includes(o.value)?'checked':''}> ${esc(o.label)}</label>`).join('')}</div>`,()=>{const next=Array.from(modal.querySelectorAll('input:checked'),n=>n.value);value=next;control.textContent=(field.options||[]).filter(o=>next.includes(o.value)).map(o=>o.label).join(', ')||'— Chọn —';saveCustomerSelection('field',customer.id,next,field.id);},true);};
     }else if(field.type==='CHECKBOX'){control.type='checkbox';control.checked=value===true;control.onchange=()=>save(control.checked);}
-    else if(field.type==='NOTE'){
+    else if(noteLike){
       control.value=value;control.maxLength=4000;control.rows=2;control.wrap='soft';control.className='customer-note-editor';
       control.style.cssText='display:block;width:250px;min-width:250px;max-width:250px;height:58px;min-height:58px;max-height:140px;padding:8px 10px;border:1px solid #d7e0ea;border-radius:7px;background:#f8fafc;color:var(--text-main);font:500 11.5px/1.45 var(--font-sans,Arial,sans-serif);white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:hidden;overflow-y:auto;resize:vertical;box-sizing:border-box;transition:height .15s ease,box-shadow .15s ease;';
       const collapse=()=>{control.style.height='58px';control.dataset.noteExpanded='false';};
@@ -963,7 +964,7 @@
     const value=(key)=>customer=>raw.get(customer.id)?.[key];
     const staffLabel=id=>data.members.find(member=>String(member.id)===String(id))?.name||id||'Chưa phân công';
     const activeFields=data.fields.filter(field=>field.active!==false);
-    const isNoteField=field=>field.type==='NOTE'||String(field.label||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase()==='ghi chu';
+    const isNoteField=field=>field.type==='NOTE'||['ghi chu','van de kh','van de khach hang'].includes(String(field.label||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').trim().toLowerCase());
     const fieldColumn=field=>{const noteField=isNoteField(field);return {key:'field:'+field.id,label:field.label,presenceFilter:noteField,value:customer=>{const fieldValue=raw.get(customer.id)?.customFields?.[field.id];return noteField?(String(fieldValue||'').trim()?'HAS_CONTENT':'EMPTY'):fieldValue;},labelFor:filterValue=>noteField?(filterValue==='HAS_CONTENT'?'Có ghi chú':'Không ghi chú'):field.type==='CHECKBOX'?(filterValue==='true'?'Có':filterValue==='false'?'Không':'Trống'):(field.options||[]).find(option=>String(option.value)===filterValue)?.label||filterValue||'Trống'};};
     customerColumnDefinitions=[
       ...((data.user.actualRole||data.user.role)==='ADMIN'?[{key:'source',label:'Nguồn / Landing Page',value:customer=>{const row=raw.get(customer.id);return data.websites.find(site=>site.id===row?.websiteId)?.name||row?.landingPageName||row?.source;}}]:[]),
@@ -3399,7 +3400,14 @@
     const updateTrainingFields=()=>{
       const product=products.find(item=>item.id===q('#aoProduct').value)||products[0],required=OrderPayments.productKind(product)==='COURSE',select=q('#aoCourseKey');
       q('#aoCourseField').hidden=q('#aoTrainerField').hidden=!required;select.required=required&&!editing;
-      const configs=(data.courseConfigs||[]).filter(config=>String(config.productId)===String(product.id)),keys=[...new Set(configs.map(config=>String(config.courseKey)).filter(Boolean))];
+      const configs=(data.courseConfigs||[]).filter(config=>String(config.productId)===String(product.id));
+      // Sản phẩm có thể đã khai báo nhiều khóa trước khi kế toán gán người đào tạo.
+      // Khi đó vẫn phải cho phép chọn khóa để hiển thị đúng trạng thái cấu hình;
+      // bước lưu cuối cùng vẫn được OrderPayments kiểm tra trainer ở máy chủ.
+      const productKeys=Array.isArray(product.courseKeys)?product.courseKeys:[product.courseKey];
+      const customerKey=OrderPayments.customerCourseKey(picked,data.fields||[]);
+      const keys=[...new Set([...productKeys,...configs.map(config=>config.courseKey),customerKey]
+        .map(key=>String(key||'').trim()).filter(Boolean))];
       const selected=select.value||editing?.commissionCourseKey||OrderPayments.customerCourseKey(picked,data.fields||[]);
       select.innerHTML='<option value="">Chọn khóa</option>'+keys.map(key=>'<option value="'+esc(key)+'">'+esc(key)+'</option>').join('');select.value=keys.includes(selected)?selected:keys.length===1?keys[0]:'';
       select.disabled=!!editing;

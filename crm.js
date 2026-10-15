@@ -397,6 +397,12 @@ function defaultCustomFieldValue(field) {
   return '';
 }
 
+// Một số CRM cũ tạo cột này là TEXT. Về nghiệp vụ, "Vấn Đề KH" là ghi chú
+// tự do nên dùng cùng cách xử lý với NOTE mà không đổi id/schema đã lưu.
+function isCustomerNoteField(field) {
+  return field?.type === 'NOTE' || normalize(field?.label) === 'vandekh' || normalize(field?.label) === 'vandekhachhang';
+}
+
 
 function sanitizeCustomFieldValue(value, field) {
   if (!field) return '';
@@ -416,7 +422,7 @@ function sanitizeCustomFieldValue(value, field) {
     const candidate = Number(value);
     return Number.isFinite(candidate) ? Math.max(-Number.MAX_SAFE_INTEGER, Math.min(Number.MAX_SAFE_INTEGER, candidate)) : '';
   }
-  const candidate = cleanText(String(value ?? ''), '', field.type === 'NOTE' ? 4000 : 1000).trim();
+  const candidate = cleanText(String(value ?? ''), '', isCustomerNoteField(field) ? 4000 : 1000).trim();
   if (field.type === 'URL') {
     return !candidate || /^https?:\/\/[^\s]+$/i.test(candidate) ? candidate : '';
   }
@@ -2229,7 +2235,7 @@ function customFieldInput(field, value) {
   if (field.type === 'SELECT') return `<label class="form-field">${escapeHtml(field.label)}<select id="${escapeHtml(id)}"><option value="">— Chưa chọn —</option>${field.options.map(option => `<option value="${escapeHtml(option.value)}" ${value === option.value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>`;
   if (field.type === 'MULTI_SELECT') return `<fieldset class="form-field custom-field-multi"><legend>${escapeHtml(field.label)}</legend><div>${field.options.map(option => `<label><input type="checkbox" data-customer-field-multi="${escapeHtml(field.id)}" value="${escapeHtml(option.value)}" ${(Array.isArray(value) ? value : []).includes(option.value) ? 'checked' : ''}><span class="field-pill" style="--pill:${escapeHtml(option.color)}">${escapeHtml(option.label)}</span></label>`).join('')}</div></fieldset>`;
   if (field.type === 'CHECKBOX') return `<label class="form-field custom-field-check"><span>${escapeHtml(field.label)}</span><input id="${escapeHtml(id)}" type="checkbox" ${value ? 'checked' : ''}></label>`;
-  if (field.type === 'NOTE') return `<label class="form-field full">${escapeHtml(field.label)}<textarea id="${escapeHtml(id)}" rows="3" maxlength="4000">${escapeHtml(value || '')}</textarea></label>`;
+  if (isCustomerNoteField(field)) return `<label class="form-field full">${escapeHtml(field.label)}<textarea id="${escapeHtml(id)}" rows="4" maxlength="4000">${escapeHtml(value || '')}</textarea></label>`;
   const inputType = field.type === 'DATE' ? 'date' : field.type === 'NUMBER' ? 'number' : field.type === 'URL' ? 'url' : 'text';
   return `<label class="form-field ${field.type === 'URL' ? 'full' : ''}">${escapeHtml(field.label)}<input id="${escapeHtml(id)}" type="${inputType}" value="${escapeHtml(value ?? '')}" ${field.required ? 'required' : ''}></label>`;
 }
@@ -3543,7 +3549,7 @@ function openCustomerDrawer(id) {
   const followUpDefault = new Date(Date.now() + 24 * 60 * 60 * 1000);
   followUpDefault.setHours(9, 0, 0, 0);
   const followUpDefaultDueAt = `${followUpDefault.getFullYear()}-${String(followUpDefault.getMonth() + 1).padStart(2, '0')}-${String(followUpDefault.getDate()).padStart(2, '0')}T09:00`;
-  const businessFields = activeCustomFields().filter(field => field.type === 'MULTI_SELECT' || field.type === 'NOTE');
+  const businessFields = activeCustomFields().filter(field => field.type === 'MULTI_SELECT' || isCustomerNoteField(field));
   const businessHtml = businessFields.length ? `<section class="customer-drawer-section customer-business-section"><div class="customer-section-heading"><div><h3>Thông tin tư vấn</h3><p>Chọn nhu cầu và ghi chú của khách hàng</p></div><span class="customer-section-kicker">Nghiệp vụ</span></div>${canUpdate ? `<form id="customerCustomFieldsForm"><div class="form-grid custom-field-grid">${businessFields.map(field => customFieldInput(field, customer.customFields?.[field.id])).join('')}</div><div class="modal-actions"><button class="button button-primary" type="submit">Lưu thông tin tư vấn</button></div></form>` : `<div class="custom-field-readonly">${businessFields.map(field => `<div><small>${escapeHtml(field.label)}</small>${customFieldCell(field, customer.customFields?.[field.id])}</div>`).join('')}</div>`}</section>` : '';
   const updateHtml = `<section class="customer-drawer-section customer-edit-section"><div class="customer-section-heading"><div><h3>Thông tin cần cập nhật</h3><p>Đổi tên khách hàng hoặc cập nhật trạng thái hiện tại</p></div></div>${canEditCustomerForm ? `<form id="customerUpdateForm"><div class="form-grid"><label class="form-field">Tên khách hàng<input id="customerName" type="text" maxlength="160" value="${escapeHtml(customer.name || '')}" ${canEditName ? '' : 'readonly'}></label><label class="form-field">Trạng thái<select id="customerStatus" ${canUpdate ? '' : 'disabled'}>${Object.entries(STATUS_META).map(([key, meta]) => `<option value="${key}" ${customer.status === key ? 'selected' : ''}>${escapeHtml(meta.label)}</option>`).join('')}</select></label></div><div class="modal-actions"><button class="button button-primary" type="submit">${canEditName && canUpdate ? 'Lưu thông tin khách hàng' : canEditName ? 'Lưu tên khách hàng' : 'Cập nhật trạng thái'}</button></div></form>` : `<div class="form-hint">Tài khoản hiện tại chỉ được xem thông tin khách hàng.</div>`}</section>`;
   const productHtml = orders.length || canUpdate ? `<section class="customer-drawer-section"><div class="customer-section-heading section-label-with-action"><div><h3>Sản phẩm & đơn hàng</h3><p>${orders.length ? `${orders.length} đơn hàng đã ghi nhận` : 'Chưa có đơn hàng nào'}</p></div>${canUpdate ? `<button class="button button-small" type="button" data-new-customer-product="${escapeHtml(customer.id)}">+ Thêm</button>` : ''}</div><div class="purchase-list">${orders.map(order => `<button class="purchase-row" type="button" data-customer-order="${escapeHtml(order.id)}"><span><b>${escapeHtml(order.productName)}</b><small>${escapeHtml(order.code)} · SL ${order.qty} · ${escapeHtml(order.createdAt)}</small></span><span class="right"><b>${money(order.total)}</b>${statusBadge(order.status, 'order')}</span></button>`).join('') || '<div class="empty compact"><b>Chưa có sản phẩm</b><span>Đơn hàng mới của khách sẽ hiển thị tại đây.</span></div>'}</div></section>` : '';

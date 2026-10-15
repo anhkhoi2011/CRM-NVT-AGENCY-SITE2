@@ -934,6 +934,16 @@ test('Customer NOTE fields save the current value and change history through the
  assert.match(runtime,/SERVER_LISTS = \[[^\]]*'customers'[^\]]*'customerFieldHistory'/s);
  assert.match(store,/LISTS = \[[^\]]*'customers'[^\]]*'customerFieldHistory'/s);
 });
+test('Vấn Đề KH text field uses note-length storage and survives the SQL field path',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.customers=[{id:'problem-customer',name:'Customer',phone:'0900000014',customFields:{},status:'NEW'}]`,c);
+ const field=await api.saveField(null,{label:'Vấn Đề KH',type:'TEXT',options:[]});
+ const value='Dòng một\n'+('Chi tiết cần lưu. '.repeat(180));
+ const result=await api.updateField('problem-customer',field.id,value);
+ assert.equal(result.updated,true);
+ assert.equal(vm.runInContext(`state.customers[0].customFields[${JSON.stringify(field.id)}]`,c),value.trim());
+ assert.ok(vm.runInContext(`state.customerFieldHistory.some(item=>item.customerId==='problem-customer'&&item.fieldId===${JSON.stringify(field.id)})`,c));
+});
 test('Reference website CRUD keeps webhook identity and rejects deletion of a customer source',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
  const input={name:'QA site',sourceUrl:'https://example.test/landing',provider:'LANDING_API'};
