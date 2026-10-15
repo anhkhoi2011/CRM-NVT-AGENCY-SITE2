@@ -10,7 +10,7 @@ const source=fs.readFileSync(path.join(__dirname,'../reference-crm.js'),'utf8');
 function report(orders,products=[]){
  const nodes=new Map(),tables=new Map();
  const q=id=>{if(!nodes.has(id))nodes.set(id,{value:id==='#revStartDate'?'2026-10-01':id==='#revEndDate'?'2026-10-12':'',textContent:'',rows:[],closest:()=>null,setAttribute(){}});return nodes.get(id);};
- const ctx=vm.createContext({data:{today:'2026-10-12',user:{role:'ADMIN'},orders,products,financialEvents:orders.flatMap(payments.events),customers:[],websites:[]},q,money:String,fmtDate:String,person:String,internalCode:String,text:(id,value)=>{q('#'+id).textContent=value;},table:(node,rows)=>tables.set(node,rows)});
+ const ctx=vm.createContext({data:{today:'2026-10-12',user:{role:'ADMIN'},orders,products,financialEvents:orders.flatMap(payments.events),customers:[],websites:[]},q,money:String,fmtDate:String,person:String,internalCode:String,qa:()=>[],fromDay:days=>{const date=new Date(Date.parse('2026-10-12T00:00:00Z'));date.setUTCDate(date.getUTCDate()-days+1);return date.toISOString().slice(0,10);},text:(id,value)=>{q('#'+id).textContent=value;},table:(node,rows)=>tables.set(node,rows)});
  vm.runInContext(source.slice(source.indexOf('  let revenuePeriod=30;'),source.indexOf('  setRevenueDonutPeriod=',source.indexOf('  let revenuePeriod=30;'))),ctx);
  return {ctx,q,tables,summary:(from='2026-10-01',to='2026-10-12')=>ctx.revenueRangeSummary(from,to)};
 }
@@ -40,4 +40,15 @@ test('Comparison period immediately precedes the chosen range without losing a d
  const f=report([{id:'previous',status:'PAID',paidAt:'2026-09-30',total:1100000,subtotal:1000000,vatAmount:100000}]);
  const ranges=[],base=f.ctx.revenueRangeSummary;f.ctx.revenueRangeSummary=(from,to)=>{ranges.push([from,to]);return base(from,to);};
  f.ctx.renderRevenue();assert.deepEqual(ranges,[['2026-10-01','2026-10-12'],['2026-09-19','2026-09-30']]);
+});
+
+test('Invalid or stale demo dates fall back to the last 30 days instead of filtering real revenue',()=>{
+ const order={id:'recent',status:'PAID',paidAt:'2026-10-10',total:1100000,subtotal:1000000,vatAmount:100000};
+ const f=report([order]);
+ f.q('#revStartDate').value='2026-09-15';f.q('#revEndDate').value='2026-09-01';
+ const ranges=[],base=f.ctx.revenueRangeSummary;f.ctx.revenueRangeSummary=(from,to)=>{ranges.push([from,to]);return base(from,to);};
+ f.ctx.renderRevenue();
+ assert.deepEqual(ranges[0],['2026-09-13','2026-10-12']);
+ assert.equal(f.q('#revStartDate').value,'2026-09-13');assert.equal(f.q('#revEndDate').value,'2026-10-12');
+ assert.equal(f.q('#revDonutCenterAmount').textContent,'1100000');assert.equal(f.q('#revGrossAmountFooter').textContent,'1100000');
 });

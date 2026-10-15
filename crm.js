@@ -1591,6 +1591,25 @@ function paidOrders(orders, periodCheck = null) { return orders.filter(order => 
 function financialEvents(orders, periodCheck = null) {
   return orders.flatMap(orderFinancialEvents).filter(event => !periodCheck || periodCheck(event.occurredAt));
 }
+function isRentalOrder(order) {
+  return Boolean(order?.rentalMonths) || state.products.some(product => String(product.id) === String(order?.productId) && product.type === 'RENTAL');
+}
+function revenueBreakdown(orders, periodCheck = null) {
+  const byId = new Map(orders.map(order => [String(order.id), order]));
+  const events = financialEvents(orders, periodCheck);
+  const sellEvents = events.filter(event => !isRentalOrder(byId.get(String(event.orderId))));
+  const rentEvents = events.filter(event => isRentalOrder(byId.get(String(event.orderId))));
+  const sum = rows => rows.reduce((total, event) => total + (Number(event.amount) || 0), 0);
+  return {
+    events,
+    sellEvents,
+    rentEvents,
+    sellRevenue: sum(sellEvents),
+    rentRevenue: sum(rentEvents),
+    sellOrders: new Set(sellEvents.map(event => String(event.orderId))).size,
+    rentOrders: new Set(rentEvents.map(event => String(event.orderId))).size
+  };
+}
 function orderEditState(order) {
   if (['MARKETING', 'ACCOUNTING', 'HRM'].includes(currentAccount.role)) return { allowed: false, label: 'Chỉ có quyền xem' };
   if (currentAccount.role === 'ADMIN') return { allowed: true, label: 'Admin toàn quyền' };
@@ -1719,13 +1738,23 @@ function revenueChart(series, height = 280) {
 
 function productPerformance(orders) {
   const map = new Map(PRODUCTS.map(product => [product.id, { ...product, units: 0, paidOrders: 0, revenue: 0, refunds: 0, previousRevenue: 0 }]));
-  orders.forEach(order => {
-    const item = map.get(order.productId);
+  financialEvents(orders, inCurrentPeriod).forEach(event => {
+    const order = orders.find(item => String(item.id) === String(event.orderId));
+    const item = order && map.get(order.productId);
     if (!item) return;
-    if (isPaymentInPeriod(order, inCurrentPeriod)) { item.units += order.qty; item.paidOrders += 1; item.revenue += order.total; }
-    if (isRefundInPeriod(order, inCurrentPeriod)) { item.refunds += 1; item.revenue -= order.refund; }
-    if (isPaymentInPeriod(order, inPreviousPeriod)) item.previousRevenue += order.total;
-    if (isRefundInPeriod(order, inPreviousPeriod)) item.previousRevenue -= order.refund;
+    if (event.amount >= 0) { item.units += 1; item.revenue += event.amount; }
+    else { item.refunds += 1; item.revenue += event.amount; }
+  });
+  financialEvents(orders, inCurrentPeriod).forEach(event => {
+    if (event.amount < 0) return;
+    const order = orders.find(item => String(item.id) === String(event.orderId));
+    const item = order && map.get(order.productId);
+    if (item) item.paidOrders += 1;
+  });
+  financialEvents(orders, inPreviousPeriod).forEach(event => {
+    const order = orders.find(item => String(item.id) === String(event.orderId));
+    const item = order && map.get(order.productId);
+    if (item) item.previousRevenue += event.amount;
   });
   return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
 }
@@ -1744,11 +1773,11 @@ function sourcePerformance() {
   };
   traffic.filter(event => inCurrentPeriod(event.date)).forEach(event => register(event.source, event.campaign, event.medium, event.color));
   customers.filter(customer => inCurrentPeriod(customer.createdAt)).forEach(customer => register(customer.source, customer.campaign));
-  orders.filter(order => isPaymentInPeriod(order, inCurrentPeriod) || isRefundInPeriod(order, inCurrentPeriod)).forEach(order => register(order.source, order.campaign));
+  orders.filter(order => orderFinancialEvents(order).some(event => inCurrentPeriod(event.occurredAt))).forEach(order => register(order.source, order.campaign));
   return Array.from(catalog.values()).map(meta => {
     const events = traffic.filter(event => event.source === meta.source && event.campaign === meta.campaign && inCurrentPeriod(event.date));
     const sourceOrders = orders.filter(order => order.source === meta.source && (order.campaign || 'UNATTRIBUTED') === meta.campaign);
-    const paid = paidOrders(sourceOrders, inCurrentPeriod);
+    const paid = sourceOrders.filter(order => orderFinancialEvents(order).some(event => event.amount >= 0 && inCurrentPeriod(event.occurredAt)));
     const sessions = currentAccount.role === 'ADMIN' ? events.reduce((sum, event) => sum + event.sessions, 0) : 0;
     const trackedLeads = currentAccount.role === 'ADMIN' ? events.reduce((sum, event) => sum + event.leads, 0) : 0;
     const matchingCustomers = customers.filter(customer => inCurrentPeriod(customer.createdAt) && orderSource(customer.source) === meta.source && (customer.campaign || 'UNATTRIBUTED') === meta.campaign);
@@ -1769,8 +1798,12 @@ function websiteRevenuePerformance() {
   customers.filter(customer => inCurrentPeriod(customer.createdAt)).forEach(customer => { resolveRow(customer.websiteId).data += 1; });
   scopedOrders().forEach(order => {
     const row = resolveRow(order.websiteId);
-    if (isPaymentInPeriod(order, inCurrentPeriod)) { row.paidOrders += 1; row.gross += order.total; row.net += order.total; }
-    if (isRefundInPeriod(order, inCurrentPeriod)) { row.refunds += order.refund; row.net -= order.refund; }
+    orderFinancialEvents(order).forEach(event => {
+      if (!inCurrentPeriod(event.occurredAt)) return;
+      if (event.amount >= 0) { row.paidOrders += 1; row.gross += event.amount; }
+      else row.refunds += Math.abs(event.amount);
+      row.net += event.amount;
+    });
   });
   const result = Array.from(rows.values()).filter(row => row.data || row.paidOrders || row.refunds || row.net);
   if (unattributed.data || unattributed.paidOrders || unattributed.refunds || unattributed.net) result.push(unattributed);
@@ -1903,12 +1936,10 @@ function executiveDashboardView() {
     ? '<button class="button button-secondary" id="btnAdminBroadcastTelegram" type="button">📢 Phát thông báo Bot</button> <button class="button button-primary btn-primary" id="newOrderButton" type="button">+ Tạo đơn hàng mới</button>'
     : '<button class="button button-primary btn-primary" id="newOrderButton" type="button">+ Tạo đơn hàng mới</button>';
   const currentRangeOrders = scopedOrders();
-  const execPaidOrders = currentRangeOrders.filter(o => o.status === 'PAID');
-  const execSellOrders = execPaidOrders.filter(o => !/thuê|rent|thue|chỉ báo|indicator|bot|tool|vip/i.test(o.productName || o.product || ''));
-  const execRentOrders = execPaidOrders.filter(o => /thuê|rent|thue|chỉ báo|indicator|bot|tool|vip/i.test(o.productName || o.product || ''));
-  const execSellRev = execSellOrders.reduce((sum, o) => sum + Number(o.paidAmount || o.total || 0), 0);
-  const execRentRev = execRentOrders.reduce((sum, o) => sum + Number(o.paidAmount || o.total || 0), 0);
-  const execTotRev = execSellRev + execRentRev || (monthlyRevenue || 0);
+  const execBreakdown = revenueBreakdown(currentRangeOrders, inCurrentPeriod);
+  const execSellRev = execBreakdown.sellRevenue;
+  const execRentRev = execBreakdown.rentRevenue;
+  const execTotRev = execSellRev + execRentRev;
   const execSellPct = execTotRev > 0 ? Math.round((execSellRev / execTotRev) * 100) : 50;
   const execRentPct = 100 - execSellPct;
   const execCircum = 2 * Math.PI * 40;
@@ -1924,7 +1955,7 @@ function executiveDashboardView() {
   </article>`;
   const revenueAnalysis = `<section class="revenue-analysis-card">
     <div class="revenue-analysis-head"><div><h2>Phân Tích Doanh Thu</h2><p>Cơ cấu doanh thu Bên Bán và Bên Thuê theo kỳ đang chọn.</p></div><div class="segmented">${[[1, '1 ngày'], [7, '7 ngày'], [15, '15 ngày'], [30, '30 ngày']].map(([days, label]) => `<button class="segment ${dateRange === days ? 'active' : ''}" data-range="${days}" type="button">${label}</button>`).join('')}</div></div>
-    <div class="revenue-analysis-body"><div class="revenue-donut"><svg viewBox="0 0 100 100" aria-label="Tỷ trọng doanh thu"><circle cx="50" cy="50" r="40"></circle><circle class="sell" cx="50" cy="50" r="40" stroke-dasharray="${execSellDash} ${execCircum}"></circle><circle class="rent" cx="50" cy="50" r="40" stroke-dasharray="${execRentDash} ${execCircum}" stroke-dashoffset="-${execSellDash}"></circle></svg><div><small>Tổng</small><b>${money(execTotRev, true)}</b></div></div><div class="revenue-analysis-legend"><div class="sale"><b>Bên Bán</b><strong>${execSellPct}%</strong><span>${money(execSellRev, true)} · ${number(execSellOrders.length)} đơn</span></div><div class="rental"><b>Bên Thuê</b><strong>${execRentPct}%</strong><span>${money(execRentRev, true)} · ${number(execRentOrders.length)} gói</span></div></div></div>
+    <div class="revenue-analysis-body"><div class="revenue-donut"><svg viewBox="0 0 100 100" aria-label="Tỷ trọng doanh thu"><circle cx="50" cy="50" r="40"></circle><circle class="sell" cx="50" cy="50" r="40" stroke-dasharray="${execSellDash} ${execCircum}"></circle><circle class="rent" cx="50" cy="50" r="40" stroke-dasharray="${execRentDash} ${execCircum}" stroke-dashoffset="-${execSellDash}"></circle></svg><div><small>Tổng</small><b>${money(execTotRev, true)}</b></div></div><div class="revenue-analysis-legend"><div class="sale"><b>Bên Bán</b><strong>${execSellPct}%</strong><span>${money(execSellRev, true)} · ${number(execBreakdown.sellOrders)} giao dịch</span></div><div class="rental"><b>Bên Thuê</b><strong>${execRentPct}%</strong><span>${money(execRentRev, true)} · ${number(execBreakdown.rentOrders)} giao dịch</span></div></div></div>
   </section>`;
 
   return `<div class="executive-dashboard modern-dashboard">${pageHead('Tổng quan · Toàn hệ thống', '', actions)}${dateFilter()}
@@ -2346,7 +2377,7 @@ function customersView() {
   const sourceCell = customer => currentAccount.role === 'ADMIN' ? (() => { const source = customerSourceDetails(customer); const meta = [customer.source, customer.campaign].filter(Boolean).join(' · '); return `<td><div class="cell-main">${escapeHtml(source.name)}</div><div class="cell-sub mono">${source.url ? escapeHtml(source.url) : escapeHtml(source.domain || 'Nguồn chưa được gắn')}</div><div class="cell-sub">${escapeHtml(meta)}</div></td>`; })() : '';
   const columnCount = 7 + tableFields.length + (currentAccount.role === 'ADMIN' ? 1 : 0);
   return pageHead(title, 'Quản lý trạng thái, Sale phụ trách, ghi chú, lịch chăm sóc và sản phẩm đã mua trên cùng hồ sơ.', createButton) +
-    `<section class="panel customer-table-panel"><div class="toolbar"><input id="customerSearch" type="search" placeholder="Ten, SDT, email, Level, ghi chu..." value="${escapeHtml(globalQuery)}"><select id="customerStatusFilter"><option value="ALL">Tất cả trạng thái</option>${Object.entries(STATUS_META).map(([key, meta]) => `<option value="${key}" ${customerStatusFilter === key ? 'selected' : ''}>${escapeHtml(meta.label)}</option>`).join('')}</select>${customerOwnerOptions()}<span class="spacer"></span></div><div class="table-wrap"><table class="customer-data-table"><thead><tr><th>Ngày data</th><th>Khách hàng</th>${sourceHeader}<th>Team / Leader</th><th>Sale phụ trách</th>${tableFields.map(field => `<th>${escapeHtml(field.label)}</th>`).join('')}<th>Trạng thái</th><th>Ghi chú mới nhất</th><th></th></tr></thead><tbody>${visibleCustomers.map(customer => { const leader = STAFF.find(person => person.id === customer.leaderId); const dataDate = dataDateParts(customer.createdAt); return `<tr><td class="data-date-cell"><b>${escapeHtml(dataDate.date)}</b><small>${escapeHtml(dataDate.time)}</small></td><td><div class="cell-main">${escapeHtml(customer.name)}</div><div class="cell-sub">${currentAccount.role === 'SALE' && !customer.saleAcceptedAt ? (() => { const offer = state.dataOffers.find(o => o.customerId === customer.id && o.saleId === currentAccount.saleId && o.status === 'PENDING'); return offer ? `<span class="status status-pending">⏱ còn ${Math.floor(offerMinutesLeft(offer) / 60)}h${offerMinutesLeft(offer) % 60}p</span>` : '<span class="status status-pending">Chờ nhận data</span>'; })() : escapeHtml(customer.phone)}</div></td>${sourceCell(customer)}<td><div class="cell-main">${escapeHtml(leader?.name || 'Chưa phân Leader')}</div>${leader ? `<div class="cell-sub">Team ${escapeHtml(customer.teamId)}</div>` : ''}</td><td class="col-staff">${quickSaleControl(customer)}</td>${tableFields.map(field => `<td>${customFieldTableControl(field, customer)}</td>`).join('')}<td>${quickStatusControl(customer)}</td><td><div class="cell-main mono">${escapeHtml(customer.updatedAt.slice(5))}</div><div class="cell-sub note-preview">${escapeHtml(customer.note)}</div></td><td>${currentAccount.role === 'SALE' && !customer.saleAcceptedAt ? `<button class="button button-small button-primary" data-accept-data="${escapeHtml(customer.id)}">Nhận data</button>` : ''}<button class="button button-small" data-open-customer="${escapeHtml(customer.id)}">Chi tiết</button></td></tr>`; }).join('') || `<tr><td colspan="${columnCount}"><div class="empty"><b>Không tìm thấy khách hàng</b><span>Hãy thử từ khóa hoặc bộ lọc khác.</span></div></td></tr>`}</tbody></table></div>${customerPagination}</section>${currentAccount.role === 'ADMIN' ? `<section class="panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Lịch sử kết nối & cập nhật data</div></div><button class="button button-small" id="importCustomersSecondaryButton">+ Nguồn data</button></div><div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Nguồn</th><th>File / Endpoint</th><th>Số bản ghi</th><th>Người thực hiện</th><th>Trạng thái</th></tr></thead><tbody>${state.imports.slice(0, 8).map(item => `<tr><td class="mono">${escapeHtml(item.importedAt)}</td><td><b>${escapeHtml(item.source)}</b></td><td>${escapeHtml(item.filename)}</td><td>${number(item.records)}</td><td>${escapeHtml(item.actor)}</td><td>${item.status === 'SUCCESS' ? '<span class="status status-paid">Thành công</span>' : '<span class="status status-cancelled">Thất bại</span>'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
+    `<section class="panel customer-table-panel"><div class="toolbar"><input id="customerSearch" type="search" placeholder="Ten, SDT, email, Level, ghi chu..." value="${escapeHtml(globalQuery)}"><select id="customerStatusFilter"><option value="ALL">Tất cả trạng thái</option>${Object.entries(STATUS_META).map(([key, meta]) => `<option value="${key}" ${customerStatusFilter === key ? 'selected' : ''}>${escapeHtml(meta.label)}</option>`).join('')}</select>${customerOwnerOptions()}<span class="spacer"></span></div><div class="table-wrap"><table class="customer-data-table"><thead><tr><th>Ngày data</th><th>Khách hàng</th>${sourceHeader}<th>Team / Leader</th><th>Sale phụ trách</th>${tableFields.map(field => `<th>${escapeHtml(field.label)}</th>`).join('')}<th>Trạng thái</th><th>Ghi chú mới nhất</th><th></th></tr></thead><tbody>${visibleCustomers.map(customer => { const leader = STAFF.find(person => person.id === customer.leaderId); const dataDate = dataDateParts(customer.createdAt); return `<tr><td class="data-date-cell"><b>${escapeHtml(dataDate.date)}</b><small>${escapeHtml(dataDate.time)}</small></td><td><div class="cell-main">${escapeHtml(customer.name)}</div><div class="cell-sub">${currentAccount.role === 'SALE' && !customer.saleAcceptedAt ? (() => { const offer = state.dataOffers.find(o => o.customerId === customer.id && o.saleId === currentAccount.saleId && o.status === 'PENDING'); return offer ? `<span class="status status-pending">⏱ còn ${Math.floor(offerMinutesLeft(offer) / 60)}h${offerMinutesLeft(offer) % 60}p</span>` : '<span class="status status-pending">Chờ nhận data</span>'; })() : `<button class="customer-eye" type="button" data-customer-profile="${escapeHtml(customer.id)}" title="Xem hồ sơ ${escapeHtml(customer.name)}" aria-label="Xem hồ sơ ${escapeHtml(customer.name)}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button> ${escapeHtml(customer.saleId ? staffName(customer.saleId) : 'Chưa phân Sale')}`}</div></td>${sourceCell(customer)}<td><div class="cell-main">${escapeHtml(leader?.name || 'Chưa phân Leader')}</div>${leader ? `<div class="cell-sub">Team ${escapeHtml(customer.teamId)}</div>` : ''}</td><td class="col-staff">${quickSaleControl(customer)}</td>${tableFields.map(field => `<td>${customFieldTableControl(field, customer)}</td>`).join('')}<td>${quickStatusControl(customer)}</td><td><div class="cell-main mono">${escapeHtml(customer.updatedAt.slice(5))}</div><div class="cell-sub note-preview">${escapeHtml(customer.note)}</div></td><td>${currentAccount.role === 'SALE' && !customer.saleAcceptedAt ? `<button class="button button-small button-primary" data-accept-data="${escapeHtml(customer.id)}">Nhận data</button>` : ''}<button class="button button-small" data-open-customer="${escapeHtml(customer.id)}">Chi tiết</button></td></tr>`; }).join('') || `<tr><td colspan="${columnCount}"><div class="empty"><b>Không tìm thấy khách hàng</b><span>Hãy thử từ khóa hoặc bộ lọc khác.</span></div></td></tr>`}</tbody></table></div>${customerPagination}</section>${currentAccount.role === 'ADMIN' ? `<section class="panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Lịch sử kết nối & cập nhật data</div></div><button class="button button-small" id="importCustomersSecondaryButton">+ Nguồn data</button></div><div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Nguồn</th><th>File / Endpoint</th><th>Số bản ghi</th><th>Người thực hiện</th><th>Trạng thái</th></tr></thead><tbody>${state.imports.slice(0, 8).map(item => `<tr><td class="mono">${escapeHtml(item.importedAt)}</td><td><b>${escapeHtml(item.source)}</b></td><td>${escapeHtml(item.filename)}</td><td>${number(item.records)}</td><td>${escapeHtml(item.actor)}</td><td>${item.status === 'SUCCESS' ? '<span class="status status-paid">Thành công</span>' : '<span class="status status-cancelled">Thất bại</span>'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
 }
 
 // Ty trong rieng trong Team, khong thay doi ty trong Admin chia xuong Leader.
@@ -2591,12 +2622,10 @@ function productCategoriesModal() {
 function revenueView() {
   const current = periodSnapshot(), series = dailySeries(), products = productPerformance(scopedOrders()).filter(product => product.paidOrders || product.refunds), sources = sourcePerformance();
 
-  // Tính toán cơ cấu doanh thu Bên Bán / Bên Thuê thật
-  const paidOrders = (current.paid || []);
-  const sellOrders = paidOrders.filter(order => !/thuê|rent|thue|chỉ báo|indicator|bot|tool|vip/i.test(order.productName || order.product || ''));
-  const rentOrders = paidOrders.filter(order => /thuê|rent|thue|chỉ báo|indicator|bot|tool|vip/i.test(order.productName || order.product || ''));
-  const sellRev = sellOrders.reduce((sum, order) => sum + Number(order.paidAmount || order.total || 0), 0);
-  const rentRev = rentOrders.reduce((sum, order) => sum + Number(order.paidAmount || order.total || 0), 0);
+  // Tính toán cơ cấu doanh thu theo financial event và metadata sản phẩm.
+  const breakdown = revenueBreakdown(scopedOrders(), inCurrentPeriod);
+  const sellRev = breakdown.sellRevenue;
+  const rentRev = breakdown.rentRevenue;
   const totRev = sellRev + rentRev || (current.revenue || 0);
   const sellPct = totRev > 0 ? Math.round((sellRev / totRev) * 100) : 50;
   const rentPct = 100 - sellPct;
@@ -2640,29 +2669,29 @@ function revenueView() {
             <b style="font-size:12.5px;color:var(--text-main,#0f172a);">🛒 Bên Bán (Sản phẩm & Khóa học)</b>
             <span style="font-family:var(--font-mono, monospace);font-weight:800;color:#16a34a;font-size:13px;">${sellPct}%</span>
           </div>
-          <div style="font-size:11px;color:var(--text-muted,#64748b);margin-top:2px;">${money(sellRev)} · ${sellOrders.length} đơn hoàn tất</div>
+          <div style="font-size:11px;color:var(--text-muted,#64748b);margin-top:2px;">${money(sellRev)} · ${number(breakdown.sellOrders)} đơn</div>
         </div>
         <div style="background:var(--bg-subtle,#f8fafc);padding:10px 14px;border-radius:8px;border-left:4px solid #0284c7;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <b style="font-size:12.5px;color:var(--text-main,#0f172a);">⚡ Bên Thuê (Chỉ báo & Tool)</b>
             <span style="font-family:var(--font-mono, monospace);font-weight:800;color:#0284c7;font-size:13px;">${rentPct}%</span>
           </div>
-          <div style="font-size:11px;color:var(--text-muted,#64748b);margin-top:2px;">${money(rentRev)} · ${rentOrders.length} gói thuê đang chạy</div>
+          <div style="font-size:11px;color:var(--text-muted,#64748b);margin-top:2px;">${money(rentRev)} · ${number(breakdown.rentOrders)} gói</div>
         </div>
       </div>
     </div>
   </section>`;
   const websites = websiteRevenuePerformance();
   const activeSources = sources.filter(source => source.paidOrders || source.revenue !== 0);
-  const gross = current.paid.reduce((sum, order) => sum + order.subtotal, 0);
-  const discounts = current.paid.reduce((sum, order) => sum + order.discount, 0);
-  const refunds = current.refunds.reduce((sum, order) => sum + order.refund, 0);
+  const gross = current.transactions.filter(event => event.amount >= 0).reduce((sum, event) => sum + event.amount, 0);
+  const vatCollected = current.transactions.reduce((sum, event) => sum + Number(event.vatAmount || 0), 0);
+  const refunds = current.transactions.filter(event => event.amount < 0).reduce((sum, event) => sum + Math.abs(event.amount), 0);
   const sourceRevenueHtml = currentAccount.role === 'ADMIN' ? `<section class="panel"><div class="panel-head"><div><div class="panel-title">Doanh thu theo nguồn</div><div class="panel-sub">Attribution last-touch của đơn hàng</div></div></div><div class="panel-body">${activeSources.map((source, index) => { const share = current.revenue > 0 ? source.revenue / current.revenue * 100 : 0; return `<div class="rank-row"><span class="rank">${index + 1}</span><div><b>${escapeHtml(source.source)}</b><small>${source.paidOrders} đơn · ${share.toFixed(1).replace('.', ',')}% doanh thu</small><div class="progress"><i style="width:${Math.max(share, 0)}%;background:${source.color}"></i></div></div><div class="rank-value"><b>${money(source.revenue, true)}</b><small>${source.roas ? `${source.roas.toFixed(1)}x ROAS` : 'Organic'}</small></div></div>`; }).join('') || '<div class="empty"><b>Chưa có doanh thu theo nguồn</b><span>Không phát sinh thanh toán hoặc hoàn tiền trong kỳ.</span></div>'}</div></section>` : '';
   const websiteRevenueHtml = currentAccount.role === 'ADMIN' ? `<section class="panel" style="margin-top:14px"><div class="panel-head"><div><div class="panel-title">Doanh thu theo website / landing page</div><div class="panel-sub">Quy nguồn bằng snapshot website trên đơn; dòng thiếu dữ liệu được tách riêng</div></div></div><div class="table-wrap"><table><thead><tr><th>Website / Landing</th><th>Data mới</th><th>Lượt thanh toán</th><th>Thu tiền</th><th>Hoàn tiền</th><th>Doanh thu thuần</th><th>Tỷ trọng</th></tr></thead><tbody>${websites.map(row => { const share = current.revenue > 0 ? row.net / current.revenue * 100 : 0; return `<tr><td><div class="cell-main">${escapeHtml(row.name)}</div><div class="cell-sub">${escapeHtml(row.domain)}</div></td><td>${number(row.data)}</td><td>${number(row.paidOrders)}</td><td>${money(row.gross)}</td><td>${money(row.refunds)}</td><td><b>${money(row.net)}</b></td><td>${share.toFixed(1).replace('.', ',')}%</td></tr>`; }).join('') || '<tr><td colspan="7"><div class="empty"><b>Chưa có doanh thu theo website</b><span>Chưa phát sinh data hoặc giao dịch trong kỳ.</span></div></td></tr>'}</tbody></table></div></section>` : '';
   const actualRole=currentAccount.actualRole||currentAccount.role;
   const revenueScopeDescription=actualRole==='MANAGER'?`Chỉ hiển thị doanh thu Team ${currentAccount.teamId||'được chọn'} thuộc tuyến Manager`:actualRole==='LEADER'?`Chỉ hiển thị doanh thu Team ${currentAccount.teamId||''} do bạn quản lý`:actualRole==='SALE'?'Chỉ hiển thị doanh thu từ khách hàng bạn phụ trách':'Đối chiếu doanh thu toàn hệ thống theo ngày thanh toán và hoàn tiền.';
   return pageHead(currentAccount.role === 'SALE' ? 'Doanh thu của tôi' : 'Doanh thu & thanh toán', revenueScopeDescription, currentAccount.role !== 'SALE' ? '<button class="button" id="exportRevenueButton" type="button">Xuất CSV</button>' : '') + dateFilter() + revenueAnalysisCard +
-    `<div class="kpi-grid" style="grid-template-columns:repeat(4,minmax(150px,1fr))">${kpiCard('Σ', 'Doanh số gộp', money(gross, true), `${current.units} sản phẩm`)}${kpiCard('-', 'Chiết khấu', money(discounts, true), 'Đã trừ khỏi đơn')}${kpiCard('↩', 'Hoàn tiền', money(refunds, true), `${current.refunds.length} giao dịch`)}${kpiCard('₫', 'Doanh thu thuần', money(current.revenue, true), `${current.paid.length} lượt thanh toán`)}</div>
+    `<div class="kpi-grid" style="grid-template-columns:repeat(4,minmax(150px,1fr))">${kpiCard('Σ', 'Doanh số gộp', money(gross, true), `${current.transactions.filter(event => event.amount >= 0).length} lượt thu`)}${kpiCard('-', 'VAT thực thu', money(vatCollected, true), 'Theo từng lần thu/hoàn')}${kpiCard('↩', 'Hoàn tiền', money(refunds, true), `${current.transactions.filter(event => event.amount < 0).length} giao dịch`)}${kpiCard('₫', 'Doanh thu thuần', money(current.revenue, true), `${current.transactions.length} sự kiện tài chính`)}</div>
     <section class="panel"><div class="panel-head"><div><div class="panel-title">Dòng doanh thu theo ngày</div><div class="panel-sub">Ghi theo paidAt và trừ hoàn tiền đúng ngày refundedAt</div></div></div><div class="panel-body">${revenueChart(series, 300)}</div></section>
     <div class="grid ${currentAccount.role === 'ADMIN' ? 'grid-2' : ''}" style="margin-top:14px"><section class="panel"><div class="panel-head"><div><div class="panel-title">Chi tiết theo sản phẩm</div><div class="panel-sub">Đơn, số lượng, doanh thu và tỷ lệ hoàn</div></div></div><div class="table-wrap"><table><thead><tr><th>Sản phẩm / SKU</th><th>SL bán</th><th>Đơn</th><th>Doanh thu</th><th>Hoàn</th><th>So kỳ trước</th></tr></thead><tbody>${products.map(product => `<tr><td><div class="cell-main">${escapeHtml(product.name)}</div><div class="cell-sub">${escapeHtml(product.sku)} · ${escapeHtml(product.category)}</div></td><td>${product.units}</td><td>${product.paidOrders}</td><td><b>${money(product.revenue)}</b></td><td>${product.refunds}</td><td>${deltaBadge(delta(product.revenue, product.previousRevenue))}</td></tr>`).join('') || '<tr><td colspan="6"><div class="empty"><b>Chưa có sản phẩm bán ra</b><span>Không có thanh toán hoặc hoàn tiền trong kỳ.</span></div></td></tr>'}</tbody></table></div></section>${sourceRevenueHtml}</div>
     ${websiteRevenueHtml}
@@ -5328,6 +5357,7 @@ function bindViewActions() {
   $$('[data-view-jump]').forEach(button => button.onclick = () => navigate(button.dataset.viewJump));
   $$('[data-team-member]').forEach(button => button.onclick = () => { customerOwnerFilter = `sale:${button.dataset.teamMember}`; navigate('customers'); });
   $$('[data-open-customer]').forEach(button => button.onclick = () => openCustomerDrawer(button.dataset.openCustomer));
+  $$('[data-customer-profile]').forEach(button => button.onclick = () => openCustomerDrawer(button.dataset.customerProfile));
   $$('[data-open-order]').forEach(button => button.onclick = () => openOrderDrawer(button.dataset.openOrder));
   $$('[data-edit-order]').forEach(button => button.onclick = () => editOrderModal(button.dataset.editOrder));
   $$('[data-delete-order]').forEach(button => button.onclick = () => deleteOrder(button.dataset.deleteOrder));

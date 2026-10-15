@@ -215,12 +215,23 @@ window.setCarePage = setCarePage;
                          c.status === 'CONTACTED' ? '<span class="chip chip-warm">Đã liên hệ</span>' :
                          '<span class="chip chip-cold">Data mới</span>';
 
+      const personnel = customerPersonnelLabels(c);
+      const saleLabel = personnel.sale
+        ? escapeCustomerLabel(personnel.sale)
+        : '<span style="color: var(--text-muted); font-style: italic;">Chưa phân Sale</span>';
+      const profileLabel = escapeCustomerLabel(`Xem hồ sơ ${c.name}`);
+
       return `<tr>
         <td style="font-family: var(--font-mono); font-size: 11px; white-space: nowrap;">${c.createdAt}</td>
-        <td><b>${c.name}</b><div style="font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono);">${c.phone}</div></td>
+        <td><b>${c.name}</b><div style="display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 10.5px; color: var(--text-muted);">
+          <button class="customer-eye" type="button" onclick="openDrawerForCust('${c.id}')" title="${profileLabel}" aria-label="${profileLabel}">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          </button>
+          <span>${saleLabel}</span>
+        </div></td>
         <td><span style="color: #2563eb; font-weight: 700;">${c.source}</span></td>
-        <td>${(() => { const personnel=customerPersonnelLabels(c); return personnel.teamLeader ? escapeCustomerLabel(personnel.teamLeader) : '<span style="color: var(--text-muted); font-style: italic;">Chưa phân Team / Leader</span>'; })()}</td>
-        <td>${(() => { const personnel=customerPersonnelLabels(c); return personnel.sale ? `<b>${escapeCustomerLabel(personnel.sale)}</b>` : '<span style="color: var(--text-muted); font-style: italic;">Chưa phân Sale</span>'; })()}</td>
+        <td>${personnel.teamLeader ? escapeCustomerLabel(personnel.teamLeader) : '<span style="color: var(--text-muted); font-style: italic;">Chưa phân Team / Leader</span>'}</td>
+        <td>${saleLabel}</td>
         <td><span style="font-family: var(--font-mono); font-weight: 700;">${c.level}</span></td>
         <td>
           <select onchange="updateCustomerClass('${c.id}', this.value)" style="padding: 4px 8px; border-radius: 6px; font-size: 11px; border: 1px solid var(--border); background: var(--bg-surface); font-weight: 700;">
@@ -767,11 +778,43 @@ window.setCarePage = setCarePage;
   function openDrawerForCust(id) {
     const c = appState.customers.find(item => item.id === id);
     if (!c) return;
-    document.getElementById('drawerName').innerText = c.name;
-    document.getElementById('drawerPhone').innerText = c.phone;
-    document.getElementById('drawerClass').innerText = c.customerClass;
-    document.getElementById('drawerLevel').innerText = c.level;
-    document.getElementById('drawerCallBtn').setAttribute('href', 'tel:' + c.phone);
+    const personnel = customerPersonnelLabels(c);
+    const members = appState.members || [];
+    const memberName = memberId => members.find(member => String(member.id) === String(memberId))?.name || '';
+    const setText = (elementId, value, fallback = '—') => {
+      const element = document.getElementById(elementId);
+      if (element) element.textContent = value || fallback;
+    };
+    const phone = c.phone || '';
+    const email = c.email || '';
+    const note = c.note || '';
+
+    setText('drawerName', c.name, 'Khách hàng');
+    setText('drawerCreated', c.createdAt ? `Ngày tạo: ${c.createdAt}` : 'Ngày tạo: —');
+    setText('drawerStatus', c.status === 'PAID' ? 'Đã thanh toán' : c.status === 'CONTACTED' ? 'Đã liên hệ' : 'Data mới');
+    setText('drawerPhone', phone);
+    setText('drawerEmail', email, 'Chưa có email');
+    setText('drawerSale', personnel.sale, 'Chưa phân Sale');
+    setText('drawerLeader', personnel.teamLeader, 'Chưa phân Team / Leader');
+    setText('drawerManager', memberName(c.managerId), 'Chưa phân Manager');
+    setText('drawerSource', c.source, 'Chưa rõ nguồn');
+    setText('drawerClass', c.customerClass, 'Chưa phân loại');
+    setText('drawerLevel', c.level, 'Chưa cập nhật');
+    setText('drawerCallStatus', c.callStatus, 'Chưa cập nhật');
+    setText('drawerDocStatus', c.docStatus, 'Chưa cập nhật');
+    setText('drawerCareResult', c.careResult, 'Chưa cập nhật');
+    setText('drawerCustomerStatus', c.status === 'PAID' ? 'Đã thanh toán' : c.status === 'CONTACTED' ? 'Đã liên hệ' : 'Data mới');
+    const noteElement = document.getElementById('drawerNote');
+    if (noteElement) {
+      noteElement.textContent = note || 'Chưa có ghi chú.';
+      noteElement.classList.toggle('drawer-empty', !note);
+    }
+    ['drawerCallBtn', 'drawerCallAction'].forEach(elementId => {
+      const element = document.getElementById(elementId);
+      if (element) element.setAttribute('href', phone ? `tel:${phone}` : 'tel:');
+    });
+    const emailButton = document.getElementById('drawerEmailBtn');
+    if (emailButton) emailButton.setAttribute('href', email ? `mailto:${email}` : 'mailto:');
     sideDrawer.classList.add('open');
     drawerOverlay.classList.add('open');
   }
@@ -779,6 +822,9 @@ window.setCarePage = setCarePage;
     sideDrawer.classList.remove('open');
     drawerOverlay.classList.remove('open');
   }
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && sideDrawer.classList.contains('open')) closeDrawer();
+  });
   function openOrderModalFromDrawer() {
     closeDrawer();
     openOrderModal();

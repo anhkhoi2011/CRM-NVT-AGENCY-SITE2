@@ -688,6 +688,23 @@
         row.insertBefore(phoneCell,row.cells[2]);
         row.dataset.phoneColumnAdded='1';
       }
+      const nameCell=row.cells[1];
+      if(nameCell&&!nameCell.dataset.customerMetaAdded){
+        const meta=document.createElement('div');
+        meta.className='customer-name-meta';
+        meta.style.cssText='display:flex;align-items:center;gap:4px;margin-top:2px;font-size:10.5px;color:var(--text-muted);';
+        const eye=document.createElement('button');
+        eye.type='button';eye.className='customer-eye';eye.title='Xem hồ sơ '+c.name;eye.setAttribute('aria-label','Xem hồ sơ '+c.name);
+        eye.innerHTML='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+        eye.dataset.viewOnly='1';
+        eye.onclick=()=>workflow('customer',c.id);
+        const saleName=document.createElement('span');
+        const saleId=assignedSaleIdForCustomer(c);
+        const assignedSale=(data.members||[]).find(m=>m.id!=null&&saleId!=null&&String(m.id)===String(saleId));
+        saleName.textContent=assignedSale?.name||'Chưa phân Sale';
+        if(!assignedSale){saleName.style.fontStyle='italic';}
+        meta.append(eye,saleName);nameCell.append(meta);nameCell.dataset.customerMetaAdded='1';
+      }
       // Dùng ID để lưu; tên và số điện thoại chỉ dùng để hiển thị.
       const selectOwner=(cell,kind,people,value,editable)=>{
         if(customerDraftValues.has(kind+':'+c.id))value=customerDraftValues.get(kind+':'+c.id);
@@ -2866,7 +2883,7 @@
     const key=JSON.stringify(leaders);if(panel.dataset.signature===key)return;panel.dataset.signature=key;
     panel.innerHTML='<div style="display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap"><div><b>Toàn bộ Leader được Admin phân công</b><small style="display:block;margin-top:4px;color:var(--text-muted)">Manager xem tổng khách hàng, doanh thu và dữ liệu của tất cả Leader trong tuyến.</small></div><span class="chip">'+leaders.length+' Leader</span></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+(leaders.length?leaders.map(l=>'<span class="chip chip-info">'+esc(l.name)+' · '+esc(l.teamId||'Chưa có Team')+'</span>').join(''):'<span class="chip">Chưa được Admin phân công Leader</span>')+'</div>';
   }
-  function dateDefaults(){['order','rev','team'].forEach(p=>{const start=q('#'+p+'StartDate'),end=q('#'+p+'EndDate');if(start)start.value=fromDay(30);if(end)end.value=data.today;});}
+  function dateDefaults(){['order','rev','team'].forEach(p=>{const start=q('#'+p+'StartDate'),end=q('#'+p+'EndDate');if(start)start.value=fromDay(30);if(end)end.value=data.today;if(p==='rev'){if(start)start.dataset.revenueInitialized='true';if(end)end.dataset.revenueInitialized='true';}});}
   let toolsRole='',renderedTabs=new Map();
   const activeTabStorageKey=()=>`${ACTIVE_TAB_KEY}:${encodeURIComponent(String(data?.user?.id||data?.user?.accountId||snapshotRole(data)||'anonymous'))}`;
   const rememberActiveTab=id=>{
@@ -3505,9 +3522,15 @@
   }
   function renderRevenue(){
     if(!data)return;
+    const validDay=value=>{const day=String(value||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return false;const parsed=new Date(day+'T00:00:00Z');return Number.isFinite(parsed.getTime())&&parsed.toISOString().slice(0,10)===day&&day<=(data.today||'9999-12-31');};
+    const startInput=q('#revStartDate'),endInput=q('#revEndDate'),chosenStart=validDay(startInput?.value)?startInput.value.slice(0,10):'',chosenEnd=validDay(endInput?.value)?endInput.value.slice(0,10):'';
+    const start=chosenStart&&chosenEnd&&chosenStart<=chosenEnd?chosenStart:fromDay(30),end=chosenStart&&chosenEnd&&chosenStart<=chosenEnd?chosenEnd:data.today;
+    if(startInput)startInput.value=start;
+    if(endInput)endInput.value=end;
+    revenuePeriod=Math.max(1,Math.round((Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/86400000)+1);
     const role=data.user.actualRole||data.user.role,subtitle=q('#tab-revenue .headline-row > div:first-child > div');
     if(subtitle)subtitle.textContent=role==='MANAGER'?'Chỉ hiển thị doanh thu Team '+(data.user.teamId||'được chọn')+' thuộc tuyến Manager':role==='LEADER'?'Chỉ hiển thị doanh thu Team '+(data.user.teamId||'')+' do bạn quản lý':role==='SALE'?'Chỉ hiển thị doanh thu từ khách hàng bạn phụ trách':'Báo cáo doanh thu toàn hệ thống';
-    const start=q('#revStartDate')?.value||'',end=q('#revEndDate')?.value||'',current=revenueRangeSummary(start,end);
+    const current=revenueRangeSummary(start,end);
     const dayMs=86400000,parseDay=value=>Date.parse(value+'T00:00:00Z');
     const first=start||data.today,last=end||data.today,days=Math.max(1,Math.round((parseDay(last)-parseDay(first))/dayMs)+1);
     const previousEnd=new Date(parseDay(first)-dayMs).toISOString().slice(0,10),previousStart=new Date(parseDay(first)-days*dayMs).toISOString().slice(0,10),previous=revenueRangeSummary(previousStart,previousEnd);
