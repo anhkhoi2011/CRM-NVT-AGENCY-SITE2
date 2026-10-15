@@ -2780,8 +2780,14 @@
     }
     if (event.data && event.data.type === 'ACCOUNTING_EXPENSE_SAVE') {
       (async()=>{
-        if(!api) throw Error('CRM chưa sẵn sàng.');
-        const result=await api.saveExpense(event.data.payload||{});
+        let runtimeApi=api;
+        for(let attempt=0;attempt<40&&!runtimeApi;attempt++){
+          runtimeApi=api||frame.contentWindow?.crmApi||null;
+          if(!runtimeApi)await new Promise(resolve=>setTimeout(resolve,300));
+        }
+        if(!runtimeApi) throw Error('CRM chưa sẵn sàng.');
+        api=runtimeApi;
+        const result=await runtimeApi.saveExpense(event.data.payload||{});
         refresh(true);
         syncMembersToAccountingMindmap();
         (event.source || q('#accountingIframe')?.contentWindow)?.postMessage({type:'ACCOUNTING_EXPENSE_RESULT',ok:true,action:'save',result},'*');
@@ -2790,7 +2796,13 @@
     }
     if (event.data && event.data.type === 'ACCOUNTING_EXPENSE_DELETE') {
       (async()=>{
-        const runtimeApi=api||frame.contentWindow?.crmApi;
+        // Iframe runtime có thể đang boot lại sau F5; chờ crmApi sẵn sàng tối đa ~12s
+        // thay vì báo "CRM chưa sẵn sàng" ngay khiến thao tác xóa thất bại.
+        let runtimeApi=api;
+        for(let attempt=0;attempt<40&&!runtimeApi;attempt++){
+          runtimeApi=api||frame.contentWindow?.crmApi||null;
+          if(!runtimeApi)await new Promise(resolve=>setTimeout(resolve,300));
+        }
         if(!runtimeApi) throw Error('CRM chưa sẵn sàng.');
         api=runtimeApi;
         const result=await runtimeApi.removeExpense(event.data.id);
