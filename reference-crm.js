@@ -2790,8 +2790,10 @@
     }
     if (event.data && event.data.type === 'ACCOUNTING_EXPENSE_DELETE') {
       (async()=>{
-        if(!api) throw Error('CRM chưa sẵn sàng.');
-        const result=await api.removeExpense(event.data.id);
+        const runtimeApi=api||frame.contentWindow?.crmApi;
+        if(!runtimeApi) throw Error('CRM chưa sẵn sàng.');
+        api=runtimeApi;
+        const result=await runtimeApi.removeExpense(event.data.id);
         const deletedId=event.data.id;
         // Lấy snapshot mới thẳng, tránh nhánh refresh bị chặn bởi hàng đợi lưu
         // khách hàng (customerSaveQueue.pending) khiến iframe nhận lại expenses cũ
