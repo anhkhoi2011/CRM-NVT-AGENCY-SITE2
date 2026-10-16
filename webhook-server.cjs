@@ -56,6 +56,16 @@ const DEFAULT_WEBHOOK_DATA_DIR = webhookStorage.path;
 const inboxStorage = runtimeStorage.resolveWritableFile({ configured: process.env.WEBHOOK_INBOX_FILE, fallback: path.join(DEFAULT_WEBHOOK_DATA_DIR, '.webhook-inbox.json'), label: 'WEBHOOK_INBOX_FILE' });
 const INBOX_FILE = inboxStorage.path;
 const webhookJournal = require('./webhook-journal.cjs').createJournal(path.join(DEFAULT_WEBHOOK_DATA_DIR, 'pending'));
+function webhookHealthSummary() {
+  const counts = {};
+  let latest = null;
+  for (const record of inbox) {
+    const status = String(record.status || 'UNKNOWN');
+    counts[status] = (counts[status] || 0) + 1;
+    if (!latest || String(record.receivedAt || '') > String(latest.receivedAt || '')) latest = record;
+  }
+  return { total: inbox.length, statuses: counts, latestReceivedAt: latest?.receivedAt || null, latestStatus: latest?.status || null, latestPersisted: latest?.persisted === true };
+}
 function vietnamToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
@@ -959,7 +969,10 @@ const WEBHOOK_TOKEN = (process.env.WEBHOOK_TOKEN || '').trim();
 const TOKEN_HEADERS = ['x-api-key', 'x-webhook-token', 'token', 'authorization'];
 
 const WEBHOOK_PATH_PATTERN = /^\/api\/data-sources\/webhook\/([^/]+)\/?$/;
-const SLUG_PATTERN = /^ds-\d{13}-[A-Z0-9]{11}$/i;
+// Provider slugs are opaque identifiers. Keep accepting the generated format,
+// but also accept older LadiPage slugs so a form configured before the CRM
+// update is not rejected with 404 before its payload reaches the durable inbox.
+const SLUG_PATTERN = /^ds-[a-z0-9][a-z0-9-]{4,159}$/i;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -2129,14 +2142,14 @@ const server = http.createServer(async (request, response) => {
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
     if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname === '/api/google-sheets/backup' || pathname === '/api/pnl' || pathname.startsWith('/api/pnl/') || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/') || pathname.startsWith('/api/bank-statement-file/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
-      return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), webhookStorage: { ready: true, fallback: webhookStorage.fallback || inboxStorage.fallback }, instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
+      return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), webhookStorage: { ready: true, fallback: webhookStorage.fallback || inboxStorage.fallback }, webhooks: webhookHealthSummary(), instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
     }
     if (pathname === '/api/health') {
       if (DEMO_MODE) return sendJson(response, 200, { ok: true, demo: true, inbox: inbox.length, token: Boolean(WEBHOOK_TOKEN) });
       if (!dbConfigured) return sendJson(response, 503, { ok: false, mysql: 'not_configured', error: 'MySQL chưa được cấu hình.' });
       try {
         await dbHealth();
-        return sendJson(response, 200, { ok: true, mysql: 'ready', inbox: inbox.length, token: Boolean(WEBHOOK_TOKEN), build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
+        return sendJson(response, 200, { ok: true, mysql: 'ready', inbox: inbox.length, webhooks: webhookHealthSummary(), token: Boolean(WEBHOOK_TOKEN), build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
       } catch (error) {
         return sendJson(response, 503, { ok: false, mysql: 'unavailable', code: error.code || 'DB_ERROR', error: 'Node đang chạy nhưng chưa kết nối được MySQL.' });
       }
