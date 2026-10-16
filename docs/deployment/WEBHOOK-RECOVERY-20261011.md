@@ -14,9 +14,8 @@ because replay does not reinsert the customer or Telegram notice.
 
 Historical inbox recovery is limited to unconfirmed records with a local
 `receivedAt` date of `2026-10-11` (override with `WEBHOOK_RECOVERY_DATE`). Older
-inbox records are left alone. Recovery calls the writer with `skipAutomatic:true`
-so it does not scan or reassign existing customers. Recovered new leads stay in
-the unassigned queue. Existing matching customers keep their name, phone, notes,
+inbox records are left alone. Recovery calls the writer with `skipAutomatic:true`, then runs assignment only for the newly restored customer;
+it does not scan or reassign existing customers. Recovered new leads therefore follow the current webhook routing configuration. Existing matching customers keep their name, phone, notes,
 level and ownership; duplicate intake is recorded separately. Notification-only
 webhooks are never recovered as customers and need their original sender retry.
 

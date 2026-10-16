@@ -207,6 +207,40 @@ async function marketingCommandResponse(chatId, command) {
   return false;
 }
 
+async function pnlCommandResponse(chatId, rawText) {
+  const rows = await dbQuery('SELECT * FROM users WHERE telegram_chat_id = ? AND active = 1 LIMIT 1', [String(chatId)]);
+  if (!rows?.length) { await sendMessage(chatId, '⚠️ Tài khoản Telegram chưa được liên kết với CRM.'); return true; }
+  const user = { ...rows[0], teamId: rows[0].team_id || '', leaderId: rows[0].leader_id || null, managerId: rows[0].manager_id || null };
+  if (!['ADMIN', 'MANAGER', 'LEADER', 'SALE'].includes(String(user.role).toUpperCase())) { await sendMessage(chatId, '🔒 Tài khoản của bạn chưa được cấp quyền quản lý lãi lỗ.'); return true; }
+  const pnl = require('./pnl-management.cjs');
+  const [command, ...parts] = String(rawText).trim().split(/\s+/);
+  try {
+    if (command.toLowerCase() === '/taokhach') {
+      if (parts.length < 5) throw Error('Cú pháp: /taokhach <ID_KHÁCH> <TK_CQG> <SỐ_LOT> <VỐN> <TÊN_KHÁCH>');
+      const customer = await pnl.createCustomer(user, { customerCode: parts[0], cqgAccount: parts[1], defaultLot: parts[2], initialCapital: parts[3], customerName: parts.slice(4).join(' ') });
+      await sendMessage(chatId, `✅ <b>ĐÃ TẠO KHÁCH PNL</b>\nID: <code>${escapeHtml(customer.customerCode)}</code>\nCQG: <code>${escapeHtml(customer.cqgAccount)}</code>\nTên: <b>${escapeHtml(customer.customerName)}</b>\nVốn: <b>${formatVND(customer.initialCapital)}</b>`);
+      return true;
+    }
+    if (command.toLowerCase() === '/lailo') {
+      if (parts.length < 2) throw Error('Cú pháp: /lailo <ID_KHÁCH|CQG> <LÃI_LỖ> [SỐ_LOT] [GHI_CHÚ]');
+      const list = await pnl.list(user, { search: parts[0] });
+      const customer = list.customers.find(row => row.customer_code === parts[0] || row.cqg_account === parts[0]);
+      if (!customer) throw Error('Không tìm thấy khách hàng hoặc bạn không có quyền với khách này.');
+      const result = await pnl.upsertLog(user, { customerId: customer.id, pnlAmount: parts[1], lotVolume: parts[2] || customer.default_lot, notes: parts.slice(3).join(' '), source: 'telegram' });
+      const sign = Number(result.pnlAmount) > 0 ? '+' : '';
+      await sendMessage(chatId, `✅ <b>CẬP NHẬT LÃI/LỖ THÀNH CÔNG</b>\n👤 ${escapeHtml(customer.customer_code)} · ${escapeHtml(customer.customer_name)}\n📊 Lot: <b>${Number(result.lotVolume).toLocaleString('vi-VN')}</b>\n💰 Hôm nay: <b>${sign}${formatVND(result.pnlAmount)}</b>\n🏦 Vốn hiện tại: <b>${formatVND(result.customer.current_capital)}</b>${result.riskAlert ? '\n⚠️ <b>CẢNH BÁO LỖ VƯỢT NGƯỠNG 20% VỐN</b>' : ''}`);
+      return true;
+    }
+    if (command.toLowerCase() === '/xemlailo') {
+      const result = await pnl.list(user, parts[0] ? { search: parts[0] } : {});
+      const rowsText = result.customers.slice(0, 20).map(row => `• <b>${escapeHtml(row.customer_code)}</b> · hôm nay ${formatVND(row.today_pnl)} · tuần ${formatVND(row.week_pnl)} · vốn ${formatVND(row.current_capital)}`).join('\n');
+      await sendMessage(chatId, `📊 <b>TỔNG HỢP LÃI/LỖ</b> (${result.weekStart} → ${result.weekEnd})\n${rowsText || 'Chưa có dữ liệu.'}`);
+      return true;
+    }
+  } catch (error) { await sendMessage(chatId, `⚠️ ${escapeHtml(error.message || 'Không xử lý được lệnh PnL.')}`); return true; }
+  return false;
+}
+
 async function handleIncomingMessage(msg) {
   const chatId = msg.chat?.id;
   if (!chatId) return;
@@ -270,6 +304,11 @@ async function handleIncomingMessage(msg) {
   // Lệnh Marketing chỉ chạy sau khi đã xác thực tài khoản Telegram.
   if (['/chandung', '/content', '/insight'].includes(rawText)) {
     try { await marketingCommandResponse(chatId, rawText); } catch (error) { await sendMessage(chatId, '⚠️ Không tạo được báo cáo Marketing: ' + escapeHtml(error.message || 'CRM đang bận.')); }
+    return;
+  }
+
+  if (/^\/(lailo|taokhach|xemlailo)(?:\s|$)/i.test(rawText)) {
+    await pnlCommandResponse(chatId, rawText);
     return;
   }
 
@@ -922,6 +961,27 @@ async function sendWeeklyReport() {
 let lastCheckinDate = '';
 let lastWeeklyReportDate = '';
 let lastMarketingInsightDate = '';
+let lastPnlReminderKey = '';
+let lastPnlWeeklyKey = '';
+
+async function sendPnlDailyReminders(vnDateStr) {
+  try {
+    const pnl = typeof require === 'function' ? require('./pnl-management.cjs') : null;
+    if (!pnl) return;
+    const candidates = await pnl.reminderCandidates(vnDateStr);
+    for (const row of candidates.slice(0, 100)) await sendMessage(row.owner_chat_id, `⏰ <b>NHẮC NHẬP LÃI/LỖ</b>\nKhách <b>${escapeHtml(row.customer_code)}</b> · CQG <code>${escapeHtml(row.cqg_account)}</code> chưa có số liệu ngày ${escapeHtml(vnDateStr)}.\nGõ: <code>/lailo ${escapeHtml(row.cqg_account)} +0 ${Number(row.default_lot || 0)}</code>`);
+  } catch (error) { console.warn('[Telegram PnL reminder]', error.code || error.message); }
+}
+
+async function sendPnlWeeklySummary(vnDateStr) {
+  try {
+    const pnl = typeof require === 'function' ? require('./pnl-management.cjs') : null;
+    if (!pnl) return;
+    await pnl.closeWeek({ id: 'pnl-scheduler', role: 'ADMIN' }, pnl.weekStart(vnDateStr));
+    const users = await dbQuery("SELECT id,name,role,telegram_chat_id FROM users WHERE active=1 AND telegram_chat_id IS NOT NULL AND role IN ('ADMIN','MANAGER','LEADER','SALE')");
+    for (const user of users) { const result = await pnl.list({ ...user, teamId: user.team_id || '', leaderId: user.leader_id || null, managerId: user.manager_id || null }); const total = result.customers.reduce((sum, row) => sum + Number(row.week_pnl || 0), 0); await sendMessage(user.telegram_chat_id, `📊 <b>TỔNG KẾT LÃI/LỖ TUẦN</b>\nTuần ${result.weekStart} → ${result.weekEnd}\nKhách trong phạm vi: <b>${result.customers.length}</b>\nTổng lãi/lỗ: <b>${formatVND(total)}</b>`); }
+  } catch (error) { console.warn('[Telegram PnL weekly]', error.code || error.message); }
+}
 
 async function sendWeeklyMarketingInsight() {
   const crmData = require('./crm-data.cjs');
@@ -954,6 +1014,15 @@ async function runTelegramScheduler({skipLeadDrain=false}={}) {
     const vnDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
     const vnDay = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' })).getDay(); // 0 = Sunday
     const [hour, minute] = vnTimeStr.split(':').map(Number);
+
+    if ((vnDay >= 1 && vnDay <= 5 && ((hour === 16 && minute >= 30 && minute <= 35) || (hour === 20 && minute <= 5))) && lastPnlReminderKey !== `${vnDateStr}:${hour}`) {
+      lastPnlReminderKey = `${vnDateStr}:${hour}`;
+      await sendPnlDailyReminders(vnDateStr);
+    }
+    if (vnDay === 0 && hour === 20 && minute <= 10 && lastPnlWeeklyKey !== vnDateStr) {
+      lastPnlWeeklyKey = vnDateStr;
+      await sendPnlWeeklySummary(vnDateStr);
+    }
 
     // 1. Quét Lịch hẹn khách hàng sắp tới (trước 15 - 30 phút)
     try {

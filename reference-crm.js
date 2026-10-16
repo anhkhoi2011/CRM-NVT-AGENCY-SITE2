@@ -125,7 +125,7 @@
     pager.querySelector('[data-data-page-next]').onclick=()=>{if(dataQueuePage<pages){dataQueuePage++;renderDataQueuePagination(table,total);}};
   }
   const restrictedAdminTabs=new Set(['websites','products','audit','settings','accounting','blacklist']);
-  const sharedOrganizationTabs=new Set(['feedback','processes']);
+  const sharedOrganizationTabs=new Set(['feedback','processes','pnl']);
   let roleVisibilityObserver=null;
   function installCustomerJourney(){
     const tab=q('#tab-customers');
@@ -573,7 +573,7 @@
       .reference-editor-card .modal-close-btn{width:30px;height:30px;border-radius:7px;color:#64748b!important}
       .reference-editor-card .modal-close-btn:hover{background:#e2e8f0;color:#0f172a!important}
       .reference-editor-body{display:block!important;padding:22px!important;background:#fff;overflow-y:auto!important}
-      .reference-editor-body>[data-editor-error]{min-height:18px;margin:12px 0 0;font-size:12px;font-weight:700;color:#dc2626}
+      .reference-editor-body>[data-editor-error]{min-height:18px;margin:12px 0 0;padding:0;color:#dc2626;font-size:12px;font-weight:700;line-height:1.45}
       .crm-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
       .crm-field{display:grid;gap:7px;min-width:0;margin:0!important}
       .crm-field>span{display:flex;align-items:center;gap:5px;color:#334155;font-size:12px;font-weight:800;line-height:1.35}
@@ -594,6 +594,16 @@
       .reference-editor-card .modal-footer{padding:13px 22px!important;border-top:1px solid #e2e8f0!important;background:#f8fafc}
       .reference-editor-card .modal-footer .btn-action{min-height:38px;padding:0 16px;border-radius:8px;font-weight:800}
       @media(max-width:600px){.reference-editor-card{width:min(100% - 20px,720px)!important}.reference-editor-body{padding:17px!important}.crm-form-grid{grid-template-columns:1fr;gap:13px}.crm-field-full{grid-column:auto}.crm-field>span small{margin-left:0}.reference-editor-card .modal-header{padding:15px 17px!important}.reference-editor-card .modal-footer{padding:11px 17px!important}}
+      .statement-editor-card{width:min(900px,calc(100vw - 28px))!important;max-height:min(760px,92dvh)!important}
+      .statement-editor-card .reference-editor-body{padding:20px 24px!important}
+      .statement-editor-card .crm-form-grid{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:14px 18px;align-items:start}
+      .statement-editor-card .crm-field>span{font-size:11.5px;line-height:1.35}
+      .statement-editor-card .crm-field input:not([type=file]),.statement-editor-card .crm-field select{min-height:42px;font-size:13px}
+      .statement-editor-card .crm-field textarea{min-height:92px;font-size:13px}
+      .statement-editor-card .crm-file-picker{min-height:42px;padding:4px 8px}
+      .statement-editor-card .crm-image-preview{display:flex;align-items:flex-start;min-height:0;margin-top:0}
+      .statement-editor-card .crm-image-preview img{width:auto;max-width:min(320px,100%);max-height:190px}
+      @media(max-width:600px){.statement-editor-card{width:calc(100% - 20px)!important}.statement-editor-card .reference-editor-body{padding:16px!important}.statement-editor-card .crm-form-grid{grid-template-columns:1fr;gap:12px}.statement-editor-card .crm-image-preview img{max-width:100%;max-height:220px}}
     `;document.head.appendChild(style);
   }
   const formField=(label,html)=>`<div class="form-group" style="margin-bottom:14px"><label for="${html.match(/id="([^"]+)"/)?.[1]||''}" style="display:block">${esc(label)}${/\brequired(?:\s|>|=)/i.test(html)&&!label.includes("*")?'<em aria-hidden="true" style="color:#dc2626;font-style:normal;margin-left:4px">*</em>':""}</label>${html}</div>`;
@@ -951,6 +961,9 @@
       button.onclick=()=>{
         if(!confirm('Xóa data này? Dữ liệu sẽ được lưu lịch sử và không hiển thị lại.'))return;
         const customer=data?.customers.find(item=>item.id===button.dataset.deleteCustomer),name=customer?.name||'data';
+        const row=button.closest('tr');
+        button.disabled=true;
+        if(row){row.classList.add('is-deleting');row.style.opacity='.45';row.style.pointerEvents='none';}
         run(()=>api.deleteCustomer(button.dataset.deleteCustomer),()=>referenceNotice('Đã xóa data '+name+' thành công.'));
       };
     });
@@ -4030,7 +4043,8 @@
       +'<label class="crm-field"><span>Kết quả <em>*</em></span><select id="statementResult"><option value="PROFIT" '+(item.result==='PROFIT'?'selected':'')+'>Lãi</option><option value="LOSS" '+(item.result==='LOSS'?'selected':'')+'>Lỗ</option><option value="NEUTRAL" '+((!item.result||item.result==='NEUTRAL')?'selected':'')+'>Hòa / Khác</option></select></label>'
       +'<div class="crm-field"><span>File sao kê <small>ảnh / Excel / CSV / PDF · tối đa 5 MB</small></span><div class="crm-file-picker"><input id="statementFile" type="file" accept="image/*,.pdf,.csv,.xls,.xlsx,.txt,.doc,.docx,.zip"><label class="crm-file-button" for="statementFile">Chọn file</label><span class="crm-file-name" id="statementFileName">'+(item.fileName?esc(item.fileName):(item.hasFile?'Đã có file':'Chưa chọn tệp'))+'</span></div></div>'
       +'<label class="crm-field crm-field-full"><span>Ghi chú trước khi up</span><textarea id="statementNote" rows="4" maxlength="2000" placeholder="Ghi chú về sao kê này (lãi/lỗ, nguồn tiền, giao dịch cần lưu ý...)"></textarea></label><div id="statementFilePreview" class="crm-image-preview crm-field-full"></div></div>';
-    editor(id?'Cập nhật sao kê':'Up sao kê',body,async()=>{const picked=q('#statementFile')?.files?.[0];const file=picked?await readReferenceFile(picked):'';return api.saveBankStatement(id,{title:q('#statementTitle').value,result:q('#statementResult').value,note:q('#statementNote').value,fileName:picked?picked.name:item.fileName,fileType:picked?picked.type:item.fileType,fileData:file||fileData});});
+    const modal=editor(id?'Cập nhật sao kê':'Up sao kê',body,async()=>{const title=q('#statementTitle').value.trim();const picked=q('#statementFile')?.files?.[0];if(!title)throw Error('Vui lòng nhập tiêu đề sao kê.');const file=picked?await readReferenceFile(picked):'';return api.saveBankStatement(id,{title,result:q('#statementResult').value,note:q('#statementNote').value,fileName:picked?picked.name:item.fileName,fileType:picked?picked.type:item.fileType,fileData:file||fileData});});
+    modal.querySelector('.reference-editor-card')?.classList.add('statement-editor-card');
     q('#statementTitle').value=item.title||'';q('#statementNote').value=item.note||'';
     const preview=()=>{const input=q('#statementFile'),value=input?.files?.[0],name=q('#statementFileName'),host=q('#statementFilePreview');if(name)name.textContent=value?.name||(item.fileName||(item.hasFile?'Đã có file':'Chưa chọn tệp'));if(value){readReferenceFile(value).then(file=>{fileData=file;host.innerHTML=/^data:image\//.test(file)?'<img src="'+esc(file)+'" alt="Xem trước sao kê">':'<div class="statement-file-chip">📄 '+esc(value.name)+'</div>';}).catch(error=>{host.textContent=error.message;});}else host.innerHTML=(item.fileData&&/^data:image\//.test(item.fileData))?'<img src="'+esc(item.fileData)+'" alt="File sao kê hiện tại">':'';};
     q('#statementFile').onchange=preview;preview();
@@ -4272,7 +4286,7 @@
     body.innerHTML=filtered.map((row,index)=>{const c=row.customer,offer=row.offer,assigned=c.saleId||offer?.saleId||c.leaderId||c.managerId||'',status=statusFor(c,offer,row.type),sourceUrl=sourceUrlFor(c),sourceName=sourceNameFor(c),sourceHtml=sourceUrl?'<a href="'+esc(sourceUrl)+'" target="_blank" rel="noopener noreferrer">'+esc(sourceUrl)+'</a>':'<span>Chưa gắn nguồn</span>',options='<option value="">— Chưa chọn —</option>'+recipients.map(member=>'<option value="'+esc(member.id)+'" '+(member.id===assigned?'selected':'')+'>'+esc(member.name||'Chưa đặt tên')+recipientLabel(member)+'</option>').join(''),sourceCell=hasSource?'<td><div class="data-source">'+sourceHtml+'<small>'+esc(sourceName)+'</small></div></td>':'',actionCell='<td><div class="management-data-actions"><button type="button" class="management-reassign-button" data-management-reassign="'+esc(c.id)+'">Phân lại</button>'+(hasSource?'<button type="button" class="management-delete-button" data-management-delete="'+esc(c.id)+'">Xóa</button>':'')+'</div></td>';return '<tr><td><b>#'+(index+1)+'</b></td><td><b>'+esc(fmtDate(String(row.at||c.createdAt||'').slice(0,10)))+'</b><small>'+esc(String(row.at||c.createdAt||'').slice(11,16))+'</small></td><td><b>'+esc(c.name||'—')+'</b></td><td><span class="data-phone">'+esc(c.phone||'—')+'</span></td><td><span class="data-type-badge '+typeClass(row.type)+'">'+esc(row.type)+'</span></td>'+sourceCell+'<td><select class="management-sale-select" data-management-sale="'+esc(c.id)+'" data-previous="'+esc(assigned)+'" aria-label="Chọn người phụ trách cho '+esc(c.name||'khách hàng')+'">'+options+'</select><small class="data-status-badge '+statusClass(status)+'">'+esc(status)+'</small></td>'+actionCell+'</tr>';}).join('')||'<tr><td colspan="'+(hasSource?8:7)+'"><div class="empty"><b>Không có data</b><span>Data mới sẽ xuất hiện ở đây.</span></div></td></tr>';
     body.querySelectorAll('[data-management-sale]').forEach(select=>select.onchange=()=>{if(!select.value)select.value=select.dataset.previous||'';});
     body.querySelectorAll('[data-management-reassign]').forEach(button=>button.onclick=async()=>{const row=button.closest('tr'),select=row?.querySelector('[data-management-sale]'),value=String(select?.value||''),previous=select?.dataset.previous||'',member=recipients.find(item=>item.id===value);if(!value){referenceNotice('Hãy chọn người phụ trách trước khi phân lại.','error');select?.focus();return;}button.disabled=true;if(select)select.disabled=true;const result=await run(()=>api.assign(button.dataset.managementReassign,value));if(result!==null){if(select)select.dataset.previous=value;referenceNotice('Đã phân lại data thành công cho '+(member?.name||'người phụ trách')+'.');}else if(select)select.value=previous;button.disabled=false;if(select)select.disabled=false;});
-    body.querySelectorAll('[data-management-delete]').forEach(button=>button.onclick=async()=>{const customer=data.customers.find(item=>item.id===button.dataset.managementDelete),name=customer?.name||'data';if(!await referenceConfirmDelete(name))return;button.disabled=true;const result=await run(()=>api.deleteCustomer(button.dataset.managementDelete));if(result!==null)referenceNotice('Đã xóa data '+name+' thành công.');button.disabled=false;});
+    body.querySelectorAll('[data-management-delete]').forEach(button=>button.onclick=async()=>{const customer=data.customers.find(item=>item.id===button.dataset.managementDelete),name=customer?.name||'data';if(!await referenceConfirmDelete(name))return;const row=button.closest('tr');button.disabled=true;if(row){row.classList.add('is-deleting');row.style.opacity='.45';row.style.pointerEvents='none';}const result=await run(()=>api.deleteCustomer(button.dataset.managementDelete));if(result!==null)referenceNotice('Đã xóa data '+name+' thành công.');});
     const countPeriod=days=>rows.filter(row=>String(row.at||row.customer.createdAt||'').slice(0,10)>=fromDay(days)).length;
     const waitingCount=rows.filter(row=>row.offer?.status==='PENDING').length;
     const acceptedCount=rows.filter(row=>Boolean(row.customer.saleId)&&row.offer?.status!=='PENDING').length;
@@ -4373,5 +4387,11 @@
   if(!data){
     bootFallbackTimer=setTimeout(revealLoginFallback,storedSession()?.token?800:250);
   }
+  async function loadLegacyPnl(){
+    const body=q('#legacyPnlBody'); if(!body)return;
+    const token=storedSession()?.token||''; try{const r=await fetch('/api/pnl',{headers:{Authorization:'Bearer '+token},cache:'no-store'});const x=await r.json();if(!r.ok)throw Error(x.error||'Kh?ng t?i ???c PnL');const rows=x.customers||[],num=v=>Number(v||0),money=v=>num(v).toLocaleString('vi-VN')+' ?';q('#legacyPnlCapital').textContent=money(rows.reduce((a,v)=>a+num(v.currentCapital??v.current_capital),0));q('#legacyPnlLots').textContent=rows.reduce((a,v)=>a+num(v.weekLots??v.week_lots),0).toLocaleString('vi-VN');q('#legacyPnlToday').textContent=money(rows.reduce((a,v)=>a+num(v.todayPnl??v.today_pnl),0));q('#legacyPnlWeek').textContent=money(rows.reduce((a,v)=>a+num(v.weekPnl??v.week_pnl),0));body.innerHTML=rows.map(row=>'<tr><td><b>'+String((row.customerCode??row.customer_code??''))+'</b><small>'+String((row.customerName??row.customer_name??''))+'</small></td><td>'+String((row.cqgAccount??row.cqg_account??''))+'</td><td>'+money(row.currentCapital??row.current_capital)+'</td><td>'+num(row.weekLots??row.week_lots)+'</td><td>'+money(row.todayPnl??row.today_pnl)+'</td><td>'+money(row.weekPnl??row.week_pnl)+'</td><td><button class="btn-secondary" data-legacy-pnl-log="'+row.id+'">Nh?p l?i/l?</button></td></tr>').join('')||'<tr><td colspan="7">Ch?a c? kh?ch PnL.</td></tr>';qa('[data-legacy-pnl-log]').forEach(b=>b.onclick=async()=>{const amount=prompt('Nh?p l?i/l? h?m nay (l? nh?p s? ?m):');if(amount===null)return;const lot=prompt('S? lot:','0');const rr=await fetch('/api/pnl/customers/'+encodeURIComponent(b.dataset.legacyPnlLog)+'/logs',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({tradeDate:new Date().toISOString().slice(0,10),lotVolume:lot,pnlAmount:amount})});if(!rr.ok)alert((await rr.json()).error||'Kh?ng l?u ???c');else loadLegacyPnl();});}catch(e){body.innerHTML='<tr><td colspan="7">'+e.message+'</td></tr>';}
+  }
+  document.addEventListener('click',e=>{const b=e.target.closest('[data-tab="tab-pnl"]');if(b)setTimeout(loadLegacyPnl,0);});
+  q('#legacyPnlCreate')?.addEventListener('click',async()=>{const token=storedSession()?.token||'';const customerCode=prompt('ID kh?ch h?ng:');if(!customerCode)return;const customerName=prompt('T?n kh?ch h?ng:')||customerCode;const cqgAccount=prompt('T?i kho?n CQG:');if(!cqgAccount)return;const defaultLot=prompt('S? lot m?c ??nh:','0');const initialCapital=prompt('V?n ban ??u:','0');const r=await fetch('/api/pnl/customers',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({customerCode,customerName,cqgAccount,defaultLot,initialCapital})});if(!r.ok)alert((await r.json()).error||'Kh?ng t?o ???c kh?ch');else loadLegacyPnl();});
   refreshTimer=setInterval(()=>{if(!document.hidden){refresh();if(q('#tab-audit.active')){loadUserActivity();loadOrderAudit();}}},15000);frame.addEventListener('load',()=>refresh(true));
 })();

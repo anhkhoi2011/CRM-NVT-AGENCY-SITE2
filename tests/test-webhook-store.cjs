@@ -34,7 +34,7 @@ function fixture(failCustomer = false, websites = [{ id: 'WEB-TEST', name: 'Hoan
   };
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('./webhook-store.cjs'), 'utf8'), {
-    module, URL, require: name => name === './db.js' ? { dbConfigured: true, pool: { async query() {}, async getConnection() { return connection; } } } : name === './crm-data.cjs' ? {queueTelegramNotice:async (c, key, notice) => { notices.push({ key, ...notice }); },prepare:async()=>{},distributeAutomatic:async c=>{assert.equal(c,connection);calls.push('assign');}} : name === './crm-defaults.json' ? { websites: [] } : require(name)
+    module, URL, require: name => name === './db.js' ? { dbConfigured: true, pool: { async query() {}, async getConnection() { return connection; } } } : name === './crm-data.cjs' ? {queueTelegramNotice:async (c, key, notice) => { notices.push({ key, ...notice }); },prepare:async()=>{},distributeAutomatic:async c=>{assert.equal(c,connection);calls.push('assign');},distributeAutomaticForCustomers:async (c, ids)=>{assert.equal(c,connection);calls.push('assign:'+ids.join(','));}} : name === './crm-defaults.json' ? { websites: [] } : require(name)
   });
   return { ...module.exports, customers, events, documents, notices, calls };
 }
@@ -139,6 +139,13 @@ test('Recovery inserts only the missing lead without scanning old customers for 
   assert.equal(f.notices.length,1);
   await f.persistWebhook(record,{skipAutomatic:true});
   assert.equal(f.notices.length,1);
+});
+
+test('Recovery can assign only the newly restored lead', async () => {
+  const f = fixture();
+  const saved = await f.persistWebhook(record, { skipAutomatic: true, assignRecovered: true });
+  assert.equal(saved.customerId, 'CUS-WHE-1');
+  assert.deepEqual(f.calls, ['begin', 'assign:CUS-WHE-1', 'commit', 'release']);
 });
 
 test('Replayed duplicate webhook returns the original existing customer and owner',async()=>{

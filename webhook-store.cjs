@@ -167,7 +167,7 @@ async function recordDuplicate(connection, eventId, record, existing, sourceSnap
   return { ownerSaleId, pendingOfferId: pendingOffer?.id || null, waitingForAcceptance };
 }
 
-async function persistWebhook(record, { skipAutomatic = false, acceptBlacklistId = null, actor = null } = {}) {
+async function persistWebhook(record, { skipAutomatic = false, assignRecovered = false, acceptBlacklistId = null, actor = null } = {}) {
   await ensureSchema();
   await crmData.prepare();
   const connection = await pool.getConnection();
@@ -270,7 +270,16 @@ async function persistWebhook(record, { skipAutomatic = false, acceptBlacklistId
       const notification={id:`NT-DATA-${eventId}`,kind:'DATA_ARRIVAL',role:'ADMIN',customerId,title:'Data mới về',text:`${record.customer.name} · ${website?.name||'Landing Page'}`,at:new Date().toISOString(),readBy:[]};
       await connection.execute('INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE id=id',['notifications',notification.id,JSON.stringify(notification)]);
     }
-    if (record.status === 'NEW' && !replay && !skipAutomatic) await crmData.distributeAutomatic(connection);
+    if (record.status === 'NEW' && !replay) {
+      if (!skipAutomatic) await crmData.distributeAutomatic(connection);
+      // Recovery normally avoids scanning existing customers. When explicitly
+      // requested, process only the customer created by this webhook so a lead
+      // recovered from the durable journal also enters the normal assignment
+      // flow without touching older records.
+      if (skipAutomatic && assignRecovered && typeof crmData.distributeAutomaticForCustomers === 'function') {
+        await crmData.distributeAutomaticForCustomers(connection, [customerId]);
+      }
+    }
     if (accepted) await connection.execute('UPDATE webhook_events SET payload_json=? WHERE id=?', [JSON.stringify({ ...storedRecord, customerId }), eventId]);
     return await commitResult({ eventId, customerId: record.status === 'NEW' ? customerId : null, duplicate: replay, replay, source: sourceSnapshot });
   } catch (error) {

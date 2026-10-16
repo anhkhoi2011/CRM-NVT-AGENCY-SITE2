@@ -470,6 +470,7 @@
     "memberBotToken": "",
     "memberBotChatId": "",
     "webhookPublicBase": "https://nvtagency.top",
+    "googleSheetsBackupUrl": "https://docs.google.com/spreadsheets/d/1Gs50FplPekASSHN7Ha2eXlG0je1AVPHtIA_bD_I1Pns/edit?gid=0#gid=0",
     "attendanceIp": "",
     "attendanceDeadline": "09:00",
     "acceptTimeoutHours": 24,

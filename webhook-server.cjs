@@ -38,6 +38,8 @@ function wakeTelegramOutbox(){
  if(inlineTelegramScheduler || telegramWorker?.status() !== 'running')void telegramBot.drainLeadNotifications().catch(error=>console.warn('[telegram-outbox]',error.code||error.message));
 }
 const supportChat = require('./support-chat.cjs');
+const googleSheetsBackup = require('./google-sheets-backup.cjs');
+const pnlManagement = require('./pnl-management.cjs');
 let nodemailer = null;
 try { nodemailer = require('nodemailer'); } catch { /* email optional until npm install */ }
 
@@ -45,7 +47,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261015-expense-delete-2';
+const BUILD_VERSION = '20261016-google-sheets-backup-2';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -262,7 +264,7 @@ const demoState = {
   customFieldDefinitions: DEMO_MODE ? structuredClone(require('./crm-defaults.json').customFieldDefinitions) : [], customerFieldHistory: [], assignmentHistory: [],
   resubmissions: [], notes: [], imports: [], attendance: [], dataOffers: [],
   traffic: [], tasks: [], notifications: [], audit: [], websites: [{ id: 'WEB-DEMO', name: 'Nguồn local', domain: 'localhost:4173', sourceUrl: 'http://localhost:4173/', status: 'ACTIVE' }],
-  integrations: [], webhookPending: [], blacklistIps: [], blacklistEntries: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [], bankStatements: [],
+  integrations: [], webhookPending: [], blacklistIps: [], blacklistEntries: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [], bankStatements: [], pnlCustomers: [], pnlDailyLogs: [], pnlWeeklySummaries: [],
   settings: { assignmentMode: 'BALANCED', leaderCanUpdate: true, leaderAttendanceRequired: true },
   leaderDistribution: { enabled: true, enabledLeaderIds: ['demo-leader'], weights: { 'demo-leader': 1 }, sourceRules: [] },
   saleDistributionByLeader: { 'demo-leader': { leaderEnabled: true, enabledSaleIds: ['demo-sale'], weights: { 'demo-leader': 1, 'demo-sale': 1 } } }
@@ -549,6 +551,86 @@ async function handleBlacklistApi(request, response, pathname, user) {
     return dbJson(request, response, 404, { error: 'Chức năng Blacklist không hợp lệ.' });
   } catch (error) { return dbJson(request, response, error.status || 503, { error: error.status ? error.message : 'Chưa lưu được Blacklist. Vui lòng thử lại.' }); }
 }
+
+async function handleGoogleSheetsBackupApi(request, response, user) {
+  if (request.method !== 'POST') return dbJson(request, response, 405, { error: 'Chỉ chấp nhận POST' });
+  if (user?.role !== 'ADMIN') return dbJson(request, response, 403, { error: 'Chỉ Admin được sao lưu đơn hàng' });
+  if (!process.env.GOOGLE_SHEETS_BACKUP_URL) {
+    return dbJson(request, response, 200, {
+      ok: false,
+      enabled: false,
+      queued: 0,
+      error: 'Chưa cấu hình Google Apps Script Web App trên máy chủ.'
+    });
+  }
+  try {
+    const source = DEMO_MODE
+      ? { orders: demoState.orders || [], customers: demoState.customers || [] }
+      : (await crmData.read(user, { passive: true, full: true })).state;
+    const result = await googleSheetsBackup.backupOrders(source.orders || [], source.customers || [], user, 'BACKUP');
+    return dbJson(request, response, 200, { ok: true, ...result });
+  } catch (error) {
+    console.error('[google-sheets-backup]', error.code || error.message);
+    return dbJson(request, response, 503, {
+      ok: false,
+      enabled: true,
+      queued: 0,
+      error: 'Không sao lưu được đơn hàng lúc này. Vui lòng thử lại.'
+    });
+  }
+}
+
+function demoPnlVisible(user, customer) {
+  const role = String(user?.role || '').toUpperCase();
+  if (role === 'ADMIN') return true;
+  if (role === 'SALE') return customer.createdBy === user.id;
+  const creator = demoState.members.find(member => member.id === customer.createdBy);
+  if (!creator) return false;
+  if (role === 'LEADER') return customer.createdBy === user.id || (creator.role === 'SALE' && (creator.leaderId === user.id || creator.teamId === user.teamId));
+  if (role === 'MANAGER') return customer.createdBy === user.id || creator.managerId === user.id || creator.leaderId === user.id;
+  return false;
+}
+function demoPnlList(user, search = '') {
+  const query = String(search || '').trim().toLowerCase();
+  const start = pnlManagement.weekStart(), end = pnlManagement.weekEnd(start), date = pnlManagement.today();
+  const visible = (demoState.pnlCustomers || []).filter(row => row.status !== 'inactive' && demoPnlVisible(user, row)).filter(row => !query || `${row.customerCode} ${row.customerName} ${row.cqgAccount}`.toLowerCase().includes(query));
+  const logs = demoState.pnlDailyLogs || [], weekly = demoState.pnlWeeklySummaries || [];
+  return { customers: visible.map(row => { const own = logs.filter(log => String(log.customerId) === String(row.id)); const todayLog = own.find(log => log.tradeDate === date); const weekLogs = own.filter(log => log.tradeDate >= start && log.tradeDate <= end); return { ...row, todayPnl: Number(todayLog?.pnlAmount || 0), weekPnl: weekLogs.reduce((sum, log) => sum + Number(log.pnlAmount || 0), 0), weekLots: weekLogs.reduce((sum, log) => sum + Number(log.lotVolume || 0), 0), creatorName: demoState.members.find(m => m.id === row.createdBy)?.name || '' }; }), logs: logs.filter(log => visible.some(row => String(row.id) === String(log.customerId))), weekly: weekly.filter(log => visible.some(row => String(row.id) === String(log.customerId))), weekStart: start, weekEnd: end, date };
+}
+async function handlePnlApi(request, response, pathname, user) {
+  const role = String(user?.role || '').toUpperCase();
+  if (!['ADMIN', 'MANAGER', 'LEADER', 'SALE'].includes(role)) return dbJson(request, response, 403, { error: 'Tài khoản không có quyền quản lý lãi lỗ.' });
+  if (DEMO_MODE) {
+    if (pathname === '/api/pnl' && request.method === 'GET') return dbJson(request, response, 200, demoPnlList(user, new URL(request.url, 'http://localhost').searchParams.get('search')));
+    if (pathname === '/api/pnl/customers' && request.method === 'POST') {
+      const body = await readDbBody(request), code = String(body.customerCode || '').trim(), cqg = String(body.cqgAccount || '').trim();
+      if (!code || !cqg || !String(body.customerName || '').trim()) return dbJson(request, response, 400, { error: 'Vui lòng nhập đủ ID, tên và tài khoản CQG.' });
+      if (role === 'SALE' && body.assignedTo && body.assignedTo !== user.id) return dbJson(request, response, 403, { error: 'Sale chỉ được tạo khách cho chính mình.' });
+      if ((demoState.pnlCustomers || []).some(row => row.customerCode === code || row.cqgAccount === cqg)) return dbJson(request, response, 409, { error: 'ID khách hàng hoặc tài khoản CQG đã tồn tại.' });
+      const id = `PNL-${crypto.randomUUID()}`; const capital = Number(body.initialCapital || 0);
+      demoState.pnlCustomers.push({ id, customerCode: code, customerName: String(body.customerName).trim(), cqgAccount: cqg, initialCapital: capital, currentCapital: capital, defaultLot: Number(body.defaultLot || 0), assignedTo: body.assignedTo || user.id, createdBy: user.id, status: 'active', createdAt: new Date().toISOString() }); demoStateVersion++;
+      return dbJson(request, response, 201, { ok: true, customer: demoState.pnlCustomers.at(-1) });
+    }
+    const logMatch = pathname.match(/^\/api\/pnl\/customers\/([^/]+)\/logs$/);
+    if (logMatch && request.method === 'POST') {
+      const body = await readDbBody(request), customer = demoState.pnlCustomers.find(row => row.id === decodeURIComponent(logMatch[1]));
+      if (!customer || !demoPnlVisible(user, customer)) return dbJson(request, response, 403, { error: 'Bạn không có quyền với khách hàng PnL này.' });
+      const tradeDate = String(body.tradeDate || pnlManagement.today()), existing = demoState.pnlDailyLogs.find(row => row.customerId === customer.id && row.tradeDate === tradeDate), log = { id: existing?.id || `PNLLOG-${crypto.randomUUID()}`, customerId: customer.id, tradeDate, lotVolume: Number(body.lotVolume || 0), pnlAmount: Number(body.pnlAmount || 0), source: body.source === 'telegram' ? 'telegram' : 'web', notes: String(body.notes || '').slice(0, 2000), recordedBy: user.id };
+      if (existing) Object.assign(existing, log); else demoState.pnlDailyLogs.push(log); customer.currentCapital = Number(customer.initialCapital) + demoState.pnlDailyLogs.filter(row => row.customerId === customer.id).reduce((sum, row) => sum + Number(row.pnlAmount || 0), 0); demoStateVersion++;
+      return dbJson(request, response, 200, { ok: true, log, customer, riskAlert: log.pnlAmount < 0 && Math.abs(log.pnlAmount) >= Math.max(1, Number(customer.initialCapital) * .2) });
+    }
+    if (pathname === '/api/pnl/weekly/close' && request.method === 'POST') { if (role !== 'ADMIN') return dbJson(request, response, 403, { error: 'Chỉ Admin được chốt tổng kết tuần.' }); return dbJson(request, response, 200, { ok: true, weekStart: pnlManagement.weekStart(), weekEnd: pnlManagement.weekEnd(pnlManagement.weekStart()), count: demoState.pnlCustomers.length }); }
+    return dbJson(request, response, 404, { error: 'PnL API không tồn tại.' });
+  }
+  try {
+    if (pathname === '/api/pnl' && request.method === 'GET') return dbJson(request, response, 200, await pnlManagement.list(user, Object.fromEntries(new URL(request.url, 'http://localhost').searchParams.entries())));
+    if (pathname === '/api/pnl/customers' && request.method === 'POST') return dbJson(request, response, 201, { ok: true, customer: await pnlManagement.createCustomer(user, await readDbBody(request)) });
+    const logMatch = pathname.match(/^\/api\/pnl\/customers\/([^/]+)\/logs$/);
+    if (logMatch && request.method === 'POST') { const result = await pnlManagement.upsertLog(user, { ...(await readDbBody(request)), customerId: decodeURIComponent(logMatch[1]) }); return dbJson(request, response, 200, { ok: true, ...result }); }
+    if (pathname === '/api/pnl/weekly/close' && request.method === 'POST') return dbJson(request, response, 200, { ok: true, ...(await pnlManagement.closeWeek(user, (await readDbBody(request)).weekStart || pnlManagement.weekStart())) });
+    return dbJson(request, response, 404, { error: 'PnL API không tồn tại.' });
+  } catch (error) { return dbJson(request, response, error.status || 500, { error: error.status ? error.message : 'Không xử lý được dữ liệu lãi lỗ.' }); }
+}
 async function handleDemoApi(request, response, pathname) {
   if (pathname === '/api/db/health') return dbJson(request, response, 200, { configured: false, demo: true });
   if (pathname === '/api/auth/register' && request.method === 'POST') {
@@ -589,6 +671,8 @@ async function handleDemoApi(request, response, pathname) {
   const user = demoUserFromToken(request);
   if (!user) return dbJson(request, response, 401, { error: 'Đăng nhập demo trước' });
   demoTouchSession(request);
+  if (pathname === '/api/pnl' || pathname.startsWith('/api/pnl/')) return handlePnlApi(request, response, pathname, user);
+  if (pathname === '/api/google-sheets/backup') return handleGoogleSheetsBackupApi(request, response, user);
   if (pathname.startsWith('/api/admin/blacklist')) return handleBlacklistApi(request, response, pathname, user);
   const processMatch=pathname.match(/^\/api\/process-image\/([^/]+)$/), feedbackMatch=pathname.match(/^\/api\/feedback-image\/([^/]+)$/), receiptMatch=pathname.match(/^\/api\/order-receipt-image\/([^/]+)\/([^/]+)$/), statementMatch=pathname.match(/^\/api\/bank-statement-file\/([^/]+)$/);
   if(request.method==='GET'&&(processMatch||feedbackMatch||receiptMatch||statementMatch)){
@@ -730,6 +814,8 @@ async function handleDbApi(request, response, pathname) {
     // Refreshing last_seen is telemetry. It must never turn a valid session
     // into a 500/timeout when MySQL is briefly busy or waking from idle.
     void touchUserSession(request).catch(error => console.warn('[session-touch]', error.code || error.message));
+    if(pathname==='/api/pnl' || pathname.startsWith('/api/pnl/'))return handlePnlApi(request,response,pathname,user);
+    if(pathname==='/api/google-sheets/backup')return handleGoogleSheetsBackupApi(request,response,user);
     if(pathname.startsWith('/api/support/'))return await handleSupportApi(request,response,pathname,user);
     if(pathname==='/api/auth/me')return dbJson(request,response,200,{user});
     if(pathname==='/api/auth/logout' && request.method==='POST'){void recordUserActivity(user,request,'LOGOUT','Đăng xuất CRM');const hash=tokenHash(request);sessionUserCache.delete(hash);await authQuery('DELETE FROM crm_sessions WHERE token_hash=?',[hash]);return dbJson(request,response,200,{ok:true});}
@@ -2021,7 +2107,7 @@ const server = http.createServer(async (request, response) => {
     if (pathname === '/api/leads/push') return await handleLeadsPushApi(request, response, url);
     if (pathname === '/api/leads/export' || pathname === '/api/leads/export-all' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
-    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/') || pathname.startsWith('/api/bank-statement-file/')) return await handleDbApi(request, response, pathname);
+    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname === '/api/google-sheets/backup' || pathname === '/api/pnl' || pathname.startsWith('/api/pnl/') || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/') || pathname.startsWith('/api/bank-statement-file/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
       return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), webhookStorage: { ready: true, fallback: webhookStorage.fallback || inboxStorage.fallback }, instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
     }
@@ -2084,7 +2170,7 @@ async function recoverLegacyInbox() {
         const website = await notificationWebsiteForSlug(record.slug);
         // Notification-only webhooks must never become customer records.
         if (website?.provider === 'NOTIFICATION') continue;
-        const saved = await persistWebhook(record, { skipAutomatic: true });
+        const saved = await persistWebhook(record, { skipAutomatic: true, assignRecovered: true });
         // SQL success must be reflected in CRM even if filesystem cleanup fails.
         recovered++;
         for (const copy of copies) {

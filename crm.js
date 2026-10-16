@@ -246,7 +246,7 @@ CUSTOM_FIELD_SEED.forEach(field => field.options.forEach(option => {
 const NAVIGATION = {
   HRM: [['Nhân sự', [['hrProfiles','Quản trị nhân sự','♧'],['team','Đội ngũ','♧'],['attendance','Điểm danh','✓'],['orders','Đơn hàng','▤'],['businessReport','Nhập lot','▦']]]],
   ADMIN: [
-    ['Vận hành', [['dashboard', 'Tổng quan', '◫'], ['customers', 'Khách hàng tổng', '♙'], ['distribution', 'Data', '⇄'], ['websites', 'Websites', '◇']]],
+    ['Vận hành', [['dashboard', 'Tổng quan', '◫'], ['customers', 'Khách hàng tổng', '♙'], ['care', 'Chăm sóc khách', '♡'], ['pnl', 'Quản lý lãi lỗ', '₫'], ['distribution', 'Data', '⇄'], ['websites', 'Websites', '◇']]],
     ['Kinh doanh', [['orders', 'Đơn hàng', '▤'], ['products', 'Sản phẩm', '□'], ['revenue', 'Doanh thu', '₫'], ['marketing', 'Dữ liệu', '⌁']]],
     ['T\u1ed5 ch\u1ee9c', [['hrProfiles','Quản trị nhân sự','♧'],['team', '\u0110\u1ed9i ng\u0169', '\u2667'], ['feedback', 'Kho Feedback', '\u25c9'], ['processes', 'Quy Tr\u00ecnh', '\u2637'], ['businessReport', 'B\u00e1o c\u00e1o kinh doanh', '\u25eb']]],
     ['K\u1ebf to\u00e1n', [['accounting', 'K\u1ebf to\u00e1n', '\u20ab']]],
@@ -262,7 +262,7 @@ const NAVIGATION = {
   LEADER: [
     ['Vận hành', [['dashboard', 'Tổng quan đội', '◫'], ['customers', 'Khách hàng Team', '♙'], ['pool', 'Chia data cho Sale', '↔']] ],
     ['Kinh doanh', [['orders', 'Đơn hàng', '▤'], ['revenue', 'Doanh thu', '₫']]],
-    ['Đội nhóm', [['team', 'Hiệu suất Sale', '♧'], ['businessReport', 'Báo cáo kinh doanh', '◫'], ['care', 'Chăm sóc khách', '❦'], ['notifications', 'Thông báo', '●']]],
+    ['Đội nhóm', [['team', 'Hiệu suất Sale', '♧'], ['businessReport', 'Báo cáo kinh doanh', '◫'], ['care', 'Chăm sóc khách', '❦'], ['pnl', 'Quản lý lãi lỗ', '₫'], ['notifications', 'Thông báo', '●']]],
     ['Cá nhân', [['attendance', 'Điểm danh', '✓'], ['profile', 'Hồ sơ của tôi', '●']]]
   ],
   UNASSIGNED: [['Cá nhân', [['dashboard', 'Tổng quan', '◫'], ['attendance', 'Điểm danh', '✓'], ['profile', 'Hồ sơ của tôi', '●'], ['notifications', 'Thông báo', '●']]]],
@@ -273,6 +273,15 @@ const NAVIGATION = {
     ['C\u00e1 nh\u00e2n', [['attendance', '\u0110i\u1ec3m danh', '✓'], ['notifications', 'Th\u00f4ng b\u00e1o', '●'], ['profile', 'H\u1ed3 s\u01a1 c\u1ee7a t\u00f4i', '●']]]
   ]
 };
+
+for (const role of ['ADMIN', 'LEADER', 'SALE']) {
+  const groups = NAVIGATION[role] || [];
+  const target = groups.find(group => group[1].some(item => item[0] === 'care')) || groups[0];
+  if (target && !target[1].some(item => item[0] === 'pnl')) {
+    const index = Math.max(0, target[1].findIndex(item => item[0] === 'care') + 1);
+    target[1].splice(index, 0, ['pnl', 'Quản lý lãi lỗ', '₫']);
+  }
+}
 
 // Đồng bộ menu kế toán và loại bỏ báo cáo kinh doanh độc lập khỏi mọi vai trò.
 (() => {
@@ -346,7 +355,7 @@ function initialState() {
     saleDistributionByLeader: {
 
     },
-    settings: { leaderCanUpdate: true, notifyMilestones: true, leaderAttendanceRequired: true, assignmentMode: 'MANUAL', saleAssignmentModes: {}, assignmentCursor: { leaders: 0, salesByTeam: {} }, slaMinutes: 30, customAccent: '#e8572a', fontFamily: 'aptos', navigationFontSize: 12, contentFontSize: 14, dataBotToken: '', dataBotChatId: '', memberBotToken: '', memberBotChatId: '', webhookPublicBase: 'https://nvtagency.top', attendanceIp: '', attendanceDeadline: '09:00', acceptTimeoutHours: 24, notifyAccountCreated: true, notifyDataReceived: true, emailNotificationsEnabled: true, brokeragePublishedPeriods: [] },
+    settings: { leaderCanUpdate: true, notifyMilestones: true, leaderAttendanceRequired: true, assignmentMode: 'MANUAL', saleAssignmentModes: {}, assignmentCursor: { leaders: 0, salesByTeam: {} }, slaMinutes: 30, customAccent: '#e8572a', fontFamily: 'aptos', navigationFontSize: 12, contentFontSize: 14, dataBotToken: '', dataBotChatId: '', memberBotToken: '', memberBotChatId: '', webhookPublicBase: 'https://nvtagency.top', googleSheetsBackupUrl: 'https://docs.google.com/spreadsheets/d/1Gs50FplPekASSHN7Ha2eXlG0je1AVPHtIA_bD_I1Pns/edit?gid=0#gid=0', attendanceIp: '', attendanceDeadline: '09:00', acceptTimeoutHours: 24, notifyAccountCreated: true, notifyDataReceived: true, emailNotificationsEnabled: true, brokeragePublishedPeriods: [] },
     security: {
       twoFactorEnabled: false,
       loginHistory: []
@@ -3004,6 +3013,9 @@ function settingsView() {
   const settingsOption = (value, label) => `<option value="${value}" ${settingsViewState.fontFamily === value ? 'selected' : ''}>${label}</option>`;
   const settingsAccountEvents = state.audit.filter(item => ['CREATE_MEMBER', 'APPROVE_REGISTRATION'].includes(item.action)).slice(0, 10);
   const settingsDataEvents = state.imports.slice(0, 10);
+  const defaultGoogleSheetLink = 'https://docs.google.com/spreadsheets/d/1Gs50FplPekASSHN7Ha2eXlG0je1AVPHtIA_bD_I1Pns/edit?gid=0#gid=0';
+  const savedGoogleSheetLink = String(settingsViewState.googleSheetsBackupUrl || '').trim();
+  const googleSheetLink = /^https?:\/\//i.test(savedGoogleSheetLink) ? savedGoogleSheetLink : defaultGoogleSheetLink;
   return pageHead('Cài đặt CRM', 'Điều chỉnh giao diện và kênh nhận thông báo nội bộ.') +
     `<section class="panel settings-panel"><div class="panel-head settings-panel-head"><div><div class="panel-title">Cài đặt hệ thống</div><div class="panel-sub">Các thay đổi chỉ áp dụng sau khi bạn bấm Lưu cấu hình.</div></div><span class="settings-admin-badge">ADMIN</span></div><div class="panel-body settings-body">
       <div class="settings-section"><div class="settings-section-head"><div class="settings-section-icon">Aa</div><div><h2>Hiển thị</h2><p>Màu sắc, font chữ và kích thước nội dung trong CRM.</p></div></div><div class="settings-grid settings-display-grid">
@@ -3015,6 +3027,10 @@ function settingsView() {
       <div class="settings-section"><div class="settings-section-head"><div class="settings-section-icon">@</div><div><h2>Email nội bộ</h2><p>Gửi thông báo khi có tài khoản mới hoặc data mới.</p></div></div><div class="settings-grid settings-email-grid">
         <label class="settings-toggle"><input id="emailNotificationsEnabled" type="checkbox" ${settingsViewState.emailNotificationsEnabled !== false ? 'checked' : ''}><span><b>Bật gửi email cho Sale và Leader</b><small>Nhân sự sẽ nhận thông báo theo email đã cài trong mục Đội ngũ.</small></span></label>
         <label class="form-field settings-test-field">Gửi email thử<div class="settings-test-row"><input id="emailTestRecipient" type="email" maxlength="254" placeholder="email@example.com"><button class="button button-small" id="emailTestButton" type="button">Gửi thử</button></div></label>
+      </div></div>
+      <div class="settings-section"><div class="settings-section-head"><div class="settings-section-icon">↗</div><div><h2>Sao lưu Google Sheets</h2><p>Lưu thêm toàn bộ đơn hàng và hình ảnh bill vào bảng sao lưu.</p></div></div><div class="settings-grid settings-email-grid">
+        <label class="form-field">Link Google Sheet<div class="settings-test-row"><input id="googleSheetsBackupUrl" type="url" maxlength="500" value="${escapeHtml(googleSheetLink)}" placeholder="https://docs.google.com/spreadsheets/d/..." autocomplete="off"><a class="button button-small" href="${escapeHtml(googleSheetLink)}" target="_blank" rel="noopener noreferrer">Mở bảng</a></div><small>Link này chỉ để ghi nhớ bảng sao lưu. Máy chủ cần được cấu hình Apps Script Web App để gửi dữ liệu.</small></label>
+        <div class="settings-test-field"><span class="form-field-label">Đồng bộ thủ công</span><div class="settings-test-row"><button class="button button-primary" id="backupOrdersToGoogleButton" type="button">Sao lưu đơn hàng</button><span id="googleSheetsBackupStatus" class="form-help">Sẵn sàng đồng bộ.</span></div></div>
       </div></div>
       <label class="settings-toggle settings-attendance-toggle"><input id="leaderAttendanceRequired" type="checkbox" ${settingsViewState.leaderAttendanceRequired !== false ? 'checked' : ''}><span><b>Leader bắt buộc điểm danh</b><small>Áp dụng quy định điểm danh cho tài khoản Leader.</small></span></label><div class="settings-actions"><button class="button button-primary" id="saveAppearanceButton">Lưu cấu hình</button></div>
     </div></section><div class="grid grid-2 settings-activity-grid" style="margin-top:14px"><section class="panel"><div class="panel-head"><div><div class="panel-title">Tài khoản mới</div><div class="panel-sub">Hoạt động đăng ký gần đây</div></div></div><div class="panel-body">${settingsAccountEvents.map(item => `<div class="rank-row"><div><b>${escapeHtml(item.actor)}</b><small>${escapeHtml(item.detail)} · ${escapeHtml(item.at)}</small></div></div>`).join('') || '<div class="empty"><b>Chưa có tài khoản mới</b></div>'}</div></section><section class="panel"><div class="panel-head"><div><div class="panel-title">Data mới về</div><div class="panel-sub">Các lượt nhập data gần đây</div></div></div><div class="panel-body">${settingsDataEvents.map(item => `<div class="rank-row"><div><b>${escapeHtml(item.source)}</b><small>${escapeHtml(item.filename)} · ${number(item.records)} data · ${escapeHtml(item.importedAt)}</small></div></div>`).join('') || '<div class="empty"><b>Chưa có lượt nhập data</b></div>'}</div></section></div>`;
@@ -3286,9 +3302,37 @@ function accessDeniedView(message) {
   return pageHead('Không có quyền truy cập', 'Backend production phải trả 403 cho thao tác này.') + `<section class="panel"><div class="empty"><b>403 · FORBIDDEN</b><span>${escapeHtml(message)}</span></div></section>`;
 }
 
+function pnlView() {
+  const role = currentAccount?.actualRole || currentAccount?.role;
+  if (!['ADMIN', 'MANAGER', 'LEADER', 'SALE'].includes(role)) return accessDeniedView('Tài khoản hiện tại không có quyền quản lý lãi lỗ.');
+  return pageHead('Quản lý lãi lỗ', 'Tạo hồ sơ khách CQG, nhập lãi lỗ hằng ngày và theo dõi tổng kết tuần.', '<button class="button button-primary" id="pnlCreateCustomerButton">+ Tạo khách PnL</button>') +
+    `<section class="pnl-dashboard" id="pnlDashboard"><div class="pnl-kpis"><article><small>Tổng vốn quản lý</small><b id="pnlCapitalTotal">0 ₫</b></article><article><small>Tổng lot tuần này</small><b id="pnlLotsTotal">0</b></article><article><small>Lãi/lỗ hôm nay</small><b id="pnlTodayTotal">0 ₫</b></article><article><small>Lãi/lỗ tuần này</small><b id="pnlWeekTotal">0 ₫</b></article></div><div class="pnl-toolbar"><input id="pnlSearchInput" placeholder="Tìm ID khách hoặc tài khoản CQG"><input id="pnlDateInput" type="date"><button class="button" id="pnlRefreshButton">Làm mới</button><button class="button button-primary" id="pnlCloseWeekButton" ${role === 'ADMIN' ? '' : 'hidden'}>Chốt tuần</button></div><div class="table-wrap"><table class="pnl-table"><thead><tr><th>Khách hàng</th><th>CQG</th><th>Vốn ban đầu</th><th>Vốn hiện tại</th><th>Lot tuần</th><th>Hôm nay</th><th>Tuần này</th><th>Người tạo</th><th>Thao tác</th></tr></thead><tbody id="pnlCustomerBody"><tr><td colspan="9"><div class="empty"><b>Đang tải dữ liệu...</b></div></td></tr></tbody></table></div></div>`;
+}
+function pnlMoney(value) { const n = Number(value || 0); return `${n > 0 ? '+' : ''}${n.toLocaleString('vi-VN')} ₫`; }
+async function loadPnlView() {
+  const body = $('#pnlCustomerBody'); if (!body) return;
+  const search = $('#pnlSearchInput')?.value || '', date = $('#pnlDateInput')?.value || '';
+  try {
+    const response = await fetch(webhookApiBase() + '/api/pnl?search=' + encodeURIComponent(search) + (date ? '&date=' + encodeURIComponent(date) : ''), { headers: { Authorization: 'Bearer ' + serverSyncToken }, cache: 'no-store' });
+    const result = await response.json(); if (!response.ok) throw Error(result.error || 'Không tải được dữ liệu lãi lỗ.');
+    const rows = result.customers || [];
+    $('#pnlCapitalTotal').textContent = Number(rows.reduce((sum, row) => sum + Number(row.current_capital ?? row.currentCapital ?? 0), 0)).toLocaleString('vi-VN') + ' ₫';
+    $('#pnlLotsTotal').textContent = Number(rows.reduce((sum, row) => sum + Number(row.week_lots ?? row.weekLots ?? 0), 0)).toLocaleString('vi-VN');
+    const todayTotal = rows.reduce((sum, row) => sum + Number(row.today_pnl ?? row.todayPnl ?? 0), 0), weekTotal = rows.reduce((sum, row) => sum + Number(row.week_pnl ?? row.weekPnl ?? 0), 0);
+    const color = value => Number(value) > 0 ? '#10b981' : Number(value) < 0 ? '#ef4444' : '#6b7280';
+    $('#pnlTodayTotal').textContent = pnlMoney(todayTotal); $('#pnlTodayTotal').style.color = color(todayTotal); $('#pnlWeekTotal').textContent = pnlMoney(weekTotal); $('#pnlWeekTotal').style.color = color(weekTotal);
+    body.innerHTML = rows.map(row => { const id = row.id, todayPnl = row.today_pnl ?? row.todayPnl ?? 0, weekPnl = row.week_pnl ?? row.weekPnl ?? 0; return `<tr><td><b>${escapeHtml(row.customer_code ?? row.customerCode)}</b><small>${escapeHtml(row.customer_name ?? row.customerName)}</small></td><td><code>${escapeHtml(row.cqg_account ?? row.cqgAccount)}</code></td><td>${Number(row.initial_capital ?? row.initialCapital ?? 0).toLocaleString('vi-VN')} ₫</td><td><b>${Number(row.current_capital ?? row.currentCapital ?? 0).toLocaleString('vi-VN')} ₫</b></td><td>${Number(row.week_lots ?? row.weekLots ?? 0).toLocaleString('vi-VN')}</td><td style="color:${color(todayPnl)};font-weight:800">${pnlMoney(todayPnl)}</td><td style="color:${color(weekPnl)};font-weight:800">${pnlMoney(weekPnl)}</td><td>${escapeHtml(row.creator_name ?? row.creatorName ?? '')}</td><td><button class="button button-small" data-pnl-log="${escapeHtml(String(id))}">+ Nhập lãi/lỗ</button><button class="button button-small" data-pnl-history="${escapeHtml(String(id))}">Lịch sử</button></td></tr>`; }).join('') || '<tr><td colspan="9"><div class="empty"><b>Chưa có khách PnL</b><span>Bấm “Tạo khách PnL” để bắt đầu.</span></div></td></tr>';
+    $$('[data-pnl-log]').forEach(button => button.onclick = () => openPnlLogModal(button.dataset.pnlLog, rows.find(row => String(row.id) === button.dataset.pnlLog)));
+    $$('[data-pnl-history]').forEach(button => button.onclick = () => openPnlHistoryModal(button.dataset.pnlHistory, result.logs || [], rows.find(row => String(row.id) === button.dataset.pnlHistory)));
+  } catch (error) { body.innerHTML = `<tr><td colspan="9"><div class="empty"><b>${escapeHtml(error.message)}</b></div></td></tr>`; }
+}
+function openPnlCustomerModal() { openModal('Tạo khách PnL', '<form id="pnlCustomerForm"><div class="form-grid"><label class="form-field">ID khách hàng<input id="pnlCustomerCode" required maxlength="96"></label><label class="form-field">Tên khách hàng<input id="pnlCustomerName" required maxlength="160"></label><label class="form-field">Tài khoản CQG<input id="pnlCqgAccount" required maxlength="96"></label><label class="form-field">Số lot mặc định<input id="pnlDefaultLot" type="number" min="0" step="0.01" required></label><label class="form-field full">Vốn ban đầu<input id="pnlInitialCapital" type="number" min="0" step="0.01" required></label></div><div class="modal-actions"><button class="button" type="button" data-close-modal>Hủy</button><button class="button button-primary" type="submit">Lưu khách</button></div></form>'); $('[data-close-modal]')?.addEventListener('click', closeModal); $('#pnlCustomerForm').onsubmit = async event => { event.preventDefault(); const payload = { customerCode: $('#pnlCustomerCode').value, customerName: $('#pnlCustomerName').value, cqgAccount: $('#pnlCqgAccount').value, defaultLot: $('#pnlDefaultLot').value, initialCapital: $('#pnlInitialCapital').value }; const response = await fetch(webhookApiBase() + '/api/pnl/customers', { method: 'POST', headers: { Authorization: 'Bearer ' + serverSyncToken, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const result = await response.json(); if (!response.ok) { toast(result.error || 'Không lưu được khách PnL.'); return; } closeModal(); loadPnlView(); toast('Đã tạo khách PnL.'); }; }
+function openPnlLogModal(id, row) { openModal('Nhập lãi/lỗ hằng ngày', `<form id="pnlLogForm"><p><b>${escapeHtml(row?.customer_code ?? row?.customerCode ?? '')}</b> · ${escapeHtml(row?.customer_name ?? row?.customerName ?? '')}</p><div class="form-grid"><label class="form-field">Ngày giao dịch<input id="pnlTradeDate" type="date" value="${dayIso(0)}" required></label><label class="form-field">Số lot<input id="pnlLotVolume" type="number" min="0" step="0.01" value="${row?.default_lot ?? row?.defaultLot ?? 0}" required></label><label class="form-field full">Lãi / lỗ<input id="pnlAmount" type="number" step="0.01" required placeholder="Lãi dương, lỗ âm"></label><label class="form-field full">Ghi chú<textarea id="pnlNotes" maxlength="2000"></textarea></label></div><div class="modal-actions"><button class="button" type="button" data-close-modal>Hủy</button><button class="button button-primary" type="submit">Lưu lãi/lỗ</button></div></form>`); $('[data-close-modal]')?.addEventListener('click', closeModal); $('#pnlLogForm').onsubmit = async event => { event.preventDefault(); const response = await fetch(webhookApiBase() + '/api/pnl/customers/' + encodeURIComponent(id) + '/logs', { method: 'POST', headers: { Authorization: 'Bearer ' + serverSyncToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ tradeDate: $('#pnlTradeDate').value, lotVolume: $('#pnlLotVolume').value, pnlAmount: $('#pnlAmount').value, notes: $('#pnlNotes').value }) }); const result = await response.json(); if (!response.ok) { toast(result.error || 'Không lưu được lãi/lỗ.'); return; } closeModal(); loadPnlView(); toast(result.riskAlert ? 'Đã lưu và phát cảnh báo rủi ro.' : 'Đã lưu lãi/lỗ.'); }; }
+function openPnlHistoryModal(id, logs, row) { const items = logs.filter(log => String(log.customer_id ?? log.customerId) === String(id)).slice().sort((a, b) => String(b.trade_date ?? b.tradeDate).localeCompare(String(a.trade_date ?? a.tradeDate))); openModal('Lịch sử lãi/lỗ', `<p><b>${escapeHtml(row?.customer_code ?? row?.customerCode ?? '')}</b></p><div class="table-wrap"><table><thead><tr><th>Ngày</th><th>Lot</th><th>Lãi/lỗ</th><th>Nguồn</th><th>Ghi chú</th></tr></thead><tbody>${items.map(log => `<tr><td>${escapeHtml(log.trade_date ?? log.tradeDate)}</td><td>${Number(log.lot_volume ?? log.lotVolume ?? 0).toLocaleString('vi-VN')}</td><td>${pnlMoney(log.pnl_amount ?? log.pnlAmount)}</td><td>${escapeHtml(log.source || '')}</td><td>${escapeHtml(log.notes || '')}</td></tr>`).join('') || '<tr><td colspan="5">Chưa có dữ liệu.</td></tr>'}</tbody></table></div><div class="modal-actions"><button class="button" type="button" data-close-modal>Đóng</button></div>`); $('[data-close-modal]')?.addEventListener('click', closeModal); }
+
 const VIEW_RENDERERS = {
   dashboard: executiveDashboardView, customers: customersView, pool: poolView, distribution: distributionView,
-  orders: ordersView, products: productsView, revenue: revenueView, businessReport: reportsView, accounting: accountingView, marketing: marketingView, team: teamView,
+  orders: ordersView, products: productsView, revenue: revenueView, businessReport: reportsView, accounting: accountingView, marketing: marketingView, team: teamView, pnl: pnlView,
   websites: websitesView, integrations: integrationsView,
   attendance: () => currentAccount?.role === 'ADMIN' ? attendanceView() + attendanceThirtyDayHistoryHtml() : attendanceView(), accept: acceptQueueView, notifications: notificationsView, audit: auditView, settings: settingsView, profile: profileView
 };
@@ -3297,9 +3341,9 @@ function visibleNavigation() {
   const role = currentAccount?.actualRole || currentAccount?.role;
   const groups = NAVIGATION[role === 'MANAGER' ? 'LEADER' : role] || [];
   const allowed = role === 'SALE'
-    ? new Set(['dashboard','customers','accept','orders','revenue','businessReport','care','team','attendance','notifications','profile'])
+    ? new Set(['dashboard','customers','accept','orders','revenue','businessReport','care','pnl','team','attendance','notifications','profile'])
     : role === 'LEADER' || role === 'MANAGER'
-      ? new Set(['dashboard','customers','pool','orders','attendance','revenue','businessReport','team','care','notifications','profile'])
+      ? new Set(['dashboard','customers','pool','orders','attendance','revenue','businessReport','team','care','pnl','notifications','profile'])
       : null;
   return groups.map(([name, items]) => [name, items.filter(item => !allowed || allowed.has(item[0]))]).filter(([, items]) => items.length);
 }
@@ -5359,6 +5403,14 @@ function bindQueryInput(selector) {
 }
 
 function bindViewActions() {
+  if (currentView === 'pnl') {
+    $('#pnlCreateCustomerButton')?.addEventListener('click', openPnlCustomerModal);
+    $('#pnlRefreshButton')?.addEventListener('click', loadPnlView);
+    $('#pnlSearchInput')?.addEventListener('keydown', event => { if (event.key === 'Enter') loadPnlView(); });
+    $('#pnlDateInput')?.addEventListener('change', loadPnlView);
+    $('#pnlCloseWeekButton')?.addEventListener('click', async () => { const response = await fetch(webhookApiBase() + '/api/pnl/weekly/close', { method: 'POST', headers: { Authorization: 'Bearer ' + serverSyncToken, 'Content-Type': 'application/json' }, body: '{}' }); const result = await response.json(); toast(response.ok ? `Đã chốt ${Number(result.count || 0)} khách trong tuần.` : (result.error || 'Không chốt được tuần.')); loadPnlView(); });
+    loadPnlView();
+  }
   $$('[data-range]').forEach(button => button.onclick = () => { const days = Number(button.dataset.range); if ([1, 7, 15, 30].includes(days)) { dateRange = days; datePreset = String(days); render(); } });
   $('#applyCustomDate')?.addEventListener('click', applyCustomDateRange);
   $$('[data-view-jump]').forEach(button => button.onclick = () => navigate(button.dataset.viewJump));
@@ -5445,7 +5497,23 @@ function bindViewActions() {
   $$('[data-attendance-detail]').forEach(button => button.onclick = () => attendanceMemberDetailModal(button.dataset.attendanceDetail));
   $$('[data-edit-attendance]').forEach(button => button.onclick = () => attendanceEditModal(button.dataset.editAttendance));
   $$('[data-delete-attendance]').forEach(button => button.onclick = () => deleteAttendanceRecord(button.dataset.deleteAttendance));
-  $('#saveAppearanceButton')?.addEventListener('click', async () => { state.settings.leaderAttendanceRequired = $('#leaderAttendanceRequired')?.checked !== false; state.settings.emailNotificationsEnabled = $('#emailNotificationsEnabled')?.checked !== false; state.settings.customAccent = $('#customAccentColor').value; state.settings.fontFamily = $('#fontFamilySelect').value; applyAppearanceSettings(); saveState(); if (await flushServerPersistence()) { render(); toast('Đã lưu cấu hình'); } else toast('Chưa xác nhận lưu cấu hình. Giữ trang mở để thử lại.'); });
+  $('#saveAppearanceButton')?.addEventListener('click', async () => { state.settings.leaderAttendanceRequired = $('#leaderAttendanceRequired')?.checked !== false; state.settings.emailNotificationsEnabled = $('#emailNotificationsEnabled')?.checked !== false; state.settings.googleSheetsBackupUrl = String($('#googleSheetsBackupUrl')?.value || '').trim(); state.settings.customAccent = $('#customAccentColor').value; state.settings.fontFamily = $('#fontFamilySelect').value; applyAppearanceSettings(); saveState(); if (await flushServerPersistence()) { render(); toast('Đã lưu cấu hình'); } else toast('Chưa xác nhận lưu cấu hình. Giữ trang mở để thử lại.'); });
+  $('#backupOrdersToGoogleButton')?.addEventListener('click', async () => {
+    const button = $('#backupOrdersToGoogleButton');
+    const status = $('#googleSheetsBackupStatus');
+    button.disabled = true;
+    if (status) status.textContent = 'Đang đồng bộ đơn hàng và hình ảnh...';
+    try {
+      const response = await fetch(webhookApiBase() + '/api/google-sheets/backup', { method: 'POST', headers: { Authorization: 'Bearer ' + serverSyncToken, 'Content-Type': 'application/json' }, cache: 'no-store' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok === false) throw new Error(result.error || 'Không thể sao lưu đơn hàng.');
+      if (status) status.textContent = `Đã đồng bộ ${Number(result.queued || 0)} đơn hàng.`;
+      toast(`Đã gửi ${Number(result.queued || 0)} đơn hàng sang Google Sheets`);
+    } catch (error) {
+      if (status) status.textContent = error.message || 'Chưa sao lưu được.';
+      toast(error.message || 'Chưa sao lưu được đơn hàng.');
+    } finally { button.disabled = false; }
+  });
   $('#emailTestButton')?.addEventListener('click', sendTestEmail);
   $('#toggleTwoFactorButton')?.addEventListener('click', toggleTwoFactor);
   $('#changePasswordButton')?.addEventListener('click', changePasswordModal);

@@ -2,6 +2,7 @@
 const HrProfiles = require('./hr-profiles.js');
 const OrderPayments = require('./order-payments.js');
 const OrderAudit = require('./order-audit.cjs');
+const googleSheetsBackup = require('./google-sheets-backup.cjs');
 // Kho dữ liệu nghiệp vụ: một giao dịch cho cả khách/đơn và lịch sử liên quan.
 const crypto = require('node:crypto');
 const distributionRounds = require('./distribution-rounds.js');
@@ -1256,6 +1257,14 @@ async function writeLocked(user,requestId,changes,options={}){
    const updated=await allData(c);await distributeAutomatic(c,updated);
   }
   await c.commit();
+  // Database commit remains authoritative. The optional Sheets backup is queued
+  // only after a successful commit, so a temporary Google outage never rolls
+  // back an order or blocks the CRM transaction.
+  for (const change of changes.filter(item => item.key === 'orders' && item.value)) {
+   const customer = resulting.get(change.value.customerId) || data.customers.get(change.value.customerId) || null;
+   void googleSheetsBackup.enqueueOrder(change.value, customer, user, data.orders.has(change.id) ? 'UPDATE' : 'CREATE')
+    .catch(error => console.warn('[google-sheets-backup]', error.code || error.message));
+  }
   return {...snapshot(user,await dataAfterCommit()),ok:true};
  }catch(e){await c.rollback().catch(()=>{});throw e;}finally{c.release();}
 }

@@ -42,3 +42,13 @@ Bot hệ thống dùng `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_
 Webhook HTTPS riêng: `TELEGRAM_WEBHOOK_URL` kết thúc bằng `/api/telegram/webhook`, `TELEGRAM_SUPPORT_WEBHOOK_URL` kết thúc bằng `/api/telegram/support-webhook`, mỗi bot một `*_WEBHOOK_SECRET` ngẫu nhiên khác nhau (không phải token). Server đăng ký lại webhook khi khởi động; bot hệ thống phải nhận `callback_query` thì nút ĐIỂM DANH / Nhận data mới hoạt động.
 
 Worker Telegram và watchdog: xem `docs/deployment/TELEGRAM-WORKER-WATCHDOG.md`.
+
+## Backup đơn hàng sang Google Sheets
+
+CRM vẫn ghi đơn vào cơ sở dữ liệu như trước. Khi cấu hình `GOOGLE_SHEETS_BACKUP_URL`, sau mỗi lần tạo hoặc cập nhật đơn, server sẽ xếp một bản sao vào hàng đợi bền vững rồi gửi sang Google Apps Script. Bản sao gồm JSON đơn hàng, thông tin khách hàng và toàn bộ ảnh bill; Apps Script lưu ảnh vào Google Drive và ghi URL ảnh vào tab `Orders`.
+
+1. Mở file Google Sheet đã chọn, vào **Extensions → Apps Script** và dán `tools/google-sheets-order-backup.gs`.
+2. Đổi `CRM_BACKUP_SECRET` thành một chuỗi bí mật dài, rồi **Deploy → New deployment → Web app**, chọn chạy dưới tài khoản của bạn và cho phép người có đường dẫn truy cập.
+3. Đặt URL Web App vào `GOOGLE_SHEETS_BACKUP_URL` và đặt cùng secret vào `GOOGLE_SHEETS_BACKUP_SECRET` trong `.env` của Node app.
+4. Khởi động lại Node app. Các bản ghi chờ trong `google-sheets-order-queue.jsonl` sẽ tự gửi lại mỗi 30 giây khi Google tạm thời lỗi.
+5. Nếu cần đưa cả đơn cũ lên Sheet, chạy `node tools/backfill-google-sheets.cjs` một lần sau khi cấu hình xong.

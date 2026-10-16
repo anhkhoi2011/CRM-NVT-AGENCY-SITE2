@@ -22,7 +22,7 @@ function recovery({inbox=[],pending=[],fail='',notification=false,cleanupFail=fa
 test('Historical recovery only processes incident date, leaves older and confirmed records untouched',async()=>{
  const old=record('old','2026-10-10'),today=record('today'),saved={...record('saved'),persisted:true};
  const before=JSON.stringify(old);const f=recovery({inbox:[old,today,saved]});await f.run();
- assert.deepEqual(f.writes.map(w=>w.r.id),['WHE-today']);assert.equal(f.writes[0].opts.skipAutomatic,true);assert.equal(JSON.stringify(old),before);assert.equal(f.invalidations,1);
+ assert.deepEqual(f.writes.map(w=>w.r.id),['WHE-today']);assert.equal(f.writes[0].opts.skipAutomatic,true);assert.equal(f.writes[0].opts.assignRecovered,true);assert.equal(JSON.stringify(old),before);assert.equal(f.invalidations,1);
  await f.run();assert.equal(f.writes.length,1);
 });
 test('One SQL failure does not discard pending records or stop recovery of the next event',async()=>{
