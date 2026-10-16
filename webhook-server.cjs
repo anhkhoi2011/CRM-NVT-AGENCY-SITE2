@@ -635,7 +635,10 @@ async function handlePnlApi(request, response, pathname, user) {
     if (logMatch && request.method === 'POST') { const result = await pnlManagement.upsertLog(user, { ...(await readDbBody(request)), customerId: decodeURIComponent(logMatch[1]) }); return dbJson(request, response, 200, { ok: true, ...result }); }
     if (pathname === '/api/pnl/weekly/close' && request.method === 'POST') return dbJson(request, response, 200, { ok: true, ...(await pnlManagement.closeWeek(user, (await readDbBody(request)).weekStart || pnlManagement.weekStart())) });
     return dbJson(request, response, 404, { error: 'PnL API không tồn tại.' });
-  } catch (error) { return dbJson(request, response, error.status || 500, { error: error.status ? error.message : 'Không xử lý được dữ liệu lãi lỗ.' }); }
+  } catch (error) {
+    console.error('[pnl-api]', pathname, error.code || 'PNL_ERROR', error.message);
+    return dbJson(request, response, error.status || 500, { error: error.status ? error.message : 'Không xử lý được dữ liệu lãi lỗ.', code: error.code || 'PNL_ERROR' });
+  }
 }
 async function handleDemoApi(request, response, pathname) {
   if (pathname === '/api/db/health') return dbJson(request, response, 200, { configured: false, demo: true });
