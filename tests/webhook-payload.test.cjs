@@ -35,3 +35,13 @@ test('JSON and URL encoded webhook fields are still decoded with a case-insensit
     assert.equal(result.record.phone, '0912345678');
   }
 });
+test('Prefixed LadiPage field names still map to customer name and phone', () => {
+  const p = parser();
+  const result = p.adaptLadiPagePayload({
+    field_1_Họ_và_tên: 'Khách có tên',
+    field_2_Số_điện_thoại: '0912345678'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.record.name, 'Khách có tên');
+  assert.equal(result.record.phone, '0912345678');
+});

@@ -47,7 +47,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261016-google-sheets-backup-2';
+const BUILD_VERSION = '20261016-webhook-recovery-1';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -56,7 +56,13 @@ const DEFAULT_WEBHOOK_DATA_DIR = webhookStorage.path;
 const inboxStorage = runtimeStorage.resolveWritableFile({ configured: process.env.WEBHOOK_INBOX_FILE, fallback: path.join(DEFAULT_WEBHOOK_DATA_DIR, '.webhook-inbox.json'), label: 'WEBHOOK_INBOX_FILE' });
 const INBOX_FILE = inboxStorage.path;
 const webhookJournal = require('./webhook-journal.cjs').createJournal(path.join(DEFAULT_WEBHOOK_DATA_DIR, 'pending'));
-const WEBHOOK_RECOVERY_DATE = process.env.WEBHOOK_RECOVERY_DATE || '2026-10-11';
+function vietnamToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+// Legacy inbox records are normally from the current incident day. Keep an
+// explicit env override for an older backfill, but do not leave today's failed
+// submissions stranded after a restart.
+const WEBHOOK_RECOVERY_DATE = process.env.WEBHOOK_RECOVERY_DATE || vietnamToday();
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_INBOX_RECORDS = 5000;
 const MAX_SUPPORT_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -1087,6 +1093,14 @@ function pickField(flat, normalizedByKey, aliases) {
     const hit = normalizedByKey[alias];
     if (hit !== undefined && hit !== '') return { value: flat[hit], key: hit };
   }
+  // LadiPage may prefix custom field labels (for example `field_1_Họ và
+  // tên`). Match a meaningful alias inside the normalized key as a fallback,
+  // while ignoring the generic `field` alias to avoid selecting an arbitrary
+  // field as the customer name.
+  for (const alias of aliases.filter(item => item.length >= 4 && item !== 'field')) {
+    const hit = Object.keys(normalizedByKey).find(normalized => normalized.includes(alias));
+    if (hit) return { value: flat[normalizedByKey[hit]], key: normalizedByKey[hit] };
+  }
   return { value: '', key: '' };
 }
 
@@ -1440,9 +1454,12 @@ function dedupeKey(slug, phone, payload) {
 }
 
 function stamp() {
-  const now = new Date();
-  const pad = value => String(value).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date());
+  const value = name => parts.find(part => part.type === name)?.value || '00';
+  return `${value('year')}-${value('month')}-${value('day')} ${value('hour')}:${value('minute')}`;
 }
 
 async function notificationWebsiteForSlug(slug) {
