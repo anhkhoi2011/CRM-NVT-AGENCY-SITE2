@@ -76,15 +76,19 @@
     globalIds.add(id);
     globalConfig.enabledSaleIds=Array.from(globalIds);
     if(globalConfig.weights[id]===undefined)globalConfig.weights[id]=1;
-    // Chỉ vá vào vòng đang chạy rounds[0]; các vòng chờ là cấu hình admin đã
-    // lưu tường minh, không tự ý sửa.
-    const activeRound=globalConfig.rounds?.[0];
-    if(activeRound){
-      activeRound.weights ||= {};
-      const ids=new Set(Array.isArray(activeRound.enabledSaleIds)?activeRound.enabledSaleIds:[]);
+    // Vòng toàn hệ thống ($), vòng đang chạy và các vòng chờ đều được bổ sung
+    // nhân sự mới. Các vòng chờ vẫn giữ nguyên các lựa chọn cũ; chỉ thêm ID mới
+    // chưa từng xuất hiện để người mới không bị mất sau khi vòng được promote.
+    const rounds=Array.isArray(globalConfig.rounds)?globalConfig.rounds:[];
+    rounds.forEach(round=>{
+      round.weights ||= {};
+      const ids=new Set(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]);
       ids.add(id);
-      activeRound.enabledSaleIds=Array.from(ids);
-      if(activeRound.weights[id]===undefined)activeRound.weights[id]=1;
+      round.enabledSaleIds=Array.from(ids);
+      if(round.weights[id]===undefined)round.weights[id]=1;
+    });
+    const activeRound=rounds[0];
+    if(activeRound){
       globalConfig.enabledSaleIds=activeRound.enabledSaleIds;
       globalConfig.weights={...(globalConfig.weights||{}),[id]:activeRound.weights[id]};
     }

@@ -1240,6 +1240,13 @@ test('Admin edits queued round members without changing the active round',async(
  await assert.rejects(()=>api.distributionRoundSave({roundId:'queued',enabledIds:[],weights:{m1:0,m2:0,m3:0}}),/it nhat mot nhan su/);
  });
 
+test('A newly enrolled member is added to every existing distribution round',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.members=[{id:'old',name:'Old',role:'SALE',leaderId:'lead',active:true},{id:'lead',name:'Lead',role:'LEADER',teamId:'T',active:true},{id:'new-lead',name:'Mai Hoàng Phúc',role:'LEADER',teamId:'M',active:true}];state.leaderDistribution={enabledLeaderIds:['lead'],weights:{lead:1}};state.saleDistributionByLeader={'$':{globalCycle:true,enabledSaleIds:['old'],weights:{old:1},rounds:[{id:'active',enabledSaleIds:['old'],weights:{old:1}},{id:'queued',enabledSaleIds:['old'],weights:{old:1}}]}};saveState=()=>{};`,c);
+ await api.distributionWeight('LEADER','new-lead',1);
+ assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds.map(round=>round.enabledSaleIds.includes('new-lead'))`,c)),[true,true]);
+ assert.equal(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].weights['new-lead']`,c),1);
+});
 function roundInput(state,roundIndex=0,position){
  const rounds=require('./distribution-rounds.js');
  const roster=rounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
