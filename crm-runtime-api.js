@@ -49,6 +49,7 @@
     state.settings.assignmentCursor.salesByTeam = {};
   }
   function distributionRoundViews(){
+    syncRosterMembers();
     const roster=CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
     const config=state.saleDistributionByLeader.$||{id:'ROUND-1',enabledSaleIds:roster.people.map(p=>p.id),weights:roster.weights};
     const store=state.settings.assignmentCursor||{};
@@ -76,7 +77,7 @@
     globalIds.add(id);
     globalConfig.enabledSaleIds=Array.from(globalIds);
     if(globalConfig.weights[id]===undefined)globalConfig.weights[id]=1;
-    // Vòng toàn hệ thống ($), vòng đang chạy và các vòng chờ đều được bổ sung
+  // Vòng toàn hệ thống ($), vòng đang chạy và các vòng chờ đều được bổ sung
     // nhân sự mới. Các vòng chờ vẫn giữ nguyên các lựa chọn cũ; chỉ thêm ID mới
     // chưa từng xuất hiện để người mới không bị mất sau khi vòng được promote.
     const rounds=Array.isArray(globalConfig.rounds)?globalConfig.rounds:[];
@@ -92,6 +93,13 @@
       globalConfig.enabledSaleIds=activeRound.enabledSaleIds;
       globalConfig.weights={...(globalConfig.weights||{}),[id]:activeRound.weights[id]};
     }
+    // Đánh dấu người này là đã biết trong từng vòng để syncRosterMembers không
+    // tự thêm lại họ vào vòng admin đã bỏ chọn.
+    rounds.forEach(round=>{
+      const known=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:[]);
+      known.add(id);
+      round.knownMemberIds=Array.from(known);
+    });
     // Nhánh legacy theo leader/manager trực tiếp — recipients() đọc từ đây.
     const legacyKeys=member.role==='MANAGER'
       ? ['manager:'+member.id,...state.members.filter(item=>item.role==='LEADER'&&item.managerId===member.id).map(item=>item.id)]
@@ -104,6 +112,41 @@
       legacy.enabledSaleIds=Array.from(ids);
       if(legacy.weights[id]===undefined)legacy.weights[id]=1;
     });
+  }
+  // Đồng bộ nhân sự đang hoạt động vào các vòng hiện có. Một người trong roster
+  // nhưng thiếu ở một vòng có hai khả năng: họ là member mới được thêm sau khi
+  // vòng đã được lưu (Mai Hoàng Phúc thiếu ở Vòng 2 → cần vá vào), hoặc admin đã
+  // chủ động bỏ chọn họ trong vòng đó (→ giữ nguyên). Mỗi vòng lưu knownMemberIds
+  // = tập người admin đã nhìn thấy trong modal lúc lưu; ai không nằm trong đó là
+  // người mới và được vá vào, ai nằm trong đó nhưng vắng mặt là bị loại chủ động.
+  // Vòng cũ chưa có knownMemberIds thì coi enabledSaleIds hiện tại là đã biết —
+  // tức ai thiếu đều được vá vào (hành vi sửa lỗi mong muốn cho dữ liệu cũ).
+  function syncRosterMembers(){
+    const config=state.saleDistributionByLeader['$'];
+    if(!config)return;
+    const roster=CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
+    const rounds=Array.isArray(config.rounds)?config.rounds:[];
+    if(!rounds.length)return;
+    let changed=false;
+    rounds.forEach(round=>{
+      const ids=new Set(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]);
+      // Vòng cũ chưa có marker: ai đang có mặt là đã biết, ai vắng được vá vào.
+      const knownInRound=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:Array.from(ids));
+      roster.people.forEach(person=>{
+        if(knownInRound.has(person.id))return;      // đã biết: có mặt hay bị loại đều giữ nguyên
+        knownInRound.add(person.id);
+        round.weights ||= {};
+        ids.add(person.id);
+        round.enabledSaleIds=Array.from(ids);
+        if(round.weights[person.id]===undefined)round.weights[person.id]=1;
+        changed=true;
+      });
+      round.knownMemberIds=Array.from(knownInRound);
+    });
+    if(!changed)return;
+    // Đồng bộ ngược lên cấu hình tổng để Vòng 1 (rounds[0]) là nguồn dữ liệu.
+    const activeRound=rounds[0];
+    if(activeRound){config.enabledSaleIds=activeRound.enabledSaleIds;config.weights={...(config.weights||{}),...activeRound.weights};}
   }
   const fieldOptionsValid=value=>value===''||state.customFieldDefinitions.find(f=>f.id==='customerClass')?.options.some(o=>o.value===value);
   // Chỉ mở danh sách nghiệp vụ đã cho phép, không nhận tên hàm tùy ý từ giao diện.
@@ -946,6 +989,16 @@
         const store=state.settings.assignmentCursor ||= {};
         const result=CrmDistributionRounds.removeMember(config,CrmDistributionRounds.cursorFrom(store),roster.people,state.settings.assignmentMode,input||{});
         state.saleDistributionByLeader.$=result.config;
+        // Người bị admin loại khỏi một vòng được đánh dấu đã biết ở chính vòng đó
+        // — syncRosterMembers không tự thêm họ lại.
+        if(input&&input.memberId&&Array.isArray(result.config.rounds)){
+          const target=result.config.rounds.find(round=>round.id===String(input.roundId));
+          if(target){
+            const known=new Set(Array.isArray(target.knownMemberIds)?target.knownMemberIds:[]);
+            known.add(input.memberId);
+            target.knownMemberIds=Array.from(known);
+          }
+        }
         if(input.roundId===distributionRoundViews()[0]?.roundId){store.global=result.cursor;if(store.salesByTeam)delete store.salesByTeam.global;}
         audit('REMOVE_DISTRIBUTION_ROUND_MEMBER',input.memberId,'Loai khoi vong '+input.roundId+'; giu nguyen data da phan');
         return {ok:true};
@@ -972,7 +1025,12 @@
         }
         const enabledIds=Array.from(enabled).filter(id=>members.some(member=>member.id===id));
         if(!enabledIds.some(id=>Number(weights[id])>0))throw Error('Vong can it nhat mot nhan su dang bat va co ty trong lon hon 0.');
-        rounds[index]={...round,omittedSlots:[],enabledSaleIds:enabledIds,weights:Object.fromEntries(members.map(member=>[member.id,Number.isFinite(Number(weights[member.id]))?Math.max(0,Math.min(100,Math.round(Number(weights[member.id])))):1]))};
+        // Mọi thành viên admin vừa xem và quyết định trong modal (kể cả người bị
+        // bỏ chọn) đều là đã biết của vòng này — syncRosterMembers sẽ không tự
+        // thêm họ lại. Manager chỉ đánh dấu những người trong tuyến của mình.
+        const knownInRound=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:[]);
+        members.forEach(member=>{if(allowed.has(member.id))knownInRound.add(member.id);});
+        rounds[index]={...round,omittedSlots:[],enabledSaleIds:enabledIds,knownMemberIds:Array.from(knownInRound),weights:Object.fromEntries(members.map(member=>[member.id,Number.isFinite(Number(weights[member.id]))?Math.max(0,Math.min(100,Math.round(Number(weights[member.id])))):1]))};
         audit('UPDATE_DISTRIBUTION_ROUND',round.id,`Cap nhat ${enabledIds.length} nhan su trong vong cho`);
         saveState();
         return {ok:true,round:rounds[index]};
@@ -987,7 +1045,12 @@
         if(Array.isArray(source.enabledIds)&&source.enabledIds.includes(member.id))enabled.add(member.id);
         if(Array.isArray(source.enabledIds)&&!source.enabledIds.includes(member.id))enabled.delete(member.id);
       }
-      const round={id:`ROUND-${Date.now()}`,createdAt:stamp(),enabledSaleIds:Array.from(enabled).filter(id=>members.some(member=>member.id===id)),weights:Object.fromEntries(members.map(member=>[member.id,Number.isFinite(Number(weights[member.id]))?Math.max(0,Math.min(100,Math.round(Number(weights[member.id])))):1]))};
+      // Admin đã quyết định rõ trên toàn danh sách khi tạo vòng — đánh dấu vào
+      // chính vòng mới tập người trong tuyến nhìn thấy (kể cả người bị bỏ chọn)
+      // để syncRosterMembers không tự thêm lại họ.
+      const knownInRound=new Set();
+      members.forEach(member=>{if(allowed.has(member.id))knownInRound.add(member.id);});
+      const round={id:`ROUND-${Date.now()}`,createdAt:stamp(),enabledSaleIds:Array.from(enabled).filter(id=>members.some(member=>member.id===id)),knownMemberIds:Array.from(knownInRound),weights:Object.fromEntries(members.map(member=>[member.id,Number.isFinite(Number(weights[member.id]))?Math.max(0,Math.min(100,Math.round(Number(weights[member.id])))):1]))};
       config.globalCycle=true;config.rounds=Array.isArray(config.rounds)&&config.rounds.length?config.rounds:[{id:'ROUND-1',createdAt:stamp(),enabledSaleIds:config.enabledSaleIds||members.map(item=>item.id),weights:config.weights||{}}];config.rounds.push(round);config.weights=config.rounds[0].weights;config.enabledSaleIds=config.rounds[0].enabledSaleIds;
       audit('CREATE_DISTRIBUTION_ROUND',round.id,`Vong tiep theo ${round.enabledSaleIds.length} nguoi`);
       saveState();
@@ -1013,6 +1076,9 @@
       const before=config.rounds.length;config.rounds=config.rounds.filter(round=>round.id!==target);if(config.rounds.length===before)throw Error('Khong tim thay vong cho.');
       config.weights=config.rounds[0].weights;config.enabledSaleIds=config.rounds[0].enabledSaleIds;audit('DELETE_DISTRIBUTION_ROUND',target,'Xoa vong cho');
       if(deletingActive){
+        // Vá người còn thiếu vào vòng sắp được promote TRƯỚC khi tính cursor để
+        // cursor stamp đủ mọi recipient (kể cả leader nhận data trực tiếp).
+        syncRosterMembers();
         const roster=CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
         const promotedRound=config.rounds[0];
         state.settings.assignmentCursor||={};state.settings.assignmentCursor.global=CrmDistributionRounds.cursorForRound(promotedRound,roster.people,state.settings.assignmentMode,String(Date.now()));
@@ -1041,6 +1107,13 @@
       }
       if(enabled)enrollMemberInDistribution(member);
       const config=state.saleDistributionByLeader['$'] ||= {globalCycle:true,enabledSaleIds:[],weights:{}};
+      // Thành viên admin vừa bật/tắt đều là người đã biết trong mọi vòng — khi
+      // tắt, đánh dấu này giữ họ không bị syncRosterMembers tự thêm lại.
+      (Array.isArray(config.rounds)?config.rounds:[]).forEach(round=>{
+        const known=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:[]);
+        known.add(id);
+        round.knownMemberIds=Array.from(known);
+      });
       config.globalCycle=true;config.weights||={};const ids=new Set(config.enabledSaleIds||[]);enabled?ids.add(id):ids.delete(id);config.enabledSaleIds=Array.from(ids);if(config.weights[id]===undefined)config.weights[id]=1;if(!enabled)config.weights[id]=0;
       if(Array.isArray(config.rounds)&&config.rounds[0]){config.rounds[0].weights||={};if(config.rounds[0].weights[id]===undefined)config.rounds[0].weights[id]=1;const roundIds=new Set(config.rounds[0].enabledSaleIds||[]);enabled?roundIds.add(id):roundIds.delete(id);config.rounds[0].enabledSaleIds=Array.from(roundIds);if(!enabled)config.rounds[0].weights[id]=0;}
       const legacyKeys=member.role==='MANAGER'

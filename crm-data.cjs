@@ -877,6 +877,36 @@ async function distributeAutomatic(c, data = null, options = {}) {
  const globalRecipients=roster.people,globalWeights=roster.weights;
  let globalConfig=saleConfigs.$||{id:'ROUND-1',enabledSaleIds:globalRecipients.map(p=>p.id),weights:globalWeights};
  let roundsChanged=false;
+ // Người trong roster nhưng thiếu ở vòng nào đó (member mới thêm sau khi vòng đã
+ // tạo) được vá vào vòng đó ngay tại server — kể cả khi admin chưa mở trang cấu
+ // hình. Mỗi vòng lưu knownMemberIds = tập người admin đã thấy lúc lưu; ai không
+ // nằm trong đó là người mới và được vá vào, ai nằm trong đó nhưng vắng là bị
+ // admin loại chủ động và được giữ ngoài. Vòng cũ chưa có marker coi enabledSaleIds
+ // hiện tại là đã biết → ai thiếu đều được vá vào.
+ {
+  const rounds=Array.isArray(globalConfig.rounds)?globalConfig.rounds:[];
+  if(rounds.length){
+   let changed=false;
+   rounds.forEach(round=>{
+    const ids=new Set(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]);
+    const knownInRound=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:Array.from(ids));
+    globalRecipients.forEach(person=>{
+     if(knownInRound.has(person.id))return;
+     knownInRound.add(person.id);
+     round.weights ||= {};
+     ids.add(person.id);
+     round.enabledSaleIds=Array.from(ids);
+     if(round.weights[person.id]===undefined)round.weights[person.id]=1;
+     changed=true;
+    });
+    round.knownMemberIds=Array.from(knownInRound);
+   });
+   if(changed){
+    globalConfig={...globalConfig,enabledSaleIds:rounds[0].enabledSaleIds,weights:{...(globalConfig.weights||{}),...rounds[0].weights}};
+    roundsChanged=true;
+   }
+  }
+ }
  const put = async (key,id,value) => {
   if(key==='notifications')value={...value,at:new Date().toISOString()};
   history.push({key,id,before:data[key].get(id) || null,after:value});

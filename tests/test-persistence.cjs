@@ -716,7 +716,7 @@ test('Explicit global rounds take precedence over matching source rules for inco
  const snapshot=await f.api.read(admin);
  await f.api.write(admin,'global-round-source-rule',[
   {key:'leaderDistribution',id:'$',base:snapshot.versions['leaderDistribution/$'],value:{...snapshot.state.leaderDistribution,enabledLeaderIds:['lead','lead2'],sourceRules:[{active:true,matchType:'SOURCE',matchValue:'Landing Page',targetLeaderId:'lead2'}]}},
-  {key:'saleDistributionByLeader',id:'$',base:snapshot.versions['saleDistributionByLeader/$'],value:{...snapshot.state.saleDistributionByLeader,'$':{globalCycle:true,rounds:[{id:'explicit-round-1',enabledSaleIds:['s2'],weights:{s2:1}}]}}}
+  {key:'saleDistributionByLeader',id:'$',base:snapshot.versions['saleDistributionByLeader/$'],value:{...snapshot.state.saleDistributionByLeader,'$':{globalCycle:true,rounds:[{id:'explicit-round-1',enabledSaleIds:['s2'],knownMemberIds:['lead','s1','s2','s3','s4','lead2'],weights:{s2:1}}]}}}
  ]);
  await f.webhook.persistWebhook(landingRecord(1));
  const result=await f.api.read(admin);
@@ -1247,6 +1247,30 @@ test('A newly enrolled member is added to every existing distribution round',asy
  assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds.map(round=>round.enabledSaleIds.includes('new-lead'))`,c)),[true,true]);
  assert.equal(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].weights['new-lead']`,c),1);
 });
+test('A roster member missing from a queued round is synced into it on snapshot',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ // 'lost' đã nằm trong vòng đang chạy nhưng thiếu trong vòng chờ (dữ liệu cũ trước khi
+ // có fix enroll-to-all-rounds). snapshot() phải vá họ vào mọi vòng còn thiếu.
+ vm.runInContext(`state.members=[{id:'lead',name:'Lead',role:'LEADER',teamId:'T',active:true},{id:'lost',name:'Lost',role:'SALE',leaderId:'lead',active:true}];state.leaderDistribution={enabledLeaderIds:['lead'],weights:{lead:1}};state.saleDistributionByLeader={'$':{globalCycle:true,enabledSaleIds:['lost'],weights:{lost:1},rounds:[{id:'active',enabledSaleIds:['lost'],weights:{lost:1}},{id:'queued',enabledSaleIds:['lead'],weights:{lead:1}}]}};saveState=()=>{};`,c);
+ api.snapshot();
+ assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].enabledSaleIds.slice().sort()`,c)),['lead','lost']);
+ assert.equal(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].weights['lost']`,c),1);
+ assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].knownMemberIds`,c)).includes('lost'));
+});
+test('A member deliberately removed from every round is not re-added by sync',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.members=[{id:'lead',name:'Lead',role:'LEADER',teamId:'T',active:true},{id:'m1',name:'One',role:'SALE',leaderId:'lead',active:true},{id:'m2',name:'Two',role:'SALE',leaderId:'lead',active:true}];state.leaderDistribution={enabledLeaderIds:['lead'],weights:{lead:1}};state.saleDistributionByLeader={'$':{globalCycle:true,rounds:[{id:'active',enabledSaleIds:['m1','m2'],weights:{m1:1,m2:1}},{id:'queued',enabledSaleIds:['m1','m2'],weights:{m1:1,m2:1}}]}};state.settings.assignmentMode='ROUND_ROBIN';state.settings.assignmentCursor.global={index:1,ids:['m1','m2'],cycleId:'1'};saveState=()=>{};`,c);
+ // Admin chủ động gỡ m2 khỏi cả hai vòng.
+ for(const view of api.snapshot().distributionRoundViews){
+  await api.distributionRoundRemoveMember({roundId:view.roundId,token:view.token,memberId:'m2'});
+ }
+ assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds.map(round=>round.enabledSaleIds.includes('m2'))`,c)),[false,false]);
+ // Snapshot tiếp theo không được tự thêm m2 lại dù m2 vẫn là Sale đang hoạt động.
+ api.snapshot();
+ assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds.map(round=>round.enabledSaleIds.includes('m2'))`,c)),[false,false]);
+ assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[0].knownMemberIds`,c)).includes('m2'));
+ assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].knownMemberIds`,c)).includes('m2'));
+});
 function roundInput(state,roundIndex=0,position){
  const rounds=require('./distribution-rounds.js');
  const roster=rounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
@@ -1283,7 +1307,7 @@ test('Deleting active round promotes queued round to round one and resets its cu
  vm.runInContext(`state.members=[{id:'lead',name:'Leader',role:'LEADER',teamId:'T',active:true},{id:'m1',name:'One',role:'SALE',leaderId:'lead',teamId:'T',active:true},{id:'m2',name:'Two',role:'SALE',leaderId:'lead',teamId:'T',active:true}];state.leaderDistribution={enabledLeaderIds:['lead']};state.saleDistributionByLeader={'$':{globalCycle:true,rounds:[{id:'active',enabledSaleIds:['m1'],weights:{m1:1}},{id:'queued',enabledSaleIds:['m2'],weights:{m2:1}}]},lead:{leaderEnabled:true,enabledSaleIds:['m1','m2'],weights:{lead:1,m1:1,m2:1}}};state.settings.assignmentMode='ROUND_ROBIN';state.settings.assignmentCursor.global={index:1,ids:['m1'],cycleId:'1'};saveState=()=>{};`,c);
  vm.runInContext(`state.saleDistributionByLeader['$'].rounds=state.saleDistributionByLeader['$'].rounds.slice(0,1)`,c);
  await assert.rejects(()=>api.distributionRoundDelete('active'),/vong ke tiep/);
- vm.runInContext(`state.saleDistributionByLeader['$'].rounds.push({id:'queued',enabledSaleIds:['m2'],weights:{m2:1}})`,c);
+ vm.runInContext(`state.saleDistributionByLeader['$'].rounds.push({id:'queued',enabledSaleIds:['m2'],knownMemberIds:['lead','m1','m2'],weights:{m2:1}})`,c);
  await api.distributionRoundDelete('active');
  assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds.map(round=>round.id)`,c)),['queued']);
  assert.deepEqual(Array.from(vm.runInContext(`state.settings.assignmentCursor.global.ids`,c)),['m2']);
@@ -1298,12 +1322,14 @@ test('Deleting an 11-person active round keeps every member in the promoted roun
  vm.runInContext(`state.members=[{id:'lead',name:'Leader',role:'LEADER',teamId:'T',active:true},...Array.from({length:11},(_,i)=>({id:'s'+(i+1),name:'Sale '+(i+1),role:'SALE',leaderId:'lead',teamId:'T',active:true}))];state.leaderDistribution={enabledLeaderIds:['lead']};state.saleDistributionByLeader={'$':{globalCycle:true,rounds:[{id:'active',enabledSaleIds:['s1','s2','s3','s4','s5','s6','s7','s8','s9','s10'],weights:Object.fromEntries(Array.from({length:10},(_,i)=>['s'+(i+1),1]))},{id:'queued',enabledSaleIds:Array.from({length:11},(_,i)=>'s'+(i+1)),weights:Object.fromEntries(Array.from({length:11},(_,i)=>['s'+(i+1),1]))}]},lead:{leaderEnabled:true,enabledSaleIds:Array.from({length:11},(_,i)=>'s'+(i+1)),weights:Object.fromEntries(Array.from({length:11},(_,i)=>['s'+(i+1),1]))}};state.settings.assignmentMode='ROUND_ROBIN';state.settings.assignmentCursor.global={index:1,ids:Array.from({length:10},(_,i)=>'s'+(i+1)),cycleId:'1'};saveState=()=>{};`,c);
  await api.distributionRoundDelete('active');
  assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds.map(round=>round.id)`,c)),['queued']);
- assert.equal(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[0].enabledSaleIds.length`,c),11);
- assert.equal(vm.runInContext(`state.settings.assignmentCursor.global.ids.length`,c),11);
+ // Vòng chờ giữ nguyên 11 sale; leader (roster hợp lệ) được sync thêm vào như một
+ // recipient nhận data trực tiếp nên promoted round có 12 người.
+ assert.equal(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[0].enabledSaleIds.length`,c),12);
+ assert.equal(vm.runInContext(`state.settings.assignmentCursor.global.ids.length`,c),12);
  assert.equal(vm.runInContext(`state.settings.assignmentCursor.global.index`,c),0);
  assert.equal(vm.runInContext(`state.settings.assignmentCursor.global.roundId`,c),'queued');
  const snapshot=api.snapshot();
- assert.equal(snapshot.distributionRoundViews[0].ids.length,11);
+ assert.equal(snapshot.distributionRoundViews[0].ids.length,12);
  assert.equal(snapshot.distributionExtraTurnPeople.length,12);
  assert.equal(snapshot.distributionExtraTurnPeople.filter(person=>!person.actualRole).length,11);
  assert.equal(snapshot.distributionExtraTurnPeople.filter(person=>person.actualRole==='LEADER').length,1);
@@ -1395,7 +1421,8 @@ test('Extra turn API retries failed save without appending twice and denies Sale
  const api=c.window.crmApi,v=api.snapshot().distributionRoundViews[0],input={roundId:v.roundId,token:v.token,memberId:'s'};
  await assert.rejects(()=>api.distributionRoundAddExtraTurn(input),/Chưa lưu/);
  await api.distributionRoundAddExtraTurn(input);
- assert.deepEqual(Array.from(vm.runInContext('state.settings.assignmentCursor.global.ids',c)),['s','s']);
+ // Leader 'l' là recipient hợp lệ được sync vào vòng; thêm lượt 's' nối vào cuối.
+ assert.deepEqual(Array.from(vm.runInContext('state.settings.assignmentCursor.global.ids',c)),['s','l','s']);
  vm.runInContext("currentAccount={id:'s',role:'SALE'}",c);await assert.rejects(()=>api.distributionRoundAddExtraTurn(input),/quyền/);
 });
 test('Extra turn persistence skips the expensive automatic distribution scan',async()=>{
