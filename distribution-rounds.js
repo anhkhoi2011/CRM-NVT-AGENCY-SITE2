@@ -9,6 +9,9 @@
     return ids.filter((id,i)=>!omitted.has(i));
   }
   const slotSignature=(round,people,mode)=>JSON.stringify(slots(round,people,mode));
+  function cursorForRound(round,people,mode,cycleId){
+    return {index:0,ids:slots(round,people,mode),cycleId:String(cycleId||Date.now()),roundId:round?.id||'ROUND-1',slotSignature:slotSignature(round,people,mode)};
+  }
   function reconcileActiveIds(round,raw,people,mode){
     const configured=slots(round,people,mode);
     if(!raw||typeof raw!=='object'||!Array.isArray(raw.ids))return configured;
@@ -147,5 +150,5 @@
     const cursor=raw&&typeof raw==='object'?raw:{};
     return {config:next,cursor:{...cursor,index:view.index,ids:[...view.ids,memberId],cycleId:view.cycleId||String(Date.now()),roundId:view.roundId,slotSignature:slotSignature(config.rounds?.[0]||config,people,mode)}};
   }
-  return {slots,preview,skip,removeMember,addExtraTurn,take,recipients,cursorFrom};
+  return {slots,preview,skip,removeMember,addExtraTurn,take,recipients,cursorFrom,cursorForRound};
 });

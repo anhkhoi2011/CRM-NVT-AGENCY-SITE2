@@ -1286,6 +1286,21 @@ test('Deleting active round promotes queued round to round one and resets its cu
  const second=rounds.take(first.config,first.cursor,people,'ROUND_ROBIN');
  assert.equal(first.id,'m2');assert.equal(second.id,'m2');
 });
+test('Deleting an 11-person active round keeps every member in the promoted round',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ vm.runInContext(`state.members=[{id:'lead',name:'Leader',role:'LEADER',teamId:'T',active:true},...Array.from({length:11},(_,i)=>({id:'s'+(i+1),name:'Sale '+(i+1),role:'SALE',leaderId:'lead',teamId:'T',active:true}))];state.leaderDistribution={enabledLeaderIds:['lead']};state.saleDistributionByLeader={'$':{globalCycle:true,rounds:[{id:'active',enabledSaleIds:['s1','s2','s3','s4','s5','s6','s7','s8','s9','s10'],weights:Object.fromEntries(Array.from({length:10},(_,i)=>['s'+(i+1),1]))},{id:'queued',enabledSaleIds:Array.from({length:11},(_,i)=>'s'+(i+1)),weights:Object.fromEntries(Array.from({length:11},(_,i)=>['s'+(i+1),1]))}]},lead:{leaderEnabled:true,enabledSaleIds:Array.from({length:11},(_,i)=>'s'+(i+1)),weights:Object.fromEntries(Array.from({length:11},(_,i)=>['s'+(i+1),1]))}};state.settings.assignmentMode='ROUND_ROBIN';state.settings.assignmentCursor.global={index:1,ids:Array.from({length:10},(_,i)=>'s'+(i+1)),cycleId:'1'};saveState=()=>{};`,c);
+ await api.distributionRoundDelete('active');
+ assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds.map(round=>round.id)`,c)),['queued']);
+ assert.equal(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[0].enabledSaleIds.length`,c),11);
+ assert.equal(vm.runInContext(`state.settings.assignmentCursor.global.ids.length`,c),11);
+ assert.equal(vm.runInContext(`state.settings.assignmentCursor.global.index`,c),0);
+ assert.equal(vm.runInContext(`state.settings.assignmentCursor.global.roundId`,c),'queued');
+ const snapshot=api.snapshot();
+ assert.equal(snapshot.distributionRoundViews[0].ids.length,11);
+ assert.equal(snapshot.distributionExtraTurnPeople.length,12);
+ assert.equal(snapshot.distributionExtraTurnPeople.filter(person=>!person.actualRole).length,11);
+ assert.equal(snapshot.distributionExtraTurnPeople.filter(person=>person.actualRole==='LEADER').length,1);
+});
 test('Explicit Admin role is not downgraded by a colliding Manager staff record',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
  vm.runInContext(`state.members=[{id:'admin',name:'Manager collision',role:'MANAGER',active:true},{id:'a',role:'SALE',active:true},{id:'b',role:'SALE',active:true}];state.leaderDistribution={enabledLeaderIds:[]};state.saleDistributionByLeader={'$':{rounds:[{id:'one',enabledSaleIds:['a'],weights:{a:1}},{id:'two',enabledSaleIds:['b'],weights:{b:1}}]}};serverStateLoaded=false;let synced=false;syncServerState=async()=>{synced=true;serverStateLoaded=true;return true;};saveState=()=>{};`,c);

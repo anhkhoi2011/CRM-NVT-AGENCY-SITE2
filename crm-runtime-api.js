@@ -1010,8 +1010,8 @@
       config.weights=config.rounds[0].weights;config.enabledSaleIds=config.rounds[0].enabledSaleIds;audit('DELETE_DISTRIBUTION_ROUND',target,'Xoa vong cho');
       if(deletingActive){
         const roster=CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
-        const nextView=CrmDistributionRounds.preview(config,null,roster.people,state.settings.assignmentMode)[0];
-        state.settings.assignmentCursor||={};state.settings.assignmentCursor.global={index:0,ids:nextView.ids,cycleId:String(Date.now())};
+        const promotedRound=config.rounds[0];
+        state.settings.assignmentCursor||={};state.settings.assignmentCursor.global=CrmDistributionRounds.cursorForRound(promotedRound,roster.people,state.settings.assignmentMode,String(Date.now()));
         if(state.settings.assignmentCursor.salesByTeam)delete state.settings.assignmentCursor.salesByTeam.global;
         audit('PROMOTE_DISTRIBUTION_ROUND',config.rounds[0].id,'Dua vong ke tiep len Vong 1');
       }
