@@ -54,6 +54,53 @@
     const store=state.settings.assignmentCursor||{};
     return CrmDistributionRounds.preview(config,CrmDistributionRounds.cursorFrom(store),roster.people,state.settings.assignmentMode);
   }
+  // Đưa một nhân sự mới (hoặc vừa được bật) vào vòng chia data và vòng chờ.
+  // enabledSaleIds là snapshot được lưu khi tạo vòng, nên nếu không thêm chủ động
+  // thì member mới sẽ bị slots()/preview() lọc ra mãi mãi dù đã active.
+  function enrollMemberInDistribution(member){
+    if(!member||member.active===false||!['SALE','LEADER','MANAGER'].includes(member.role))return;
+    const id=member.id;
+    // Leader phải nằm trong enabledLeaderIds thì recipients() mới đưa nhánh của họ vào.
+    if(member.role==='LEADER'){
+      state.leaderDistribution ||= {enabled:false,enabledLeaderIds:[],weights:{},sourceRules:[]};
+      state.leaderDistribution.enabledLeaderIds ||= [];
+      if(!state.leaderDistribution.enabledLeaderIds.includes(id))state.leaderDistribution.enabledLeaderIds.push(id);
+      state.leaderDistribution.weights ||= {};
+      if(state.leaderDistribution.weights[id]===undefined)state.leaderDistribution.weights[id]=1;
+    }
+    // Vòng toàn hệ thống ($) + vòng đang chạy rounds[0] + mọi vòng chờ đều cần có id.
+    const globalConfig=state.saleDistributionByLeader['$'] ||= {globalCycle:true,enabledSaleIds:[],weights:{},rounds:[]};
+    globalConfig.globalCycle=true;
+    globalConfig.weights ||= {};
+    const globalIds=new Set(Array.isArray(globalConfig.enabledSaleIds)?globalConfig.enabledSaleIds:[]);
+    globalIds.add(id);
+    globalConfig.enabledSaleIds=Array.from(globalIds);
+    if(globalConfig.weights[id]===undefined)globalConfig.weights[id]=1;
+    // Chỉ vá vào vòng đang chạy rounds[0]; các vòng chờ là cấu hình admin đã
+    // lưu tường minh, không tự ý sửa.
+    const activeRound=globalConfig.rounds?.[0];
+    if(activeRound){
+      activeRound.weights ||= {};
+      const ids=new Set(Array.isArray(activeRound.enabledSaleIds)?activeRound.enabledSaleIds:[]);
+      ids.add(id);
+      activeRound.enabledSaleIds=Array.from(ids);
+      if(activeRound.weights[id]===undefined)activeRound.weights[id]=1;
+      globalConfig.enabledSaleIds=activeRound.enabledSaleIds;
+      globalConfig.weights={...(globalConfig.weights||{}),[id]:activeRound.weights[id]};
+    }
+    // Nhánh legacy theo leader/manager trực tiếp — recipients() đọc từ đây.
+    const legacyKeys=member.role==='MANAGER'
+      ? ['manager:'+member.id,...state.members.filter(item=>item.role==='LEADER'&&item.managerId===member.id).map(item=>item.id)]
+      : [member.role==='SALE'?(member.managerId?'manager:'+member.managerId:(member.leaderId||null)):member.id];
+    legacyKeys.filter(Boolean).forEach(legacyKey=>{
+      const legacy=state.saleDistributionByLeader[legacyKey] ||= {globalCycle:true,enabledSaleIds:[],weights:{}};
+      legacy.weights ||= {};
+      const ids=new Set(Array.isArray(legacy.enabledSaleIds)?legacy.enabledSaleIds:[]);
+      ids.add(id);
+      legacy.enabledSaleIds=Array.from(ids);
+      if(legacy.weights[id]===undefined)legacy.weights[id]=1;
+    });
+  }
   const fieldOptionsValid=value=>value===''||state.customFieldDefinitions.find(f=>f.id==='customerClass')?.options.some(o=>o.value===value);
   // Chỉ mở danh sách nghiệp vụ đã cho phép, không nhận tên hàm tùy ý từ giao diện.
   let workflowActive=false,workflowView=false,workflowPending=false;
@@ -759,14 +806,14 @@
           const inheritedSales=state.members.filter(item=>item.active!==false&&item.role==='SALE'&&item.leaderId===id);
           inheritedSales.forEach(sale=>{sale.managerId=id;});
           state.customers.filter(customer=>customer.managerId===id||customer.ownerId===id||customer.leaderId===id||customer.saleId===id||inheritedSales.some(sale=>sale.id===customer.saleId)).forEach(customer=>{customer.managerId=id;});
-          state.registeredAccounts=state.registeredAccounts.filter(m=>m.id!==id);STAFF=state.members.filter(m=>m.active!==false);audit('UPDATE_MANAGER',next.id,name);return {id:next.id};
+          state.registeredAccounts=state.registeredAccounts.filter(m=>m.id!==id);STAFF=state.members.filter(m=>m.active!==false);enrollMemberInDistribution(next);audit('UPDATE_MANAGER',next.id,name);return {id:next.id};
         }
-        if(pending){const next={...pending,name,accountId,email,phone,role,teamId,managerId,leaderId:role==='SALE'?leader?.id||null:null,managerId,active:true,initials:memberInitials(name)};state.members.push(next);state.registeredAccounts=state.registeredAccounts.filter(m=>m.id!==id);STAFF=state.members.filter(m=>m.active!==false);audit('ASSIGN_REGISTERED_ACCOUNT',id,name);return {id};}
+        if(pending){const next={...pending,name,accountId,email,phone,role,teamId,managerId,leaderId:role==='SALE'?leader?.id||null:null,managerId,active:true,initials:memberInitials(name)};state.members.push(next);state.registeredAccounts=state.registeredAccounts.filter(m=>m.id!==id);STAFF=state.members.filter(m=>m.active!==false);enrollMemberInDistribution(next);audit('ASSIGN_REGISTERED_ACCOUNT',id,name);return {id};}
         // Gọi nghiệp vụ cũ để chuyển khách và công việc đúng khi đổi Team/Leader.
         const before=new Set(state.members.map(m=>m.id));teamMemberModal(id);
         Object.entries({memberName:name,memberEmail:email,memberRole:role,memberTeam:teamId,memberLeader:role==='SALE'?leader?.id||'':''}).forEach(([key,value])=>$('#'+key).value=value);
         saveTeamMember(id);const saved=id?state.members.find(m=>m.id===id):state.members.find(m=>!before.has(m.id));
-        if(!saved)throw Error('Chưa tạo được thành viên.');saved.accountId=accountId;saved.phone=phone;saved.managerId=managerId;return {id:saved.id};
+        if(!saved)throw Error('Chưa tạo được thành viên.');saved.accountId=accountId;saved.phone=phone;saved.managerId=managerId;enrollMemberInDistribution(saved);return {id:saved.id};
       },'member:'+(id||'new'));
     },
     async removeMember(id) {
@@ -835,6 +882,10 @@
         if(!(member.id===scope.manager?.id||scope.leaderIds.has(member.id)||scope.saleIds.has(member.id)))throw Error('Manager chi duoc chinh ty trong trong tuyen cua minh.');
       }
       const rawWeight=Number(value),weight=Number.isFinite(rawWeight)?Math.max(0,Math.min(100,Math.round(rawWeight))):1;
+      // Đặt tỷ trọng >0 cho người chưa từng được cấu hình thì đưa họ vào vòng
+      // luôn; không tự bật lại người đã bị tắt rõ ràng (weights[id]===0).
+      const existing=state.saleDistributionByLeader['$'];
+      if(weight>0&&(existing?.weights?.[id]===undefined||Number(existing?.weights?.[id])>0))enrollMemberInDistribution(member);
       const config=state.saleDistributionByLeader['$'] ||= {globalCycle:true,enabledSaleIds:[],weights:{}};
       config.globalCycle=true;config.weights||={};if(config.weights[id]===undefined)config.enabledSaleIds=Array.from(new Set([...(config.enabledSaleIds||[]),id]));config.weights[id]=weight;
       if(Array.isArray(config.rounds)&&config.rounds[0]){config.rounds[0].weights||={};config.rounds[0].weights[id]=weight;config.rounds[0].enabledSaleIds=Array.from(new Set(config.rounds[0].enabledSaleIds||[]));if(!config.rounds[0].enabledSaleIds.includes(id))config.rounds[0].enabledSaleIds.push(id);}
@@ -984,13 +1035,14 @@
         const scope=managerScope();
         if(!(member.id===scope.manager?.id||scope.leaderIds.has(member.id)||scope.saleIds.has(member.id)))throw Error('Manager chi duoc chinh nguoi trong tuyen cua minh.');
       }
+      if(enabled)enrollMemberInDistribution(member);
       const config=state.saleDistributionByLeader['$'] ||= {globalCycle:true,enabledSaleIds:[],weights:{}};
-      config.globalCycle=true;config.weights||={};const ids=new Set(config.enabledSaleIds||[]);enabled?ids.add(id):ids.delete(id);config.enabledSaleIds=Array.from(ids);if(config.weights[id]===undefined)config.weights[id]=1;
-      if(Array.isArray(config.rounds)&&config.rounds[0]){config.rounds[0].weights||={};if(config.rounds[0].weights[id]===undefined)config.rounds[0].weights[id]=1;const roundIds=new Set(config.rounds[0].enabledSaleIds||[]);enabled?roundIds.add(id):roundIds.delete(id);config.rounds[0].enabledSaleIds=Array.from(roundIds);}
+      config.globalCycle=true;config.weights||={};const ids=new Set(config.enabledSaleIds||[]);enabled?ids.add(id):ids.delete(id);config.enabledSaleIds=Array.from(ids);if(config.weights[id]===undefined)config.weights[id]=1;if(!enabled)config.weights[id]=0;
+      if(Array.isArray(config.rounds)&&config.rounds[0]){config.rounds[0].weights||={};if(config.rounds[0].weights[id]===undefined)config.rounds[0].weights[id]=1;const roundIds=new Set(config.rounds[0].enabledSaleIds||[]);enabled?roundIds.add(id):roundIds.delete(id);config.rounds[0].enabledSaleIds=Array.from(roundIds);if(!enabled)config.rounds[0].weights[id]=0;}
       const legacyKeys=member.role==='MANAGER'
         ? ['manager:'+member.id,...state.members.filter(item=>item.role==='LEADER'&&item.managerId===member.id).map(item=>item.id)]
         : [member.role==='SALE'?(member.managerId?'manager:'+member.managerId:(member.leaderId||null)):member.id];
-      legacyKeys.filter(Boolean).forEach(legacyKey=>{const legacy=state.saleDistributionByLeader[legacyKey] ||= {globalCycle:true,enabledSaleIds:[],weights:{}};legacy.weights||={};const legacyIds=new Set(legacy.enabledSaleIds||[]);enabled?legacyIds.add(id):legacyIds.delete(id);legacy.enabledSaleIds=Array.from(legacyIds);if(legacy.weights[id]===undefined)legacy.weights[id]=1;});
+      legacyKeys.filter(Boolean).forEach(legacyKey=>{const legacy=state.saleDistributionByLeader[legacyKey] ||= {globalCycle:true,enabledSaleIds:[],weights:{}};legacy.weights||={};const legacyIds=new Set(legacy.enabledSaleIds||[]);enabled?legacyIds.add(id):legacyIds.delete(id);legacy.enabledSaleIds=Array.from(legacyIds);if(legacy.weights[id]===undefined)legacy.weights[id]=1;if(!enabled)legacy.weights[id]=0;});
       if(effectivePermissionRole()==='ADMIN')resetDistributionCursor();
       audit('UPDATE_DISTRIBUTION_MEMBER',id,normalizedKind+' - '+(enabled?'bat':'tat'));
       if(!await flushServerPersistence())throw Error('Chua luu trang thai nhan data.');

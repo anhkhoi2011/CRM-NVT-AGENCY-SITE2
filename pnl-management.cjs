@@ -71,8 +71,19 @@ function money(value) { const n = Number(value); return Number.isFinite(n) ? Mat
 function idFor(prefix) { return `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`; }
 
 async function staffMap() {
-  const rows = await dbQuery('SELECT id, name, role, team_id, leader_id, manager_id, telegram_chat_id, active FROM users WHERE active = 1');
+  // The production users table stores the hierarchy in leader_id. Older PnL
+  // code selected manager_id, but that column is not part of the CRM schema
+  // and made every PnL read fail with ER_BAD_FIELD_ERROR.
+  const rows = await dbQuery('SELECT id, name, role, team_id, leader_id, telegram_chat_id, active FROM users WHERE active = 1');
   return new Map(rows.map(row => [String(row.id), row]));
+}
+function managerIdFor(member, staff) {
+  if (!member) return '';
+  const role = String(member.role || '').toUpperCase();
+  if (role === 'MANAGER') return String(member.id || '');
+  if (role === 'LEADER') return String(member.leader_id || '');
+  const leader = staff.get(String(member.leader_id || ''));
+  return leader && String(leader.role || '').toUpperCase() === 'LEADER' ? String(leader.leader_id || '') : '';
 }
 function visibleByHierarchy(user, customer, staff) {
   const role = roleOf(user), creator = staff.get(String(customer.created_by)), assigned = staff.get(String(customer.assigned_to || ''));
@@ -80,7 +91,7 @@ function visibleByHierarchy(user, customer, staff) {
   if (!creator || creator.active === 0) return false;
   if (role === 'SALE') return String(customer.created_by) === String(user.id);
   if (role === 'LEADER') return String(customer.created_by) === String(user.id) || (creator.role === 'SALE' && (String(creator.leader_id || '') === String(user.id) || (creator.team_id && creator.team_id === user.teamId)));
-  if (role === 'MANAGER') return String(customer.created_by) === String(user.id) || String(creator.manager_id || '') === String(user.id) || String(assigned?.manager_id || '') === String(user.id) || (creator.role === 'LEADER' && String(creator.manager_id || '') === String(user.id));
+  if (role === 'MANAGER') return String(customer.created_by) === String(user.id) || managerIdFor(creator, staff) === String(user.id) || managerIdFor(assigned, staff) === String(user.id);
   return false;
 }
 async function visibleCustomer(user, id) {
@@ -164,4 +175,4 @@ async function reminderCandidates(date = today()) {
   return dbQuery(`SELECT c.*,u.name AS owner_name,u.telegram_chat_id AS owner_chat_id FROM pnl_customers c LEFT JOIN users u ON u.id=COALESCE(c.assigned_to,c.created_by) LEFT JOIN pnl_daily_logs l ON l.customer_id=c.id AND l.trade_date=? WHERE c.status='active' AND l.id IS NULL AND u.telegram_chat_id IS NOT NULL`, [date]);
 }
 
-module.exports = { ensureSchema, list, createCustomer, upsertLog, closeWeek, reminderCandidates, weekStart, weekEnd, today, staffMap, visibleCustomer, isPnlRole };
+module.exports = { ensureSchema, list, createCustomer, upsertLog, closeWeek, reminderCandidates, weekStart, weekEnd, today, staffMap, managerIdFor, visibleByHierarchy, visibleCustomer, isPnlRole };

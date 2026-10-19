@@ -1503,7 +1503,7 @@
     </style>
 <link rel="preload" as="script" href="reference-view.js?v=20261014-customer-profile">
 <link rel="preload" as="script" href="customer-save-queue.js?v=20261003-offline-save-1">
-<link rel="preload" as="script" href="reference-crm.js?v=20261016-webhook-recovery-1">
+<link rel="preload" as="script" href="reference-crm.js?v=20261017-distribution-enroll-1">
 <style id="crm-startup-guard">
 body:not(.reference-ready) > .app-shell,
 body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
@@ -1516,7 +1516,8 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 .notice-list-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--border)}.notice-list-header small{color:var(--text-muted)}.notice-list{padding:0 16px}.notice-row{display:flex;gap:14px;align-items:flex-start;padding:18px 0;border-bottom:1px solid var(--border-light)}.notice-row:last-child{border-bottom:0}.notice-icon{display:grid;place-items:center;flex-shrink:0;width:34px;height:34px;border-radius:9px;background:var(--bg-subtle);color:var(--notice-color);font-weight:800}.notice-content{flex:1;min-width:0}.notice-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}.notice-dot{width:7px;height:7px;border-radius:50%;background:#2563eb}.notice-content p{font-size:12px;color:var(--text-muted);line-height:1.6;margin:6px 0;overflow-wrap:anywhere;white-space:pre-wrap}.notice-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted);flex-wrap:wrap}.notice-actions{display:flex;gap:6px;flex-shrink:0}.notice-actions button{font-size:11px;padding:6px 9px;border-radius:7px}.notice-actions .notice-delete{color:#dc2626}.notice-read .notice-title{font-weight:500}.notice-empty{padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px}.notice-preview .notice-row{padding:14px 16px;flex-wrap:wrap}.notice-preview .notice-actions{margin-left:48px}.notice-preview .notice-content p{margin:4px 0}.notice-preview .notice-title{font-size:12px}
 @media(max-width:850px){.notice-categories{grid-template-columns:repeat(2,minmax(0,1fr))}.notice-row{flex-wrap:wrap}.notice-actions{margin-left:48px}}@media(max-width:600px){.notice-row .notice-content{flex:1 1 calc(100% - 48px)}.notice-row .notice-actions{margin-left:48px}}@media(max-width:480px){.notice-heading{align-items:flex-start}.notice-heading h1{font-size:20px}.notice-categories{gap:9px}.notice-category{padding:12px}.notice-list-header{align-items:flex-start}.notice-category strong{font-size:11px}}
 </style>
-<link rel="stylesheet" href="crm-mobile.css?v=20261016-google-sheets-backup-2">
+<link rel="stylesheet" href="crm-mobile.css?v=20261017-distribution-enroll-1">
+<style id="legacy-pnl-styles">#legacyPnlBody .pnl-error-state{display:flex;flex-direction:column;gap:5px;align-items:flex-start;text-align:left;padding:12px 0;color:#b91c1c}#legacyPnlBody .pnl-error-state b{font-size:13px}#legacyPnlBody .pnl-error-state span{color:var(--text-muted);font-size:11px;word-break:break-word}</style>
 </head>
 <body>
 <div id=crmBootScreen role=status aria-label="Đang tải CRM"><div class="crm-boot-skeleton" aria-hidden="true"><aside class="crm-boot-sidebar"><b>NVT AGENCY</b><i></i><i></i><i></i><i></i></aside><div class="crm-boot-topbar"><i></i></div></div><div class=crm-boot-mark><span class=crm-boot-spinner aria-hidden=true></span><span>NVT AGENCY · Đang tải dữ liệu…</span></div></div>
@@ -1552,7 +1553,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
 })();
 </script>
 <!-- Ẩn lớp đăng nhập trong lúc khôi phục phiên để F5 không nhấp nháy về form login. -->
-<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261016-webhook-recovery-1" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
+<iframe id="crmRuntimeFrame" title="Đăng nhập CRM" src="crm-runtime.html?v=20261017-distribution-enroll-1" style="display:none;position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483647;background:white"></iframe>
 
 
 <div class="bg-aura"></div>
@@ -4580,7 +4581,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
   #tab-blacklist button:focus-visible,#tab-blacklist select:focus-visible{outline:2px solid #e9ac91;outline-offset:3px}
   @media(max-width:680px){#tab-blacklist .bl-heading{margin-bottom:16px}#tab-blacklist .bl-title{gap:9px}#tab-blacklist .bl-title h1{font-size:21px}#tab-blacklist .bl-title-icon{width:34px;height:34px}#tab-blacklist .bl-view-tabs{gap:22px;padding:0 14px}#tab-blacklist .bl-view-tab{min-height:50px;font-size:12px}#tab-blacklist .bl-toolbar{padding:12px 14px;gap:8px}#tab-blacklist .bl-search{max-width:none}#tab-blacklist #blacklistStatus{max-width:145px;padding:0 8px}#tab-blacklist .modern-table th,#tab-blacklist .modern-table td{padding-left:14px;padding-right:14px}#tab-blacklist .bl-ip-table{min-width:480px}#tab-blacklist .bl-pagination{padding:12px 14px}}
 </style>
-<script src="reference-crm.js?v=20261016-webhook-recovery-1"></script>
+<script src="reference-crm.js?v=20261017-distribution-enroll-1"></script>
 <script src="support-chat-widget.js?v=20261001-no-sse-1"></script>
 <script>
   (() => {
