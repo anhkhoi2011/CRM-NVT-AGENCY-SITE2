@@ -1271,6 +1271,18 @@ test('A member deliberately removed from every round is not re-added by sync',as
  assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[0].knownMemberIds`,c)).includes('m2'));
  assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].knownMemberIds`,c)).includes('m2'));
 });
+test('Saving a queued round keeps a round member who is no longer in state.members',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ // 'ghost' vẫn nằm trong vòng chờ (được sync vào trước đó) nhưng không còn trong
+ // state.members — ví dụ bị ẩn khỏi đội ngũ. Admin giữ nguyên tick cho họ thì họ
+ // không được phép biến mất khỏi vòng; bỏ tick mới được loại.
+ vm.runInContext(`state.members=[{id:'lead',name:'Lead',role:'LEADER',teamId:'T',active:true},{id:'m1',name:'One',role:'SALE',leaderId:'lead',active:true}];state.leaderDistribution={enabledLeaderIds:['lead'],weights:{lead:1}};state.saleDistributionByLeader={'$':{globalCycle:true,rounds:[{id:'active',enabledSaleIds:['m1'],weights:{m1:1}},{id:'queued',enabledSaleIds:['m1','ghost'],knownMemberIds:['lead','m1','ghost'],weights:{m1:1,ghost:3}}]}};saveState=()=>{};`,c);
+ await api.distributionRoundSave({roundId:'queued',enabledIds:['m1','ghost'],weights:{m1:2,ghost:5}});
+ assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].enabledSaleIds.slice().sort()`,c)),['ghost','m1']);
+ assert.equal(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].weights.ghost`,c),5);
+ await api.distributionRoundSave({roundId:'queued',enabledIds:['m1'],weights:{m1:2,ghost:3}});
+ assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].enabledSaleIds`,c)),['m1']);
+});
 function roundInput(state,roundIndex=0,position){
  const rounds=require('./distribution-rounds.js');
  const roster=rounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);

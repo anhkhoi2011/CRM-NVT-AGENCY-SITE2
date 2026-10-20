@@ -1023,14 +1023,33 @@
           if(Array.isArray(source.enabledIds)&&source.enabledIds.includes(member.id))enabled.add(member.id);
           if(Array.isArray(source.enabledIds)&&!source.enabledIds.includes(member.id))enabled.delete(member.id);
         }
-        const enabledIds=Array.from(enabled).filter(id=>members.some(member=>member.id===id));
+        // Modal cũng liệt kê người đang ở trong vòng nhưng không còn trong danh
+        // sách members (ngoài tuyến manager đang xem, vừa được đồng bộ, hoặc ẩn
+        // khỏi đội ngũ). Tick/bỏ tick của admin trên các dòng đó vẫn phải được
+        // áp dụng — trước đây họ bị filter mất khỏi vòng dù admin giữ nguyên tick.
+        if(Array.isArray(source.enabledIds)){
+          const chosen=new Set(source.enabledIds);
+          const memberIds=new Set(members.map(member=>member.id));
+          [...(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]),...(Array.isArray(round.knownMemberIds)?round.knownMemberIds:[])].forEach(id=>{
+            if(memberIds.has(id))return;
+            if(source.weights?.[id]!==undefined){const raw=Number(source.weights[id]);weights[id]=Number.isFinite(raw)?Math.max(0,Math.min(100,Math.round(raw))):1;}
+            if(chosen.has(id))enabled.add(id);else enabled.delete(id);
+          });
+        }
+        const enabledIds=Array.from(enabled);
         if(!enabledIds.some(id=>Number(weights[id])>0))throw Error('Vong can it nhat mot nhan su dang bat va co ty trong lon hon 0.');
         // Mọi thành viên admin vừa xem và quyết định trong modal (kể cả người bị
         // bỏ chọn) đều là đã biết của vòng này — syncRosterMembers sẽ không tự
         // thêm họ lại. Manager chỉ đánh dấu những người trong tuyến của mình.
         const knownInRound=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:[]);
         members.forEach(member=>{if(allowed.has(member.id))knownInRound.add(member.id);});
-        rounds[index]={...round,omittedSlots:[],enabledSaleIds:enabledIds,knownMemberIds:Array.from(knownInRound),weights:Object.fromEntries(members.map(member=>[member.id,Number.isFinite(Number(weights[member.id]))?Math.max(0,Math.min(100,Math.round(Number(weights[member.id])))):1]))};
+        // Admin đã xem và quyết định mọi id vòng liệt kê (kể cả id ngoài members)
+        // — ghi nhận hết để syncRosterMembers không tự thêm lại người bị bỏ chọn.
+        enabledIds.forEach(id=>knownInRound.add(id));
+        const mergedWeights={};
+        enabledIds.forEach(id=>{mergedWeights[id]=Number.isFinite(Number(weights[id]))?Math.max(0,Math.min(100,Math.round(Number(weights[id])))):1;});
+        members.forEach(member=>{if(!(member.id in mergedWeights))mergedWeights[member.id]=Number.isFinite(Number(weights[member.id]))?Math.max(0,Math.min(100,Math.round(Number(weights[member.id])))):1;});
+        rounds[index]={...round,omittedSlots:[],enabledSaleIds:enabledIds,knownMemberIds:Array.from(knownInRound),weights:mergedWeights};
         audit('UPDATE_DISTRIBUTION_ROUND',round.id,`Cap nhat ${enabledIds.length} nhan su trong vong cho`);
         saveState();
         return {ok:true,round:rounds[index]};
