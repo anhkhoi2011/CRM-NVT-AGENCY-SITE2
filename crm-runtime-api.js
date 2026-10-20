@@ -1048,6 +1048,12 @@
         }
         const enabledIds=Array.from(enabled);
         if(!enabledIds.some(id=>Number(weights[id])>0))throw Error('Vong can it nhat mot nhan su dang bat va co ty trong lon hon 0.');
+        // Bật một Leader trong modal vòng chờ cũng phải bật nhánh Leader ở cấp
+        // roster; chỉ ghi id vào enabledSaleIds thì recipients() vẫn lọc họ ra
+        // vì chưa có trong leaderDistribution.enabledLeaderIds.
+        if(Array.isArray(source.enabledIds)){
+          members.filter(member=>member.role==='LEADER'&&enabled.has(member.id)).forEach(enrollMemberInDistribution);
+        }
         // Mọi thành viên admin vừa xem và quyết định trong modal (kể cả người bị
         // bỏ chọn) đều là đã biết của vòng này — syncRosterMembers sẽ không tự
         // thêm họ lại. Manager chỉ đánh dấu những người trong tuyến của mình.

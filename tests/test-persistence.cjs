@@ -1283,14 +1283,13 @@ test('Saving a queued round keeps a round member who is no longer in state.membe
  await api.distributionRoundSave({roundId:'queued',enabledIds:['m1'],weights:{m1:2,ghost:3}});
  assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].enabledSaleIds`,c)),['m1']);
 });
-test('A leader not yet in the roster still surfaces in the round modal via knownMemberIds',async()=>{
+test('Saving a queued round enrolls a newly enabled Leader into the roster',async()=>{
  const c=referenceBridge(),api=c.window.crmApi;
- // 'newlead' là LEADER active nhưng chưa có trong enabledLeaderIds → chưa vào
- // roster → sync chỉ thêm vào knownMemberIds (admin thấy trong modal) chứ không
- // tự bật nhận data.
- vm.runInContext(`state.members=[{id:'lead',name:'Lead',role:'LEADER',teamId:'T',active:true},{id:'m1',name:'One',role:'SALE',leaderId:'lead',active:true},{id:'newlead',name:'Mai Hoang Phuc',role:'LEADER',teamId:'T',active:true}];state.leaderDistribution={enabledLeaderIds:['lead'],weights:{lead:1}};state.saleDistributionByLeader={'$':{globalCycle:true,rounds:[{id:'active',enabledSaleIds:['m1'],weights:{m1:1}},{id:'queued',enabledSaleIds:['m1'],weights:{m1:1}}]}};saveState=()=>{};`,c);
- api.snapshot();
- assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].knownMemberIds`,c)).includes('newlead'));
+ vm.runInContext(`state.members=[{id:'old',name:'Old',role:'SALE',leaderId:'lead',active:true},{id:'lead',name:'Lead',role:'LEADER',teamId:'T',active:true},{id:'newlead',name:'Mai Hoang Phuc',role:'LEADER',teamId:'T',active:true}];state.leaderDistribution={enabledLeaderIds:['lead'],weights:{lead:1}};state.saleDistributionByLeader={'$':{globalCycle:true,enabledSaleIds:['old'],weights:{old:1},rounds:[{id:'active',enabledSaleIds:['old'],weights:{old:1}},{id:'queued',enabledSaleIds:['old'],weights:{old:1}}]}};saveState=()=>{};`,c);
+ await api.distributionRoundSave({roundId:'queued',enabledIds:['old','newlead'],weights:{old:1,newlead:2}});
+ assert.ok(Array.from(vm.runInContext(`state.leaderDistribution.enabledLeaderIds`,c)).includes('newlead'));
+ assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[0].enabledSaleIds`,c)).includes('newlead'));
+ assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].enabledSaleIds`,c)).includes('newlead'));
 });
 function roundInput(state,roundIndex=0,position){
  const rounds=require('./distribution-rounds.js');

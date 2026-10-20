@@ -3963,16 +3963,12 @@
     roundFooter.querySelectorAll('[data-edit-distribution-round]').forEach(button=>button.onclick=()=>{
       const round=globalRounds.find(item=>item.id===button.dataset.editDistributionRound);if(!round)return;
       const enabled=new Set(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]);
-      // Union members của trang với mọi id vòng đã ghi nhận — thành viên mới được
-      // đồng bộ vào vòng (hoặc đang ngoài tuyến manager xem trang) vẫn phải hiện
-      // trong danh sách thay vì bị ẩn rồi mất khỏi vòng lúc lưu. Ngoài ra mọi
-      // nhân sự active chưa được ghi nhận trong vòng (ví dụ Leader chưa nằm trong
-      // enabledLeaderIds nên syncRosterMembers chưa vá vào) cũng được liệt kê để
-      // admin có thể bật trực tiếp.
-      const memberById=new Map(members.map(member=>[member.id,member]));
+      // Danh sách modal gồm toàn bộ nhân sự mọi vai trò (kể cả đang tắt, Leader
+      // chưa được bật nhận data hay ngoài tuyến người xem) gộp với mọi id vòng đã
+      // ghi nhận — không còn trường hợp thành viên có trong vòng mà vô hình.
+      const memberById=new Map([...(data.members||[]),...members].map(member=>[member.id,member]));
       const roundIds=[...new Set([...(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]),...(Array.isArray(round.knownMemberIds)?round.knownMemberIds:[])])];
-      const extraFromRound=roundIds.filter(id=>!memberById.has(id)).map(id=>({id,role:'SALE',name:(data.members||[]).find(person=>person.id===id)?.name||'Nhân sự không còn hoạt động'}));
-      const sorted=[...members,...extraFromRound].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'vi'));
+      const sorted=[...memberById.values(),...roundIds.filter(id=>!memberById.has(id)).map(id=>({id,role:'SALE',name:'Nhân sự không còn hoạt động'}))].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'vi'));
       const modal=document.createElement('div');modal.className='modal-overlay open distribution-round-modal';
       modal.innerHTML='<section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="distributionRoundEditTitle"><header><div><h2 id="distributionRoundEditTitle">Chỉnh thành viên · Vòng '+(queued.indexOf(round)+2)+'</h2><p>Bật người được nhận data và đặt số lượt của từng người trong một chu kỳ.</p></div><button type="button" data-round-close aria-label="Đóng">×</button></header><div class="distribution-round-edit-help">Ví dụ: tỷ trọng 2 nghĩa là người này xuất hiện 2 lần trong thứ tự chia. Đặt 0 hoặc bỏ chọn để loại khỏi vòng.</div><div class="distribution-round-edit-list">'+sorted.map(member=>'<div class="distribution-round-edit-member"><input type="checkbox" data-round-member="'+esc(member.id)+'" aria-label="Cho '+esc(member.name||member.id)+' nhận trong vòng này" '+(enabled.has(member.id)?'checked':'')+'><span><b>'+esc(member.name||member.id)+'</b><small>'+esc(member.role)+' · '+esc(member.teamId||'Chưa gán Team')+'</small></span><span class="distribution-round-weight"><small>Lượt</small><input type="number" min="0" max="100" value="'+weightOf(round.weights?.[member.id])+'" data-round-weight="'+esc(member.id)+'" aria-label="Số lượt của '+esc(member.name||member.id)+'"></span></div>').join('')+'</div><footer><button type="button" class="btn-action btn-secondary" data-round-close>Hủy</button><button type="button" class="btn-action btn-primary" data-round-save>Lưu vòng</button></footer></section>';
       const close=()=>modal.remove();modal.querySelectorAll('[data-round-close]').forEach(node=>node.onclick=close);modal.onclick=event=>{if(event.target===modal)close();};
