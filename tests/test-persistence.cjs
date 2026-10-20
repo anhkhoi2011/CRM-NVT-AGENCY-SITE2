@@ -1283,6 +1283,15 @@ test('Saving a queued round keeps a round member who is no longer in state.membe
  await api.distributionRoundSave({roundId:'queued',enabledIds:['m1'],weights:{m1:2,ghost:3}});
  assert.deepEqual(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].enabledSaleIds`,c)),['m1']);
 });
+test('A leader not yet in the roster still surfaces in the round modal via knownMemberIds',async()=>{
+ const c=referenceBridge(),api=c.window.crmApi;
+ // 'newlead' là LEADER active nhưng chưa có trong enabledLeaderIds → chưa vào
+ // roster → sync chỉ thêm vào knownMemberIds (admin thấy trong modal) chứ không
+ // tự bật nhận data.
+ vm.runInContext(`state.members=[{id:'lead',name:'Lead',role:'LEADER',teamId:'T',active:true},{id:'m1',name:'One',role:'SALE',leaderId:'lead',active:true},{id:'newlead',name:'Mai Hoang Phuc',role:'LEADER',teamId:'T',active:true}];state.leaderDistribution={enabledLeaderIds:['lead'],weights:{lead:1}};state.saleDistributionByLeader={'$':{globalCycle:true,rounds:[{id:'active',enabledSaleIds:['m1'],weights:{m1:1}},{id:'queued',enabledSaleIds:['m1'],weights:{m1:1}}]}};saveState=()=>{};`,c);
+ api.snapshot();
+ assert.ok(Array.from(vm.runInContext(`state.saleDistributionByLeader['$'].rounds[1].knownMemberIds`,c)).includes('newlead'));
+});
 function roundInput(state,roundIndex=0,position){
  const rounds=require('./distribution-rounds.js');
  const roster=rounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);

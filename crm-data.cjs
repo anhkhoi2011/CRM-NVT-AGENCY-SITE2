@@ -886,17 +886,25 @@ async function distributeAutomatic(c, data = null, options = {}) {
  {
   const rounds=Array.isArray(globalConfig.rounds)?globalConfig.rounds:[];
   if(rounds.length){
+   // Nguồn vá = roster nhận data thật + mọi nhân sự active đủ vai trò. Roster
+   // quyết định ai vào enabledSaleIds; mọi nhân sự active đủ vai trò được thêm
+   // vào knownMemberIds để admin thấy trong modal kể cả Leader chưa nằm trong
+   // enabledLeaderIds.
+   const rosterIds=new Set(globalRecipients.map(p=>p.id));
+   const eligible=members.filter(p=>p.active!==false&&['MANAGER','LEADER','SALE'].includes(p.role));
    let changed=false;
    rounds.forEach(round=>{
     const ids=new Set(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]);
     const knownInRound=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:Array.from(ids));
-    globalRecipients.forEach(person=>{
+    eligible.forEach(person=>{
      if(knownInRound.has(person.id))return;
      knownInRound.add(person.id);
      round.weights ||= {};
-     ids.add(person.id);
-     round.enabledSaleIds=Array.from(ids);
-     if(round.weights[person.id]===undefined)round.weights[person.id]=1;
+     if(rosterIds.has(person.id)){
+      ids.add(person.id);
+      round.enabledSaleIds=Array.from(ids);
+      if(round.weights[person.id]===undefined)round.weights[person.id]=1;
+     }
      changed=true;
     });
     round.knownMemberIds=Array.from(knownInRound);

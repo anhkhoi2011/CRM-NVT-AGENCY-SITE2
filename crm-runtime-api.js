@@ -124,21 +124,31 @@
   function syncRosterMembers(){
     const config=state.saleDistributionByLeader['$'];
     if(!config)return;
-    const roster=CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
     const rounds=Array.isArray(config.rounds)?config.rounds:[];
     if(!rounds.length)return;
+    // Nguồn vá = roster nhận data thật + mọi nhân sự active đủ vai trò. Roster
+    // quyết định ai được thêm vào enabledSaleIds (nhận data ngay); mọi nhân sự
+    // active đủ vai trò được thêm vào knownMemberIds để admin nhìn thấy trong
+    // modal "Chỉnh thành viên" và tự quyết định bật — kể cả Leader chưa nằm
+    // trong enabledLeaderIds (chưa vào roster được).
+    const roster=CrmDistributionRounds.recipients(state.members,state.leaderDistribution,state.saleDistributionByLeader);
+    const rosterIds=new Set(roster.people.map(p=>p.id));
+    const eligible=state.members.filter(p=>p.active!==false&&['MANAGER','LEADER','SALE'].includes(p.role));
     let changed=false;
     rounds.forEach(round=>{
       const ids=new Set(Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]);
       // Vòng cũ chưa có marker: ai đang có mặt là đã biết, ai vắng được vá vào.
       const knownInRound=new Set(Array.isArray(round.knownMemberIds)?round.knownMemberIds:Array.from(ids));
-      roster.people.forEach(person=>{
+      eligible.forEach(person=>{
         if(knownInRound.has(person.id))return;      // đã biết: có mặt hay bị loại đều giữ nguyên
         knownInRound.add(person.id);
         round.weights ||= {};
-        ids.add(person.id);
-        round.enabledSaleIds=Array.from(ids);
-        if(round.weights[person.id]===undefined)round.weights[person.id]=1;
+        // Chỉ đưa vào enabledSaleIds khi người đó thực sự vào roster nhận data.
+        if(rosterIds.has(person.id)){
+          ids.add(person.id);
+          round.enabledSaleIds=Array.from(ids);
+          if(round.weights[person.id]===undefined)round.weights[person.id]=1;
+        }
         changed=true;
       });
       round.knownMemberIds=Array.from(knownInRound);
