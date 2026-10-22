@@ -10,6 +10,17 @@ const { pool } = require('./db.js');
 const LISTS = ['customers','orders','products','members','registrations','customFieldDefinitions','customerFieldHistory','assignmentHistory','resubmissions','notes','imports','attendance','dataOffers','traffic','tasks','notifications','audit','websites','integrations','webhookPending','brokerageMetrics','feedbacks','processes','expenses','courseConfigs','hrProfiles','blacklistIps','blacklistEntries','bankStatements'];
 const OBJECTS = ['settings','leaderDistribution','saleDistributionByLeader','productCategories','careGroups'];
 const ADMIN_ONLY = new Set(['products','members','registrations','customFieldDefinitions','imports','traffic','websites','integrations','webhookPending','productCategories','leaderDistribution','careGroups','processes','expenses','courseConfigs']);
+const BOOTSTRAP_APPEARANCE_KEYS = Object.freeze(['fontFamily','customAccent','navigationFontSize','contentFontSize']);
+const BOOTSTRAP_NAVIGATION = Object.freeze({
+ ADMIN: Object.freeze(['dashboard','customers','care','pnl','distribution','websites','orders','products','revenue','marketing','hrProfiles','team','feedback','processes','accounting','attendance','notifications','audit','blacklist','settings','profile']),
+ MANAGER: Object.freeze(['dashboard','customers','pool','orders','revenue','team','care','pnl','notifications','attendance','profile','feedback','processes']),
+ LEADER: Object.freeze(['dashboard','customers','pool','orders','revenue','team','care','pnl','notifications','attendance','profile','feedback','processes']),
+ SALE: Object.freeze(['dashboard','customers','accept','care','pnl','orders','revenue','team','attendance','notifications','profile','feedback','processes']),
+ HRM: Object.freeze(['hrProfiles','team','attendance','orders','businessReport','profile']),
+ ACCOUNTING: Object.freeze(['accounting','audit','notifications','profile']),
+ MARKETING: Object.freeze(['marketing','profile']),
+ UNASSIGNED: Object.freeze(['dashboard','attendance','profile','notifications','feedback','processes'])
+});
 const SCHEMA = [
  `CREATE TABLE IF NOT EXISTS crm_documents (collection VARCHAR(64) NOT NULL, id VARCHAR(96) NOT NULL, body JSON NOT NULL, deleted TINYINT NOT NULL DEFAULT 0, PRIMARY KEY(collection,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
  `CREATE TABLE IF NOT EXISTS crm_changes (id BIGINT AUTO_INCREMENT PRIMARY KEY, request_id VARCHAR(96) NOT NULL, actor_id VARCHAR(96) NOT NULL, changes_json JSON NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY(request_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -120,6 +131,28 @@ function canonical(value){if(Array.isArray(value))return '['+value.map(canonical
 function revision(value){return value===undefined?null:crypto.createHash('sha256').update(canonical(value)).digest('hex');}
 function timestamp(v){return v instanceof Date?v.toISOString().slice(0,19).replace('T',' '):v;}
 function userRow(r){return {id:r.id,accountId:r.account_code||'',phone:r.phone,email:r.email,name:r.name,role:r.role,teamId:r.team_id||'',leaderId:r.leader_id||null,telegramChatId:r.telegram_chat_id||null,telegramUsername:r.telegram_username||null,active:!!r.active,createdAt:timestamp(r.created_at)};}
+function bootstrapUser(user){
+ const value=user&&typeof user==='object'?user:{};
+ return {id:value.id||'',accountId:value.accountId||'',name:value.name||'',email:value.email||'',phone:value.phone||'',role:value.role||'',teamId:value.teamId||'',leaderId:value.leaderId||null,active:value.active!==false,createdAt:value.createdAt||''};
+}
+function bootstrapNavigation(user){
+ const role=String(user?.role||'').toUpperCase();
+ return [...(BOOTSTRAP_NAVIGATION[role]||[])];
+}
+function buildBootstrap(user,{settings={},version='0',storage={mode:'mysql',durable:true}}={}){
+ const source=settings&&typeof settings==='object'&&!Array.isArray(settings)?settings:{};
+ const appearance=Object.fromEntries(BOOTSTRAP_APPEARANCE_KEYS.filter(key=>Object.hasOwn(source,key)).map(key=>[key,source[key]]));
+ return {user:bootstrapUser(user),navigation:bootstrapNavigation(user),settings:appearance,version:String(version??0),stats:null,storage};
+}
+async function readBootstrap(user){
+ await prepare();
+ const [[settingsRows],[versionRows]]=await Promise.all([
+  pool.query("SELECT setting_value FROM system_settings WHERE setting_key='crm' LIMIT 1"),
+  pool.query('SELECT COALESCE(MAX(id),0) AS version FROM crm_changes')
+ ]);
+ const settingsRow=settingsRows?.[0];
+ return buildBootstrap(user,{settings:settingsRow?parsed(settingsRow.setting_value,{}):{},version:versionRows?.[0]?.version||0});
+}
 function coreRow(key,r){
  if(key==='customers') {const j=parsed(r.custom_fields_json),meta=j.__crmMeta||((j.webhookSlug||j.webhookEventId)?{webhookSlug:j.webhookSlug,webhookEventId:j.webhookEventId}:{});return {...meta,id:r.id,name:r.name,phone:r.phone,email:r.email||'',source:r.source||'',campaign:r.campaign||'',websiteId:r.website_id||null,status:r.status,saleId:r.sale_id||null,leaderId:r.leader_id||null,teamId:r.team_id||null,note:r.note||'',customFields:j.__crmFields||(j.__crmMeta?{}:Object.fromEntries(Object.entries(j).filter(([key])=>!['webhookSlug','webhookEventId'].includes(key)))),createdAt:timestamp(r.created_at),updatedAt:timestamp(r.updated_at)};}
  if(key==='orders'){const j=parsed(r.items_json,[]);return {discount:0,refund:0,qty:1,unitPrice:Number(r.total_amount),subtotal:Number(r.total_amount),...(Array.isArray(j)?{}:j),id:r.id,code:r.code,customerId:r.customer_id,saleId:r.sale_id||null,leaderId:r.leader_id||null,teamId:r.team_id||null,total:Number(r.total_amount),status:r.status,items:Array.isArray(j)?j:j.items||[],note:r.note||'',createdAt:timestamp(r.created_at),updatedAt:timestamp(r.updated_at)};}
@@ -1325,9 +1358,133 @@ async function readAsset(user, type, id, childId = null) {
  const data = await read(user, {passive:true, full:true});
  return assetFromData(user, data, type, id, childId);
 }
-async function readAuditPage(user, page=1, limit=50, filters={}) {
- const result=await read(user,{passive:true,full:true}),orders=new Map((result.state.orders||[]).map(row=>[row.id,row]));
- const all=(result.state.audit||[]).filter(row=>!filters.ordersOnly&&!filters.orderId||OrderAudit.isOrder(row,{orders}));
- return OrderAudit.page(all,page,limit,filters);
+const AUDIT_ORDER_ACTIONS=Object.freeze(['CREATE_ORDER','EDIT_ORDER','UPDATE_ACCOUNTING_ORDER','COLLECT_ORDER_DEBT','UPDATE_RECEIPT_IMAGES','RECONCILE_ORDER','ISSUE_VAT','DELETE_ACCOUNTING_ORDER','PAYMENT_CONFIRMED','DEPOSIT_CONFIRMED','ORDER_REFUNDED','CANCEL_ORDER']);
+function auditJson(field,alias='d') { return `JSON_UNQUOTE(JSON_EXTRACT(${alias}.body,'$.${field}'))`; }
+function auditOrderIdExpr(alias='d') { return `COALESCE(NULLIF(${auditJson('orderId',alias)},''),${auditJson('entity',alias)})`; }
+function auditLegacyEntityExpr(alias='d') { return auditJson('entity',alias); }
+function auditAtSortExpr(alias='d') {
+ // Mirror OrderAudit.page(): local CRM timestamps are Vietnam time, while
+ // ISO timestamps ending in Z are UTC. Invalid or missing values sort as 0.
+ const at=auditJson('at',alias);
+ const local=`STR_TO_DATE(${at},'%Y-%m-%d %H:%i:%s')`;
+ const isoUtc=`DATE_SUB(STR_TO_DATE(SUBSTRING(${at},1,19),'%Y-%m-%dT%H:%i:%s'),INTERVAL 7 HOUR)`;
+ return `COALESCE(CASE WHEN ${at} REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}' THEN ${local} WHEN ${at} REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' THEN ${isoUtc} ELSE NULL END,FROM_UNIXTIME(0))`;
 }
-module.exports={mergeOrderAssets,dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,distributeAutomatic,distributeAutomaticForCustomers,prepare,seedProductCatalog,read,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};
+function auditOrderPredicate(params,alias='d') {
+ const actionPlaceholders=AUDIT_ORDER_ACTIONS.map(()=>'?').join(',');
+ params.push(OrderAudit.SOURCE,...AUDIT_ORDER_ACTIONS);
+ return `(${auditJson('source',alias)}=? OR (${auditJson('action',alias)} IN (${actionPlaceholders}) AND EXISTS (SELECT 1 FROM orders oa WHERE oa.id=${auditLegacyEntityExpr(alias)})))`;
+}
+function auditDedupePredicate(params) {
+ params.push(OrderAudit.SOURCE,OrderAudit.SOURCE);
+ return `(COALESCE(${auditJson('source')},'')=? OR COALESCE(${auditJson('requestId')},'')='' OR NOT EXISTS (SELECT 1 FROM crm_documents newer WHERE newer.collection='audit' AND newer.deleted=0 AND ${auditJson('source','newer')}=? AND ${auditJson('requestId','newer')}=${auditJson('requestId')} AND ${auditJson('orderId','newer')} <=> ${auditJson('entity')}))`;
+}
+async function readAuditPage(user, page=1, limit=50, filters={}) {
+ await prepare();
+ const integer=(value,fallback)=>Number.isFinite(Number(value))?Math.floor(Number(value))||fallback:fallback;
+ const safePage=Math.max(1,integer(page,1)),safeLimit=Math.min(200,Math.max(1,integer(limit,50)));
+ const clean=(value,max)=>String(value??'').trim().slice(0,max);
+ const orderId=clean(filters.orderId,96),actorId=clean(filters.actorId,96),action=clean(filters.action,96),search=clean(filters.search,200);
+ const ordersOnly=filters.ordersOnly===true||filters.ordersOnly==='1';
+ const where=["d.collection='audit'",'d.deleted=0'],params=[];
+ // Keep the exact readable() audit scope without loading customers, orders or
+ // the rest of the CRM snapshot into Node.
+ if(user?.role==='ADMIN'){}
+ else if(['MANAGER','LEADER','SALE'].includes(user?.role)){
+  where.push(`${auditJson('actorId')}=?`);params.push(user.id);
+ } else if(user?.role==='ACCOUNTING'){
+  where.push(auditOrderPredicate(params));
+ } else where.push('1=0');
+ where.push(auditDedupePredicate(params));
+ if(ordersOnly||orderId)where.push(auditOrderPredicate(params));
+ if(orderId){where.push(`${auditOrderIdExpr()}=?`);params.push(orderId);}
+ if(actorId){where.push(`${auditJson('actorId')}=?`);params.push(actorId);}
+ if(action){where.push(`${auditJson('action')}=?`);params.push(action);}
+ if(search){
+  const fields=['orderCode','customerName','actor','actorId','detail','entity'].map(field=>`COALESCE(${auditJson(field)},'')`).join(", ' ', ");
+  where.push(`LOWER(CONCAT_WS(' ',${fields})) LIKE ?`);params.push(`%${search.toLocaleLowerCase('vi')}%`);
+ }
+ const clause=where.join(' AND '),countParams=[...params];
+ const [countResult,rowsResult]=await Promise.all([
+  pool.query(`SELECT COUNT(*) AS total FROM crm_documents d WHERE ${clause}`,countParams),
+  pool.query(`SELECT d.id,d.body FROM crm_documents d WHERE ${clause} ORDER BY ${auditAtSortExpr()} DESC,d.id DESC LIMIT ? OFFSET ?`,[...params,safeLimit,(safePage-1)*safeLimit])
+ ]);
+ const countRow=Array.isArray(countResult?.[0])?countResult[0][0]:null;
+ const rows=Array.isArray(rowsResult?.[0])?rowsResult[0]:[];
+ const items=rows.map(row=>{let value=row.body;if(typeof value==='string')value=JSON.parse(value);return {...value,id:value?.id||row.id};});
+ const total=Number(countRow?.total||0);
+ return {items,page:safePage,limit:safeLimit,total,hasMore:total>safePage*safeLimit};
+}
+function customerPageInteger(value, fallback, maximum, name) {
+ if (value === undefined || value === null || value === '') return fallback;
+ const text=String(value).trim();
+ if (!/^\d+$/.test(text)) error(400, `${name} không hợp lệ`);
+ const parsedValue=Number(text);
+ if (!Number.isSafeInteger(parsedValue) || parsedValue<1 || parsedValue>maximum) error(400, `${name} không hợp lệ`);
+ return parsedValue;
+}
+function customerPageClean(value, max) { return String(value??'').trim().slice(0,max); }
+function customerPageScope(user, where, params) {
+ const role=String(user?.role||'').toUpperCase();
+ if (['ADMIN','ACCOUNTING','MARKETING'].includes(role)) return;
+ if (role==='SALE') {
+  // Keep the legacy 24-hour pending-offer visibility without loading dataOffers
+  // into the full snapshot. CRM timestamps are stored as Vietnam local time;
+  // ISO UTC values are normalized to the same local comparison.
+  const offeredAt="JSON_UNQUOTE(JSON_EXTRACT(offer.body,'$.offeredAt'))";
+  const offeredAtLocal=`CASE WHEN ${offeredAt} REGEXP 'Z$' THEN DATE_ADD(STR_TO_DATE(LEFT(REPLACE(${offeredAt},'T',' '),19),'%Y-%m-%d %H:%i:%s'),INTERVAL 7 HOUR) ELSE STR_TO_DATE(LEFT(REPLACE(${offeredAt},'T',' '),19),'%Y-%m-%d %H:%i:%s') END`;
+  where.push(`(c.sale_id=? OR EXISTS (SELECT 1 FROM crm_documents offer WHERE offer.collection='dataOffers' AND offer.deleted=0 AND JSON_UNQUOTE(JSON_EXTRACT(offer.body,'$.customerId'))=c.id AND JSON_UNQUOTE(JSON_EXTRACT(offer.body,'$.saleId'))=? AND JSON_UNQUOTE(JSON_EXTRACT(offer.body,'$.status'))='PENDING' AND ${offeredAtLocal}>=DATE_SUB(NOW(),INTERVAL 24 HOUR))`);
+  params.push(user.id,user.id); return;
+ }
+ if (role==='LEADER') {
+  if (user?.teamId) { where.push('(c.leader_id=? OR c.team_id=?)'); params.push(user.id,user.teamId); }
+  else { where.push('c.leader_id=?'); params.push(user.id); }
+  return;
+ }
+ if (role==='MANAGER') {
+  const managerId="COALESCE(JSON_UNQUOTE(JSON_EXTRACT(cd.body,'$.managerId')),'')";
+  const ownerId="COALESCE(JSON_UNQUOTE(JSON_EXTRACT(cd.body,'$.ownerId')),'')";
+  where.push(`(${managerId}=? OR ${ownerId}=? OR c.leader_id=? OR EXISTS (SELECT 1 FROM users l WHERE l.id=c.leader_id AND l.role='LEADER' AND l.active=1 AND l.leader_id=? AND l.team_id=c.team_id) OR EXISTS (SELECT 1 FROM users s WHERE s.id=c.sale_id AND s.role='SALE' AND s.active=1 AND (s.leader_id=? OR EXISTS (SELECT 1 FROM users l2 WHERE l2.id=s.leader_id AND l2.role='LEADER' AND l2.active=1 AND l2.leader_id=? AND l2.team_id=c.team_id))))`);
+  params.push(user.id,user.id,user.id,user.id,user.id,user.id); return;
+ }
+ where.push('1=0');
+}
+async function readCustomerPage(user, options={}) {
+ // The authenticated DB route already waits for schema readiness. Keep this
+ // read path side-effect free: listing customers must never trigger startup
+ // schema checks or migrations.
+ const page=customerPageInteger(options.page,1,1000000000,'page');
+ const limit=customerPageInteger(options.limit,20,100,'limit');
+ const search=customerPageClean(options.search,200);
+ const status=customerPageClean(options.status,40);
+ const saleId=customerPageClean(options.saleId,96);
+ const leaderId=customerPageClean(options.leaderId,96);
+ const teamId=customerPageClean(options.teamId,96);
+ const ownerId=customerPageClean(options.ownerId,96);
+ const websiteId=customerPageClean(options.websiteId,96);
+ const sort=customerPageClean(options.sort,32);
+ const direction=String(options.direction||'desc').toLowerCase();
+ const sortSql={createdAt:'c.created_at',updatedAt:'c.updated_at',name:'c.name',id:'c.id'}[sort||'createdAt'];
+ if (!sortSql || !['asc','desc'].includes(direction)) error(400,'sort không hợp lệ');
+ const where=["NOT EXISTS (SELECT 1 FROM crm_documents deleted_customer WHERE deleted_customer.collection='customers' AND deleted_customer.id=c.id AND deleted_customer.deleted=1)"],params=[];
+ customerPageScope(user,where,params);
+ if(search){
+  where.push("LOWER(CONCAT_WS(' ',COALESCE(c.name,''),COALESCE(c.phone,''),COALESCE(c.email,''),COALESCE(c.source,''),COALESCE(c.campaign,''),COALESCE(c.note,''),COALESCE(CAST(c.custom_fields_json AS CHAR),''))) LIKE ?");
+  params.push(`%${search.toLocaleLowerCase('vi')}%`);
+ }
+ if(status) { where.push('c.status=?'); params.push(status); }
+ if(saleId) { where.push('c.sale_id=?'); params.push(saleId); }
+ if(leaderId) { where.push('c.leader_id=?'); params.push(leaderId); }
+ if(teamId) { where.push('c.team_id=?'); params.push(teamId); }
+ if(websiteId) { where.push('c.website_id=?'); params.push(websiteId); }
+ if(ownerId) { where.push("(c.sale_id=? OR c.leader_id=? OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(cd.body,'$.managerId')),'')=? OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(cd.body,'$.ownerId')),'')=?)"); params.push(ownerId,ownerId,ownerId,ownerId); }
+ const clause=where.join(' AND '), countParams=[...params], rowParams=[...params,limit,(page-1)*limit];
+ const select=`SELECT c.id,c.name,c.phone,c.email,c.source,c.campaign,c.website_id,c.status,c.sale_id,c.leader_id,c.team_id,c.note,c.created_at,c.updated_at`;
+ const from=` FROM customers c LEFT JOIN crm_documents cd ON cd.collection='customers' AND cd.id=c.id AND cd.deleted=0 WHERE ${clause}`;
+ const [countResult]=await pool.execute(`SELECT COUNT(*) AS total${from}`,countParams);
+ const [rows]=await pool.execute(`${select}${from} ORDER BY ${sortSql} ${direction.toUpperCase()},c.id ASC LIMIT ? OFFSET ?`,rowParams);
+ const items=(rows||[]).map(row=>({id:row.id,name:row.name,phone:row.phone,email:row.email||'',source:row.source||'',campaign:row.campaign||'',websiteId:row.website_id||null,status:row.status,saleId:row.sale_id||null,leaderId:row.leader_id||null,teamId:row.team_id||null,note:row.note||'',createdAt:timestamp(row.created_at),updatedAt:timestamp(row.updated_at)}));
+ const total=Number(countResult?.[0]?.total||0);
+ return {items,page,limit,total,hasMore:total>page*limit};
+}
+module.exports={mergeOrderAssets,dataArrivalNotice,expiredOfferNotice,orderNotices,saveSystemNotice,mergeCustomerFields,invalidateSnapshotCache,queueTelegramNotice,snapshot,readAsset,assetFromData,readAuditPage,readCustomerPage,distributeAutomatic,distributeAutomaticForCustomers,prepare,seedProductCatalog,read,readBootstrap,buildBootstrap,bootstrapNavigation,bootstrapUser,write,writeFastCustomerNotes,revision,canonical,coreRow,userRow,authorize,readable,validate,LISTS,OBJECTS,SCHEMA};

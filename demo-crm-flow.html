@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng ký nhận tư vấn | NVT Agency</title>
+<style>
+:root{--ink:#172033;--muted:#667085;--line:#e5e7eb;--brand:#0d6ea8;--bg:#f4f8fb;--ok:#087443;--bad:#b42318}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0,#dff4ff,transparent 38%),var(--bg);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
+.wrap{min-height:100vh;display:grid;place-items:center;padding:24px}.card{width:min(100%,620px);background:#fff;border:1px solid var(--line);border-radius:22px;padding:clamp(24px,5vw,48px);box-shadow:0 22px 60px #164e6320}.brand{font-size:13px;font-weight:800;letter-spacing:.12em;color:var(--brand);text-transform:uppercase}.card h1{font-size:clamp(28px,6vw,44px);line-height:1.1;margin:12px 0}.card p{color:var(--muted);margin:0 0 24px}.field{display:grid;gap:7px;margin:15px 0}.field label{font-weight:700}.field input{width:100%;padding:13px 14px;border:1px solid #cfd6df;border-radius:11px;font:inherit}.field input:focus{outline:3px solid #b9e4fb;border-color:var(--brand)}button{width:100%;margin-top:10px;padding:14px;border:0;border-radius:11px;background:var(--brand);color:#fff;font:700 16px inherit;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.status{display:none;margin-top:18px;padding:13px 14px;border-radius:11px}.status.show{display:block}.status.ok{background:#ecfdf3;color:var(--ok)}.status.bad{background:#fef3f2;color:var(--bad)}.privacy{font-size:12px;margin-top:16px!important;color:#7a8494!important}.check{display:flex;gap:9px;align-items:flex-start;margin-top:14px;font-size:13px;color:var(--muted)}.check input{margin-top:4px}
+</style>
+</head>
+<body>
+<main class="wrap">
+<section class="card">
+<div class="brand">NVT AGENCY</div>
+<h1>Nhận thông tin tư vấn</h1>
+<p>Để lại thông tin, đội ngũ tư vấn sẽ liên hệ với bạn sớm nhất.</p>
+<form id="leadForm" novalidate>
+<div class="field"><label for="name">Họ và tên</label><input id="name" name="name" autocomplete="name" placeholder="Nguyễn Văn A" required></div>
+<div class="field"><label for="email">Gmail</label><input id="email" name="email" type="email" autocomplete="email" placeholder="ban@gmail.com" required></div>
+<div class="field"><label for="phone">Số điện thoại</label><input id="phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="0901234567" required></div>
+<button id="submit" type="submit">Gửi thông tin</button>
+</form>
+<div id="status" class="status" role="status" aria-live="polite"></div>
+<p class="privacy">Đây là landing page demo local. Dữ liệu được gửi vào CRM demo để kiểm tra luồng nhận khách hàng.</p>
+</section>
+</main>
+<script>
+const form=document.getElementById('leadForm'),button=document.getElementById('submit'),status=document.getElementById('status');
+const setStatus=(message,kind)=>{status.textContent=message;status.className=`status show ${kind}`;};
+form.addEventListener('submit',async event=>{
+event.preventDefault();
+const name=document.getElementById('name').value.trim(),email=document.getElementById('email').value.trim(),phone=document.getElementById('phone').value.trim();
+if(!name||!email||!phone){setStatus('Vui lòng nhập đủ họ tên, Gmail và số điện thoại.','bad');return;}
+if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){setStatus('Gmail chưa đúng định dạng.','bad');return;}
+if(phone.replace(/\D/g,'').length<9){setStatus('Số điện thoại chưa đúng định dạng.','bad');return;}
+button.disabled=true;button.textContent='Đang gửi...';
+try{
+const response=await fetch('/api/data-sources/webhook/ds-1789180581447-IIM6U3AAD1R/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,phone})});
+if(!response.ok)throw new Error(`HTTP ${response.status}`);
+form.reset();setStatus('Đã gửi thành công. Dữ liệu đã chuyển vào CRM demo.','ok');
+}catch(error){setStatus(`Chưa gửi được dữ liệu (${error.message}). Vui lòng thử lại.`,'bad');}
+finally{button.disabled=false;button.textContent='Gửi thông tin';}
+});
+</script>
+</body>
+</html>
+

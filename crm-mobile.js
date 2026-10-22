@@ -3,7 +3,7 @@
 (() => {
   const mobile = matchMedia('(max-width: 860px)');
   const expanded = new Map();
-  let tableSequence = 0, queued = false;
+  let tableSequence = 0, updateTimer = 0;
   const normalize = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase();
   const labelFor = cell => Array.from(cell.childNodes).filter(node => node.nodeType === 3 || !node.matches?.('.customer-column-filter,[data-sort-indicator]')).map(node => node.textContent).join(' ').replace(/[▾↕↑↓]/g, '').replace(/\s+/g, ' ').trim();
   const setData = (node, key, value) => {const text = String(value); if (node.dataset[key] !== text) node.dataset[key] = text;};
@@ -128,7 +128,7 @@
     document.body.style.overflow = ''; syncMenu(); document.getElementById('toggleMobileNav')?.focus();
   }
   function update() {
-    queued = false; syncMenu();
+    syncMenu();
     if (!mobile.matches) return;
     const roots = Array.from(document.querySelectorAll('.tab-section.active,.tab-content-panel.active,.modal-overlay.open,.modal-overlay.active,.modal-backdrop.active,dialog[open],.side-drawer.open'));
     for (const root of roots) {prepareLayouts(root); for (const table of root.querySelectorAll('table')) prepareTable(table);}
@@ -138,7 +138,13 @@
     const root = document.getElementById('tab-customers'), table = document.getElementById('customerTableBody')?.closest('table');
     if (root && table && root.classList.contains('active')) {prepareCustomerFilters(root); prepareTable(table);}
   }};
-  function schedule() {if (!queued) {queued = true; requestAnimationFrame(update);}}
+  // Renderers can touch hundreds of nodes in one pass. A short debounce keeps the
+  // mobile adapter from rescanning every table once per animation frame while a
+  // tab is being rebuilt.
+  function schedule() {
+    if (updateTimer) return;
+    updateTimer = setTimeout(() => { updateTimer = 0; update(); }, 90);
+  }
   document.addEventListener('click', event => {
     const toggle = event.target.closest('.mobile-row-toggle');
     if (!toggle) return;
@@ -153,10 +159,15 @@
   mobile.addEventListener('change', () => {if (!mobile.matches) closeMenu(); schedule();});
   new MutationObserver(records => {
     if (records.some(record => {
-      if (record.type === 'attributes' && record.oldValue === record.target.getAttribute(record.attributeName)) return false;
       const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
-      return !target?.closest('#liveClockDisplay,#crmSupportWidget,[data-live-clock],.mobile-row-toggle,.mobile-level-summary,.mobile-customer-filter-toggle,.mobile-table-filter-toggle');
+      if (!target) return false;
+      if (target.closest('#liveClockDisplay,#crmSupportWidget,[data-live-clock],.mobile-row-toggle,.mobile-level-summary,.mobile-customer-filter-toggle,.mobile-table-filter-toggle')) return false;
+      // Class changes inside a prepared table/layout are presentation-only. The
+      // renderer's child-list changes still pass through and trigger one update.
+      if (record.type === 'attributes' && target.closest('.mobile-record-table,.mobile-layout-grid,.mobile-toolbar')) return false;
+      if (record.type === 'characterData' && target.closest('table')) return false;
+      return true;
     })) schedule();
-  }).observe(document.body, {childList:true,subtree:true,characterData:true,attributes:true,attributeOldValue:true,attributeFilter:['class','hidden','style']});
+  }).observe(document.body, {childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden']});
   schedule();
 })();

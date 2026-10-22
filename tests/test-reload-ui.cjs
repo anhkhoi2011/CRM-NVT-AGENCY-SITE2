@@ -47,29 +47,29 @@ test('F5: chỉ runtime xác nhận unauthenticated mới được hiện login'
 
 function restoreHarness(responses){
  const runtime=fs.readFileSync(ROOT+'/crm.js','utf8');
- const code=runtime.slice(runtime.indexOf('let runtimeRestorePromise='),runtime.indexOf('async function initialize()'));
+ const code=`let serverBootstrap=null,bootstrapReadPromise=null,bootstrapReadToken='';\n${runtime.slice(runtime.indexOf('async function readBootstrap'),runtime.indexOf('let serverReadPromise'))}\n${runtime.slice(runtime.indexOf('let runtimeRestorePromise='),runtime.indexOf('async function initialize()'))}`;
  const timers=[],removed=[],seen=[],nodes={};let session={token:'t'};
  const storage={getItem:()=>JSON.stringify(session)};
- const ctx={window:{},sessionStorage:storage,localStorage:storage,SESSION_KEY:'session',serverSyncToken:'',console,AbortController,
+ const ctx={window:{},sessionStorage:storage,localStorage:storage,SESSION_KEY:'session',WEBHOOK_FETCH_TIMEOUT_MS:25000,serverSyncToken:'',console,AbortController,
   setTimeout(fn,delay){timers.push({fn,delay});return timers.length;},clearTimeout(){},webhookApiBase:()=>'',
   $:key=>nodes[key]||=( {classList:{add(){},remove(){}},textContent:''}),removeRuntimeSession(){removed.push(true);session=null;},
   fetch:async()=>{seen.push(true);const result=responses.shift();if(result instanceof Error)throw result;return result;},startSession:async()=>true};
  vm.createContext(ctx);vm.runInContext(code,ctx);return {ctx,timers,removed,seen};
 }
 test('F5: 503 giữ token và thử lại nền thay vì chờ ba request liên tiếp',async()=>{
- const h=restoreHarness([{ok:false,status:503},{ok:true,status:200,json:async()=>({user:{id:'u'},state:{}})}]);
+ const h=restoreHarness([{ok:false,status:503},{ok:true,status:200,json:async()=>({user:{id:'u',role:'SALE'},navigation:['dashboard'],settings:{},version:'1',stats:null,storage:{mode:'mysql',durable:true}})}]);
  assert.equal(await h.ctx.restoreRuntimeSession(),false);assert.equal(h.seen.length,1);assert.equal(h.ctx.serverSyncToken,'t');assert.equal(h.removed.length,0);
  assert.ok(h.timers.some(t=>t.delay===25000));assert.ok(h.timers.some(t=>t.delay===3000));assert.equal(h.ctx.window.crmRuntimeAuthState,'restoring');
  assert.equal(await h.ctx.restoreRuntimeSession(),true);assert.equal(h.ctx.window.crmRuntimeAuthState,'authenticated');assert.equal(h.ctx.window.crmRuntimeRestoreError,'');
 });
 test('F5: chỉ 401 mới xóa phiên, không tự thử lại token hết hạn',async()=>{
- const h=restoreHarness([{ok:false,status:401}]);assert.equal(await h.ctx.restoreRuntimeSession(),false);
+ const h=restoreHarness([{ok:false,status:401,json:async()=>({error:'Expired'})}]);assert.equal(await h.ctx.restoreRuntimeSession(),false);
  assert.equal(h.removed.length,1);assert.equal(h.ctx.serverSyncToken,'');assert.equal(h.ctx.window.crmRuntimeAuthState,'unauthenticated');assert.ok(!h.timers.some(t=>t.delay===3000));
 });
 test('F5: bấm thử lại liên tiếp chỉ có một request khôi phục đang chạy',async()=>{
  let release;const h=restoreHarness([]);h.ctx.fetch=()=>new Promise(resolve=>{release=resolve;h.seen.push(true);});
  const a=h.ctx.restoreRuntimeSession(),b=h.ctx.restoreRuntimeSession();assert.equal(a,b);assert.equal(h.seen.length,1);
- release({ok:true,status:200,json:async()=>({user:{id:'u'},state:{}})});await a;
+ release({ok:true,status:200,json:async()=>({user:{id:'u',role:'SALE'},navigation:['dashboard'],settings:{},version:'1',stats:null,storage:{mode:'mysql',durable:true}})});await a;
 });
 test('HTML runtime có version vẫn phải kiểm tra lại cache khi deploy',()=>{
  const server=fs.readFileSync(ROOT+'/webhook-server.cjs','utf8');

@@ -1029,6 +1029,10 @@ let serverSyncToken = '', serverSyncTimer = null, serverSaveTimer = null;
 let serverAutomationStatus = null;
 let serverSaveRunning = false, serverReading = false, serverStateLoaded = false;
 let serverRecoveryPending = false;
+// Bootstrap is deliberately kept in memory only. It authenticates the
+// session and supplies server-scoped navigation before the legacy snapshot is
+// loaded; it is never written to the shared snapshot cache.
+let serverBootstrap = null, bootstrapReadPromise = null, bootstrapReadToken = '';
 let serverSourceBaseline = new Map();
 let serverBaseline = new Map(), serverVersions = {}, serverPendingRequest = null;
 let serverSaveError='';
@@ -1175,7 +1179,10 @@ function applyServerSnapshot(payload, keepEdits=null, rebase=false) {
   state=remote; applyAppearanceSettings(); STAFF=state.members.filter(r=>r.active!==false);PRODUCTS=state.products;
   webhookPending=state.webhookPending||[];
   serverSourceBaseline=sourceRecords;serverBaseline=remoteRecords;serverVersions=payload.versions||{};serverStateLoaded=true;
-  if(payload.user)currentAccount=hydrateSessionAccount(payload.user);
+  if(payload.user){
+    if(serverBootstrap && String(serverBootstrap.user?.id||'')===String(payload.user.id||'') && String(serverBootstrap.user?.role||'')!==String(payload.user.role||''))serverBootstrap=null;
+    currentAccount=hydrateSessionAccount(payload.user);
+  }
 }
 function scheduleServerPersistence() {
   if(!serverSyncToken||!serverStateLoaded)return;
@@ -1267,10 +1274,16 @@ async function flushServerPersistence(requestOptions = {}) {
   })();
   try{return await serverSavePromise;}finally{serverSavePromise=null;}
 }
-function startServerSyncPolling(){stopServerSyncPolling();serverSyncTimer=setInterval(()=>{if(!document.hidden&&currentAccount&&serverSyncToken){syncServerState();refreshNavigationCounts();}},15000);serverVersionTimer=setInterval(checkServerVersion,5000);}
+function startServerSyncPolling(){
+  stopServerSyncPolling();
+  // /api/state/version is the cheap change detector. Avoid downloading and
+  // cloning the full CRM snapshot every 15 seconds when nothing changed.
+  serverSyncTimer=setInterval(()=>{if(!document.hidden&&currentAccount&&serverSyncToken)refreshNavigationCounts();},15000);
+  serverVersionTimer=setInterval(checkServerVersion,10000);
+}
 function stopServerSyncPolling(){if(serverSyncTimer)clearInterval(serverSyncTimer);serverSyncTimer=null;if(serverVersionTimer)clearInterval(serverVersionTimer);serverVersionTimer=null;serverVersionSeen='';}
-// Vòng 15 giây vẫn giữ làm lưới an toàn (webhook, chia tự động...). Vòng 5 giây chỉ hỏi số phiên bản:
-// Sale đổi trạng thái thì Leader/Manager/Admin thấy sau vài giây thay vì 15–30 giây.
+// Vòng 10 giây chỉ hỏi số phiên bản; snapshot đầy đủ chỉ tải khi server báo có thay đổi.
+// Sale đổi trạng thái thì Leader/Manager/Admin vẫn thấy sau tối đa khoảng 10 giây.
 let serverVersionTimer=null,serverVersionSeen='',serverVersionReading=false;
 async function checkServerVersion(){
   if(document.hidden||!currentAccount||!serverSyncToken||!serverStateLoaded||serverVersionReading)return;
@@ -1297,6 +1310,25 @@ async function refreshNavigationCounts() {
     if(changed&&$('#sideNav')&&$('#mobileNav'))renderNavigation();
     return true;
   }catch(error){return false;}finally{navigationCountsReading=false;}
+}
+async function readBootstrap(token=serverSyncToken) {
+  if(!token)return null;
+  if(bootstrapReadPromise&&bootstrapReadToken===token)return bootstrapReadPromise;
+  bootstrapReadToken=token;
+  bootstrapReadPromise=(async()=>{
+    const controller=typeof AbortController==='function'?new AbortController():null;
+    const timeout=controller?setTimeout(()=>controller.abort(),WEBHOOK_FETCH_TIMEOUT_MS):null;
+    try{
+      const response=await fetch(webhookApiBase()+'/api/bootstrap',{headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store',signal:controller?.signal});
+      const payload=await response.json().catch(()=>({}));
+      if(response.status===401)throw Object.assign(new Error(payload.error||'Phiên đăng nhập đã hết hạn.'),{status:401});
+      if(!response.ok)throw Object.assign(new Error(payload.error||`Bootstrap lỗi HTTP ${response.status}`),{status:response.status});
+      if(!payload?.user?.id||!Array.isArray(payload.navigation)||!payload.settings||payload.version===undefined)throw Error('Dữ liệu khởi tạo từ máy chủ không hợp lệ.');
+      if(token!==serverSyncToken)return null;
+      return payload;
+    }finally{if(timeout)clearTimeout(timeout);}
+  })().finally(()=>{if(bootstrapReadToken===token){bootstrapReadPromise=null;bootstrapReadToken='';}});
+  return bootstrapReadPromise;
 }
 let serverReadPromise = null;
 function syncServerState() {
@@ -5634,10 +5666,21 @@ async function submitRegistration() {
   }
 }
 
-async function startSession(account, restored = false, token = serverSyncToken, initialSnapshot = null) {
+async function startSession(account, restored = false, token = serverSyncToken, initialSnapshot = null, initialBootstrap = null) {
   serverSyncToken=token;serverStateLoaded=false;serverConflict=false;serverPendingRequest=null;liveNavigationCounts=null;
+  let bootstrap=initialBootstrap;
+  try{
+    bootstrap ||= await readBootstrap(token);
+    if(!bootstrap?.user?.id)throw Error('Chưa xác thực được phiên đăng nhập.');
+    if(account?.id&&String(account.id)!==String(bootstrap.user.id))throw Error('Phiên đăng nhập không khớp tài khoản máy chủ.');
+  }catch(error){
+    serverBootstrap=null;serverStateLoaded=false;currentAccount=null;
+    if(error?.status===401){serverSyncToken='';removeRuntimeSession();window.crmRuntimeAuthState='unauthenticated';}
+    throw error;
+  }
+  serverBootstrap=bootstrap;
   state=initialState();
-  currentAccount = hydrateSessionAccount(account);
+  currentAccount = hydrateSessionAccount(bootstrap.user);
   currentView = 'dashboard';
   dateRange = 7;
   datePreset = '7';
@@ -5657,7 +5700,7 @@ async function startSession(account, restored = false, token = serverSyncToken, 
     try{if(window.parent&&window.parent!==window)window.parent.dispatchEvent(new Event('crm:session-changed'));}catch{}
   }
   try {
-    const recovered=await recoverPendingWrite(account);
+    const recovered=await recoverPendingWrite(bootstrap.user);
     if(recovered)initialSnapshot=recovered;
   } catch(error) {
     // Keep the draft, but do not block authenticated read access or overwrite conflicts.
@@ -5691,6 +5734,7 @@ async function endSession(skipFlush=false) {
   const logoutToken=serverSyncToken;
   if(logoutToken)fetch(`${webhookApiBase()}/api/auth/logout`,{method:'POST',headers:{Authorization:`Bearer ${logoutToken}`}}).catch(()=>{});
   serverSyncToken = '';
+  serverBootstrap = null; bootstrapReadPromise = null; bootstrapReadToken = '';
   window.crmRuntimeAuthState = 'unauthenticated';
   liveNavigationCounts = null;
   serverStateLoaded = false; clearTimeout(serverSaveTimer); serverSaveTimer = null;
@@ -6044,30 +6088,24 @@ function restoreRuntimeSession(){
       return false;
     }
     const token=session.token;serverSyncToken=token;window.crmRuntimeAuthState='restoring';
-    const controller=typeof AbortController==='function'?new AbortController():null;
-    const timer=controller?setTimeout(()=>controller.abort(),25000):null;
     try{
-      // Mỗi lượt chỉ có một request; lỗi tạm thời được thử lại nền, không khóa màn hình 3 lần liên tiếp.
-      const response=await fetch(webhookApiBase()+'/api/state?passive=1',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:controller?.signal});
-      const snapshot=response.ok?await response.json():null;
+      // Bootstrap validates the session and server navigation before the legacy snapshot.
+      const bootstrap=await readBootstrap(token);
       if(serverSyncToken!==token)return false;
-      if(response.status===401){
-        serverSyncToken='';removeRuntimeSession();window.crmRuntimeAuthState='unauthenticated';
-        $('#loginScreen').classList.remove('is-hidden');$('#appShell').classList.add('is-hidden');return false;
-      }
-      if(!response.ok||!snapshot?.user||!snapshot?.state)throw Error('Không tải được dữ liệu máy chủ');
-      clearTimeout(timer);
-      if(!await startSession(snapshot.user,true,token,snapshot))throw Error('Chưa khôi phục được phiên đăng nhập');
+      if(!bootstrap?.user?.id)throw Error('Bootstrap response is invalid.');
+      if(session.accountId&&String(session.accountId)!==String(bootstrap.user.id))throw Error('Session account does not match the server account.');
+      if(!await startSession(bootstrap.user,true,token,null,bootstrap))throw Error('Session could not be restored');
       window.crmRuntimeAuthState='authenticated';runtimeRestoreAttempts=0;return true;
     }catch(error){
       if(serverSyncToken!==token)return false;
       window.crmRuntimeAuthState='restoring';
       window.crmRuntimeRestoreError='Chưa kết nối được máy chủ. Phiên đăng nhập và bản nháp vẫn được giữ. Hệ thống sẽ tự thử lại.';
+      if(error?.status===401){serverSyncToken='';removeRuntimeSession();window.crmRuntimeAuthState='unauthenticated';$('#loginScreen').classList.remove('is-hidden');$('#appShell').classList.add('is-hidden');return false;}
       $('#loginError').textContent=window.crmRuntimeRestoreError;
       const delay=Math.min(30000,3000*Math.pow(2,Math.min(runtimeRestoreAttempts++,3)));
       runtimeRestoreTimer=setTimeout(()=>{void restoreRuntimeSession();},delay);
       return false;
-    }finally{if(timer)clearTimeout(timer);}
+    }
   })();
   runtimeRestorePromise=runtimeRestorePromise.finally(()=>{runtimeRestorePromise=null;notifyRuntimeReady();});
   return runtimeRestorePromise;

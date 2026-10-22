@@ -4406,5 +4406,8 @@
   }
   document.addEventListener('click',e=>{const b=e.target.closest('[data-tab="tab-pnl"]');if(b)setTimeout(loadLegacyPnl,0);});
   q('#legacyPnlCreate')?.addEventListener('click',async()=>{const token=storedSession()?.token||'';const customerCode=prompt('ID khách hàng:');if(!customerCode)return;const customerName=prompt('Tên khách hàng:')||customerCode;const cqgAccount=prompt('Tài khoản CQG:');if(!cqgAccount)return;const defaultLot=prompt('Số lot mặc định:','0');const initialCapital=prompt('Vốn ban đầu:','0');const r=await fetch('/api/pnl/customers',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({customerCode,customerName,cqgAccount,defaultLot,initialCapital})});if(!r.ok)alert((await r.json()).error||'Không tạo được');else loadLegacyPnl();});
-  refreshTimer=setInterval(()=>{if(!document.hidden){refresh();if(q('#tab-audit.active')){loadUserActivity();loadOrderAudit();}}},15000);frame.addEventListener('load',()=>refresh(true));
+  const mobileRefresh=matchMedia('(max-width: 860px)');
+  refreshTimer=setInterval(()=>{if(!document.hidden){refresh();if(q('#tab-audit.active')){loadUserActivity();loadOrderAudit();}}},mobileRefresh.matches?30000:15000);
+  mobileRefresh.addEventListener?.('change',()=>{if(refreshTimer)clearInterval(refreshTimer);refreshTimer=setInterval(()=>{if(!document.hidden){refresh();if(q('#tab-audit.active')){loadUserActivity();loadOrderAudit();}}},mobileRefresh.matches?30000:15000);});
+  frame.addEventListener('load',()=>refresh(true));
 })();

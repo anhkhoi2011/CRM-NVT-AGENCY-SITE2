@@ -47,7 +47,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261020-distribution-all-roles-1';
+const BUILD_VERSION = '20261021-mobile-performance-1';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -279,7 +279,7 @@ const demoState = {
   orders: [], products: DEMO_MODE ? structuredClone(require('./product-catalog.json')) : [], productCategories: DEMO_MODE ? [...new Set(require('./product-catalog.json').map(item => item.category))] : [], registrations: [],
   customFieldDefinitions: DEMO_MODE ? structuredClone(require('./crm-defaults.json').customFieldDefinitions) : [], customerFieldHistory: [], assignmentHistory: [],
   resubmissions: [], notes: [], imports: [], attendance: [], dataOffers: [],
-  traffic: [], tasks: [], notifications: [], audit: [], websites: [{ id: 'WEB-DEMO', name: 'Nguồn local', domain: 'localhost:4173', sourceUrl: 'http://localhost:4173/', status: 'ACTIVE' }],
+  traffic: [], tasks: [], notifications: [], audit: [], websites: [{ id: 'WEB-DEMO', webhookSlug: 'ds-1789180581447-IIM6U3AAD1R', name: 'Nguồn local', domain: 'localhost:4173', sourceUrl: 'http://localhost:4173/', status: 'ACTIVE' }],
   integrations: [], webhookPending: [], blacklistIps: [], blacklistEntries: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [], bankStatements: [], pnlCustomers: [], pnlDailyLogs: [], pnlWeeklySummaries: [],
   settings: { assignmentMode: 'BALANCED', leaderCanUpdate: true, leaderAttendanceRequired: true },
   leaderDistribution: { enabled: true, enabledLeaderIds: ['demo-leader'], weights: { 'demo-leader': 1 }, sourceRules: [] },
@@ -472,6 +472,9 @@ function expireDemoOffers() {
 function demoPayload(user) {
   expireDemoOffers();
   return {...crmData.snapshot(user,demoData(),{compact:true}),user,storage:{mode:'demo',durable:false}};
+}
+function demoBootstrapPayload(user) {
+ return crmData.buildBootstrap(user,{settings:demoState.settings||{},version:demoStateVersion,storage:{mode:'demo',durable:false}});
 }
 const demoWebhookEvents = new Map();
 let demoIntakeChain = Promise.resolve();
@@ -706,6 +709,27 @@ async function handleDemoApi(request, response, pathname) {
     const all=demoState.audit.filter(row=>crmData.readable(user,'audit',row,source)&&(!filters.ordersOnly&&!filters.orderId||orderAudit.isOrder(row,source)));
     return dbJson(request,response,200,orderAudit.page(all,query.get('page'),query.get('limit'),filters));
   }
+  if (pathname === '/api/customers/page' && request.method === 'GET') {
+    const query=new URL(request.url,`http://${request.headers.host||'localhost'}`).searchParams;
+    const positive=(value,fallback,max)=>{ if(value===null||value===undefined||value==='')return fallback; const parsed=Number(value); return Number.isSafeInteger(parsed)&&parsed>=1&&parsed<=max?parsed:fallback; };
+    const page=positive(query.get('page'),1,1000000000),limit=positive(query.get('limit'),20,100);
+    const search=String(query.get('search')||'').trim().toLocaleLowerCase('vi'),status=String(query.get('status')||'').trim();
+    const saleId=String(query.get('saleId')||'').trim(),leaderId=String(query.get('leaderId')||'').trim(),teamId=String(query.get('teamId')||'').trim(),ownerId=String(query.get('ownerId')||'').trim(),websiteId=String(query.get('websiteId')||'').trim();
+    const sort=String(query.get('sort')||'createdAt'),direction=String(query.get('direction')||'desc').toLowerCase();
+    if(!['createdAt','updatedAt','name','id'].includes(sort)||!['asc','desc'].includes(direction))return dbJson(request,response,400,{error:'sort không hợp lệ'});
+    const source=demoData();
+    let visible=demoState.customers.filter(row=>crmData.readable(user,'customers',row,source));
+    visible=visible.filter(row=>!search||[row.name,row.phone,row.email,row.source,row.campaign,row.note,JSON.stringify(row.customFields||{})].join(' ').toLocaleLowerCase('vi').includes(search));
+    if(status)visible=visible.filter(row=>String(row.status||'')===status);
+    if(saleId)visible=visible.filter(row=>String(row.saleId||'')===saleId);
+    if(leaderId)visible=visible.filter(row=>String(row.leaderId||'')===leaderId);
+    if(teamId)visible=visible.filter(row=>String(row.teamId||'')===teamId);
+    if(websiteId)visible=visible.filter(row=>String(row.websiteId||'')===websiteId);
+    if(ownerId)visible=visible.filter(row=>[row.saleId,row.leaderId,row.managerId,row.ownerId].some(value=>String(value||'')===ownerId));
+    visible.sort((a,b)=>{ const av=String(a[sort]||''),bv=String(b[sort]||''); const result=sort==='name'||sort==='id'?av.localeCompare(bv,'vi'):(av< bv?-1:av>bv?1:0); return direction==='asc'?result:-result; });
+    const total=visible.length,items=visible.slice((page-1)*limit,page*limit).map(row=>({id:row.id,name:row.name,phone:row.phone,email:row.email||'',source:row.source||'',campaign:row.campaign||'',websiteId:row.websiteId||null,status:row.status,saleId:row.saleId||null,leaderId:row.leaderId||null,teamId:row.teamId||null,note:row.note||'',createdAt:row.createdAt||null,updatedAt:row.updatedAt||null}));
+    return dbJson(request,response,200,{items,page,limit,total,hasMore:total>page*limit});
+  }
   if(pathname==='/api/user-activity'&&request.method==='POST'){const body=await readDbBody(request),detail=activityLabel(body.view),token=demoToken(request),old=demoSessionActivity.get(token)?.activity;demoTouchSession(request,detail);if(old!==detail)demoRecordActivity(user,request,'OPEN_SCREEN',detail);return dbJson(request,response,200,{ok:true,activity:detail});}
   if(pathname==='/api/admin/user-activity'&&request.method==='GET'){if(user.role!=='ADMIN')return dbJson(request,response,403,{error:'Chỉ Admin được xem User log'});return dbJson(request,response,200,demoAdminUserActivity());}
   if(pathname==='/api/customers/manual'&&request.method==='POST'){
@@ -714,6 +738,10 @@ async function handleDemoApi(request, response, pathname) {
       if(!demoState.customers.some(item=>item.id===customer.id)){demoState.customers.unshift(customer);demoState.notifications.unshift(crmData.dataArrivalNotice(customer));}
       return dbJson(request,response,200,{...demoPayload(user),ok:true,customerId:customer.id});
     }catch(error){return dbJson(request,response,error.status||400,{error:error.message});}
+  }
+  if (pathname === '/api/bootstrap') {
+    if (request.method !== 'GET') return dbJson(request, response, 405, { error: 'Chá»‰ cháº¥p nháº­n GET' });
+    return dbJson(request, response, 200, demoBootstrapPayload(user));
   }
   if (pathname === '/api/state/version' && request.method === 'GET') return dbJson(request, response, 200, { version: String(demoStateVersion) });
   if (pathname === '/api/state' && request.method === 'GET') return dbJson(request, response, 200, demoPayload(user));
@@ -780,13 +808,14 @@ async function handleDbApi(request, response, pathname) {
   try {
     const isAuthRequest = pathname === '/api/auth/login' || pathname === '/api/auth/register';
     const isStateRead = pathname === '/api/state' && request.method === 'GET';
+    const isBootstrapRead = pathname === '/api/bootstrap' && request.method === 'GET';
     // Dang nhap khong duoc cho seed/migration CRM chay ngam. Users va crm_sessions
     // la cac bang nen; truy van truc tiep de tra loi nhanh, loi thieu bang se tra ve ro rang.
     // Snapshot chi can schema CRM, khong can cho provision tai khoan he thong xong.
-    if (!isAuthRequest && !isStateRead && pathname !== '/api/db/health' && !await systemAccountsReady) {
+    if (!isAuthRequest && !isStateRead && !isBootstrapRead && pathname !== '/api/db/health' && !await systemAccountsReady) {
       return dbJson(request,response,503,{error:'Khoi tao tai khoan he thong chua hoan tat. Kiem tra log Node.'});
     }
-    if (isStateRead) {
+    if (isStateRead || isBootstrapRead) {
       const schemaReady = await systemSchemaReady;
       if (!schemaReady) return dbJson(request,response,503,{error:'Schema MySQL chua san sang. Kiem tra log Node.'});
     }
@@ -837,6 +866,10 @@ async function handleDbApi(request, response, pathname) {
     if(pathname==='/api/google-sheets/backup')return handleGoogleSheetsBackupApi(request,response,user);
     if(pathname.startsWith('/api/support/'))return await handleSupportApi(request,response,pathname,user);
     if(pathname==='/api/auth/me')return dbJson(request,response,200,{user});
+    if(pathname==='/api/bootstrap'){
+      if(request.method!=='GET')return dbJson(request,response,405,{error:'Chá»‰ cháº¥p nháº­n GET'});
+      return dbJson(request,response,200,await crmData.readBootstrap(user));
+    }
     if(pathname==='/api/auth/logout' && request.method==='POST'){void recordUserActivity(user,request,'LOGOUT','Đăng xuất CRM');const hash=tokenHash(request);sessionUserCache.delete(hash);await authQuery('DELETE FROM crm_sessions WHERE token_hash=?',[hash]);return dbJson(request,response,200,{ok:true});}
     if(pathname==='/api/user-activity' && request.method==='POST'){
       const body=await readDbBody(request),activity=await setUserActivity(request,body.view);
@@ -851,6 +884,14 @@ async function handleDbApi(request, response, pathname) {
     if(pathname==='/api/customers/manual' && request.method==='POST'){
       const body=await readDbBody(request);
       return dbJson(request,response,200,await createManualCustomer(user,body,request));
+    }
+    if(pathname==='/api/customers/page' && request.method==='GET'){
+      const query=new URL(request.url,`http://${request.headers.host||'localhost'}`).searchParams;
+      return dbJson(request,response,200,await crmData.readCustomerPage(user,{
+        page:query.get('page'),limit:query.get('limit'),search:query.get('search'),status:query.get('status'),
+        saleId:query.get('saleId'),leaderId:query.get('leaderId'),teamId:query.get('teamId'),ownerId:query.get('ownerId'),
+        websiteId:query.get('websiteId'),sort:query.get('sort'),direction:query.get('direction')
+      }));
     }
     if(pathname==='/api/telegram/link-status' && request.method==='GET'){
       const rows=await dbQuery('SELECT telegram_chat_id FROM users WHERE id=? LIMIT 1',[user.id]);
@@ -1764,7 +1805,7 @@ async function serveStatic(request, response, urlPathname) {
     }
     return;
   }
-  if (!['/','/index.html','/crm.js','/crm.css','/crm-modern.css','/crm-boot.css','/logo.jpg','/login-background.jpg','/customer-journey.svg','/care-ui.js','/crm-runtime.html','/crm-runtime-api.js','/reference-view.js','/reference-crm.js','/marketing-hub.js','/crm-notifications.js','/crm-mobile.js','/crm-mobile.css','/order-payments.js','/accounting-detail.js','/hr-profiles.js','/customer-save-queue.js','/support-chat-widget.js','/nvt-mobile-auth.css','/team-tree-hierarchy.css','/commission_tree_demo.html','/commission-apex-mindmap.svg','/assets/livechat-employee.png'].includes(decoded)) return sendJson(response,404,{error:'Không tìm thấy tài nguyên'});
+  if (!['/','/index.html','/crm.js','/crm.css','/crm-modern.css','/crm-boot.css','/logo.jpg','/login-background.jpg','/customer-journey.svg','/care-ui.js','/crm-runtime.html','/crm-runtime-api.js','/reference-view.js','/reference-crm.js','/marketing-hub.js','/crm-notifications.js','/crm-mobile.js','/crm-mobile.css','/order-payments.js','/accounting-detail.js','/hr-profiles.js','/customer-save-queue.js','/support-chat-widget.js','/nvt-mobile-auth.css','/team-tree-hierarchy.css','/commission_tree_demo.html','/commission-apex-mindmap.svg','/demo-crm-flow.html','/assets/livechat-employee.png'].includes(decoded)) return sendJson(response,404,{error:'Không tìm thấy tài nguyên'});
 
   let relative = decoded === '/' ? '/index.html' : decoded;
   const absolute = path.resolve(REPO_ROOT, `.${path.posix.normalize(relative)}`);
@@ -2140,7 +2181,7 @@ const server = http.createServer(async (request, response) => {
     if (pathname === '/api/leads/push') return await handleLeadsPushApi(request, response, url);
     if (pathname === '/api/leads/export' || pathname === '/api/leads/export-all' || pathname === '/api/customer') return await handleLeadsExportApi(request, response, url);
     if (pathname === '/api/marketing/staff-ranking' || pathname === '/api/marketing/customer-analysis') return await handleMarketingAnalysisApi(request, response, url);
-    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname === '/api/google-sheets/backup' || pathname === '/api/pnl' || pathname.startsWith('/api/pnl/') || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/') || pathname.startsWith('/api/bank-statement-file/')) return await handleDbApi(request, response, pathname);
+    if (pathname === '/api/db/health' || pathname === '/api/navigation-counts' || pathname === '/api/user-activity' || pathname === '/api/admin/user-activity' || pathname.startsWith('/api/admin/blacklist') || pathname.startsWith('/api/auth/') || pathname.startsWith('/api/telegram/') || pathname.startsWith('/api/support/') || pathname.startsWith('/api/users') || pathname.startsWith('/api/customers') || pathname.startsWith('/api/orders') || pathname.startsWith('/api/products') || pathname.startsWith('/api/settings') || pathname === '/api/bootstrap' || pathname === '/api/state' || pathname === '/api/state/version' || pathname === '/api/audit' || pathname === '/api/google-sheets/backup' || pathname === '/api/pnl' || pathname.startsWith('/api/pnl/') || pathname.startsWith('/api/process-image/') || pathname.startsWith('/api/feedback-image/') || pathname.startsWith('/api/order-receipt-image/') || pathname.startsWith('/api/bank-statement-file/')) return await handleDbApi(request, response, pathname);
     if (pathname === '/api/health/live') {
       return sendJson(response, 200, { ok: true, live: true, telegramWorker: telegramWorker?.status() || (inlineTelegramScheduler ? 'inline' : 'disabled'), webhookStorage: { ready: true, fallback: webhookStorage.fallback || inboxStorage.fallback }, webhooks: webhookHealthSummary(), instance: SERVER_INSTANCE, build: BUILD_VERSION, authPool: authPool.stats(), password: passwordService.stats() });
     }

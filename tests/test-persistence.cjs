@@ -10,11 +10,49 @@ function prepareReceiptOrder(f,order){
 }
 function fixture(){
  let db={docs:[],customers:[],orders:[],products:[{id:'p1',sku:'TEST',name:'Test product',category:'Test',price:120,type:'RENTAL',rental_months:3,active:1,created_at:'2026-08-01 08:00:00'}],users:[],history:[],webhookEvents:[],staffAttendance:[]};let backup,fail=false,failAudit=false;
- const events=[],queries=[];
+ const auditOrderActions=new Set(['CREATE_ORDER','EDIT_ORDER','UPDATE_ACCOUNTING_ORDER','COLLECT_ORDER_DEBT','UPDATE_RECEIPT_IMAGES','RECONCILE_ORDER','ISSUE_VAT','DELETE_ACCOUNTING_ORDER','PAYMENT_CONFIRMED','DEPOSIT_CONFIRMED','ORDER_REFUNDED','CANCEL_ORDER']);
+ const auditIsOrder=row=>row.body?.source==='ORDER_SQL'||(auditOrderActions.has(row.body?.action)&&db.orders.some(order=>String(order.id)===String(row.body?.entity)));
+ const auditDedupe=rows=>{const trusted=new Set(rows.filter(row=>row.body?.source==='ORDER_SQL'&&row.body?.requestId).map(row=>JSON.stringify([row.body.requestId,row.body.orderId])));return rows.filter(row=>!(row.body?.source!=='ORDER_SQL'&&row.body?.requestId&&trusted.has(JSON.stringify([row.body.requestId,row.body.entity]))));};
+ // This adapter models the predicates used by readAuditPage() so persistence
+ // tests exercise row selection, count and pagination instead of returning a
+ // hard-coded result. It is still a fixture, not a MySQL execution plan.
+ const auditRowsFor=(sql,values)=>{
+  let rows=db.docs.filter(row=>row.collection==='audit'&&!row.deleted);
+  if(sql.includes('1=0'))return [];
+  if(sql.includes("JSON_UNQUOTE(JSON_EXTRACT(d.body,'$.actorId'))=?")){
+   const candidates=values.filter(value=>rows.some(row=>String(row.body?.actorId)===String(value)));
+   const count=(sql.match(/JSON_UNQUOTE\(JSON_EXTRACT\(d\.body,'\$\.actorId'\)\)=\?/g)||[]).length;
+   for(const actorId of candidates.slice(0,count))rows=rows.filter(row=>String(row.body?.actorId)===String(actorId));
+  }
+  if(sql.includes('EXISTS (SELECT 1 FROM orders oa'))rows=rows.filter(auditIsOrder);
+  rows=auditDedupe(rows);
+  if(sql.includes("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(d.body,'$.orderId')),''),JSON_UNQUOTE(JSON_EXTRACT(d.body,'$.entity')))=?")){
+   const orderIds=new Set(db.orders.map(order=>String(order.id)));
+   const orderId=values.filter(value=>orderIds.has(String(value))).at(-1);
+   if(orderId!==undefined)rows=rows.filter(row=>String(row.body?.orderId||row.body?.entity||'')===String(orderId));
+  }
+  if(sql.includes("JSON_UNQUOTE(JSON_EXTRACT(d.body,'$.action'))=?")){
+   const actions=new Set(rows.map(row=>row.body?.action));
+   const action=values.filter(value=>actions.has(value)).at(-1);
+   if(action!==undefined)rows=rows.filter(row=>row.body?.action===action);
+  }
+  if(sql.includes('LIKE ?')){
+   const search=String(values.find(value=>typeof value==='string'&&value.startsWith('%')&&value.endsWith('%'))||'').slice(1,-1).toLocaleLowerCase('vi');
+   rows=rows.filter(row=>[row.body?.orderCode,row.body?.customerName,row.body?.actor,row.body?.actorId,row.body?.detail,row.body?.entity].join(' ').toLocaleLowerCase('vi').includes(search));
+  }
+  const time=row=>{const raw=String(row.body?.at||'');const parsed=Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(raw)?raw.replace(' ','T')+'+07:00':raw);return Number.isFinite(parsed)?parsed:0;};
+  return rows.sort((a,b)=>time(b)-time(a)||String(b.id).localeCompare(String(a.id)));
+ };
+ const events=[],queries=[];let activeQueries=0,maxConcurrentQueries=0;
  const c={async beginTransaction(){backup=structuredClone(db);events.push('begin');},async commit(){events.push('commit');},async rollback(){db=backup;events.push('rollback');},release(){events.push('release');},
  async query(sql){return this.execute(sql,[]);},
  async execute(sql,v){
   queries.push({sql,values:v,event:events.length});
+  if(sql.includes('SELECT COUNT(*) AS total FROM crm_documents d'))return [[{total:auditRowsFor(sql,v).length}]];
+  if(sql.includes('SELECT d.id,d.body FROM crm_documents d')){
+   const rows=auditRowsFor(sql,v),limit=Number(v.at(-2)),offset=Number(v.at(-1));
+   return [rows.slice(offset,offset+limit).map(row=>({id:row.id,body:structuredClone(row.body)}))];
+  }
   if(sql.includes('FROM crm_write_lock')){events.push('lock');return [[{id:1}]];}
   if(sql.startsWith('INSERT INTO webhook_events')){if(!db.webhookEvents.some(e=>e.dedupe===v[1]))db.webhookEvents.push({id:v[0],dedupe:v[1]});return [{}];}
   if(sql.includes('FROM webhook_events WHERE dedupe_key'))return [db.webhookEvents.filter(e=>e.dedupe===v[0])];
@@ -59,12 +97,15 @@ function fixture(){
   if(sql.startsWith('UPDATE ')||sql.startsWith('CREATE TABLE')||sql.startsWith('INSERT IGNORE INTO crm_write_lock')||sql.startsWith('INSERT INTO system_settings'))return [{}];
   throw new Error('Unexpected SQL: '+sql);
  }};
+ const rawExecute=c.execute.bind(c);
+ c.execute=async(...args)=>{activeQueries++;maxConcurrentQueries=Math.max(maxConcurrentQueries,activeQueries);try{return await rawExecute(...args);}finally{activeQueries--;}};
  function upsert(key,keys,v){const row=Object.fromEntries(keys.map((k,i)=>[k,v[i]]));row.created_at=db[key].find(r=>r.id===row.id)?.created_at||row.created_at||'2026-09-14 09:00:00';row.updated_at='2026-09-14 10:00:00';db[key]=db[key].filter(r=>r.id!==row.id);db[key].push(row);}
  const module={exports:{}};
- vm.runInNewContext(fs.readFileSync('crm-data.cjs','utf8'),{module,require:name=>name==='./db.js'?{pool:{query:async()=>[{}],getConnection:async()=>c}}:require(name),Buffer,console});
+ const poolQuery=(sql,v=[])=>sql.includes('SELECT COUNT(*) AS total FROM crm_documents d')||sql.includes('SELECT d.id,d.body FROM crm_documents d')?c.execute(sql,v):Promise.resolve([{}]);
+ vm.runInNewContext(fs.readFileSync('crm-data.cjs','utf8'),{module,require:name=>name==='./db.js'?{pool:{query:poolQuery,getConnection:async()=>c}}:require(name),Buffer,console});
  const webhook={exports:{}};
  vm.runInNewContext(fs.readFileSync('webhook-store.cjs','utf8'),{module:webhook,URL,require:name=>name==='./db.js'?{dbConfigured:true,pool:{query:async()=>[{}],getConnection:async()=>c}}:name==='./crm-data.cjs'?module.exports:require(name)});
- return {api:module.exports,webhook:webhook.exports,events,queries,get db(){return db;},fail(){fail=true;},failAudit(){failAudit=true;}};
+ return {api:module.exports,webhook:webhook.exports,events,queries,get db(){return db;},get maxConcurrentQueries(){return maxConcurrentQueries;},fail(){fail=true;},failAudit(){failAudit=true;}};
 }
 const admin={id:'admin',role:'ADMIN'},sale={id:'sale',role:'SALE',teamId:'T',leaderId:'lead'};
 const customer={id:'c1',name:'Khách thử',phone:'0912345678',saleId:'sale',teamId:'T',leaderId:'lead',status:'NEW',createdAt:'2026-08-01 09:00:00',customFields:{level:'L3'}};
@@ -1690,16 +1731,39 @@ test('Multi-select retries unchanged values after a failed database save',async(
 });
 
 
-test('Saved session restores user and data with one authenticated state request',async()=>{
+test('Saved session restores bootstrap before one authenticated legacy state request',async()=>{
  const c=frontend(),calls=[];
  c.sessionStorage.setItem('nvt-crm-session-v1',JSON.stringify({token:'saved-token'}));
+ const bootstrap={user:{id:'admin',role:'ADMIN',active:true},navigation:['dashboard','settings'],settings:{},version:'1',stats:null,storage:{mode:'mysql',durable:true}};
  const payload=vm.runInContext("({state:initialState(),versions:{},user:{id:'admin',role:'ADMIN'}})",c);
  vm.runInContext('refreshSessionContext=()=>{};startWebhookConsumer=()=>{};startServerSyncPolling=()=>{};refreshNavigationCounts=()=>{};render=()=>{};',c);
- c.fetch=async url=>{calls.push(url);return {ok:true,json:async()=>payload};};
+ c.fetch=async url=>{calls.push(url);return {ok:true,json:async()=>String(url).includes('/api/bootstrap')?bootstrap:payload};};
  await c.initialize();
- assert.equal(calls.length,1);assert.match(calls[0],/api\/state\?passive=1/);
+ assert.deepEqual(calls.map(String),['http://localhost:4173/api/bootstrap','http://localhost:4173/api/state?passive=1']);
  assert.equal(c.window.crmRuntimeAuthState,'authenticated');
  assert.equal(vm.runInContext('serverStateLoaded',c),true);
+});
+
+test('Concurrent restore callers share one bootstrap request',async()=>{
+ const c=frontend(),calls=[];
+ vm.runInContext("serverSyncToken='token';",c);
+ c.fetch=async url=>{calls.push(String(url));return {ok:true,json:async()=>({user:{id:'admin',role:'ADMIN'},navigation:['dashboard'],settings:{},version:'1',stats:null,storage:{mode:'mysql',durable:true}})};};
+ const result=await vm.runInContext('Promise.all([readBootstrap(),readBootstrap()])',c);
+ assert.equal(calls.length,1);assert.equal(result[0].user.id,'admin');assert.equal(result[1].user.id,'admin');
+});
+
+test('Logout and login as another account reset bootstrap and legacy state',async()=>{
+ const c=frontend();
+ vm.runInContext('recoverPendingWrite=async()=>null;render=()=>{};startWebhookConsumer=()=>{};startServerSyncPolling=()=>{};refreshNavigationCounts=()=>{};',c);
+ const boot=(id,role)=>({user:{id,role},navigation:['dashboard'],settings:{},version:'1',stats:null,storage:{mode:'mysql',durable:true}});
+ const snap=(id,name)=>({user:{id,role:'SALE',name},state:{...vm.runInContext('initialState()',c),customers:[{id:'customer-'+id,name,customFields:{}}]},versions:{}});
+ assert.equal(await vm.runInContext(`startSession({id:'a',role:'SALE'},false,'a',{user:{id:'a',role:'SALE'},state:{...initialState(),customers:[{id:'ca',name:'A',customFields:{}}]},versions:{}},${JSON.stringify(boot('a','SALE'))})`,c),true);
+ // endSession is an async function in the VM context; invoke it there so all
+ // token, cache and bootstrap cleanup paths are exercised.
+ await vm.runInContext('endSession(true)',c);
+ assert.equal(await vm.runInContext(`startSession({id:'b',role:'SALE'},false,'b',{user:{id:'b',role:'SALE'},state:{...initialState(),customers:[{id:'cb',name:'B',customFields:{}}]},versions:{}},${JSON.stringify(boot('b','SALE'))})`,c),true);
+ assert.equal(vm.runInContext('serverBootstrap.user.id',c),'b');
+ assert.equal(vm.runInContext('state.customers[0].name',c),'B');
 });
 
 
@@ -1713,6 +1777,19 @@ test('Failed session restoration keeps token and never falsely reports logout',a
  assert.equal(JSON.parse(c.sessionStorage.getItem('nvt-crm-session-v1')).token,'saved-token');
  assert.match(c.document.querySelector('#loginError').textContent,/Phiên đăng nhập và bản nháp vẫn được giữ/);
  assert.match(c.window.crmRuntimeRestoreError,/tự thử lại/);
+});
+
+test('Expired bootstrap session clears token without exposing the previous account',async()=>{
+ const c=frontend();
+ c.sessionStorage.setItem('nvt-crm-session-v1',JSON.stringify({token:'expired',accountId:'old'}));
+ c.localStorage.setItem('nvt_crm_cached_snapshot_v1','old-cache');
+ c.setTimeout=(fn,ms)=>1;
+ c.fetch=async url=>({ok:false,status:401,json:async()=>({error:'Expired'})});
+ await c.initialize();
+ assert.equal(c.window.crmRuntimeAuthState,'unauthenticated');
+ assert.equal(c.sessionStorage.getItem('nvt-crm-session-v1'),null);
+ assert.equal(c.localStorage.getItem('nvt_crm_cached_snapshot_v1'),null);
+ assert.equal(vm.runInContext('currentAccount',c),null);
 });
 
 
@@ -1861,7 +1938,7 @@ test('Manual customer without webhook slug never inherits an unrelated website',
 test('F5 dựng snapshot xác thực trước khi chờ khôi phục SQL của bản nháp',async()=>{
  const c=frontend();let finish;c.holdRecovery=()=>new Promise(resolve=>{finish=resolve;});
  vm.runInContext('recoverPendingWrite=holdRecovery;render=()=>{};startWebhookConsumer=()=>{};startServerSyncPolling=()=>{};refreshNavigationCounts=()=>{};',c);
- const task=vm.runInContext("startSession({id:'admin',role:'ADMIN'},true,'token',{state:initialState(),versions:{}})",c);
+ const task=vm.runInContext("startSession({id:'admin',role:'ADMIN'},true,'token',{state:initialState(),versions:{}},{user:{id:'admin',role:'ADMIN'},navigation:['dashboard'],settings:{},version:'1',stats:null,storage:{mode:'mysql',durable:true}})",c);
  assert.equal(vm.runInContext('serverStateLoaded',c),true);assert.equal(vm.runInContext('serverRecoveryPending',c),true);
  finish(null);assert.equal(await task,true);assert.equal(vm.runInContext('serverRecoveryPending',c),false);
 });
@@ -1885,10 +1962,8 @@ test('Non-admin background note saves may skip auto-distribution instead of gett
  assert.ok(server.includes("body.skipAutomatic===true&&(user.role==='ADMIN'||backgroundOnly)"));
 });
 test('Snapshot reads on one connection run sequentially, avoiding false query timeouts',()=>{
- const store=fs.readFileSync('crm-data.cjs','utf8');
- const start=store.indexOf('async function allData');assert.ok(start>=0);
- const body=store.slice(start,store.indexOf('\n}\n',start));
- assert.ok(!body.includes('Promise.all('));
+ const f=fixture();
+ return f.api.read(admin,{passive:true}).then(()=>assert.equal(f.maxConcurrentQueries,1));
 });
 test('Passive reads share one snapshot query and see CRM writes immediately',async()=>{
  const f=fixture();await f.api.write(admin,'cache-1',[change('customers',customer)]);
@@ -2556,6 +2631,37 @@ test('Accounting sees order history after deletion but cannot read unrelated per
  const snapshot=await f.api.read(admin,{passive:true,full:true});await f.api.write(admin,'audit-delete-order',[{key:'orders',id:order.id,base:snapshot.versions['orders/'+order.id],value:null}]);
  const page=await f.api.readAuditPage(actor,1,50,{ordersOnly:true,orderId:order.id});assert.ok(page.items.some(item=>item.action==='DELETE_ORDER'));assert.ok(page.items.every(item=>item.orderId===order.id));
  assert.equal((await f.api.readAuditPage(actor)).items.some(item=>item.id==='personnel-event'),false);
+});
+
+test('SQL audit fixture preserves scope, filters, legacy dedupe and deterministic pagination',async()=>{
+ const f=fixture();
+ f.db.orders.push({id:'o2'});
+ f.db.docs.push(
+  {collection:'audit',id:'sql-new',deleted:0,body:{id:'sql-new',source:'ORDER_SQL',requestId:'req-1',actorId:'sale',action:'UPDATE_ORDER',orderId:'o2',entity:'o2',orderCode:'NVT-o2',detail:'mới',at:'2026-10-10T00:00:00Z'}},
+  {collection:'audit',id:'legacy-copy',deleted:0,body:{id:'legacy-copy',requestId:'req-1',actorId:'sale',action:'UPDATE_ORDER',entity:'o2',orderCode:'NVT-o2',detail:'cũ',at:'2026-10-10 07:00:00'}},
+  {collection:'audit',id:'legacy-mismatch',deleted:0,body:{id:'legacy-mismatch',requestId:'req-2',actorId:'sale',action:'CREATE_ORDER',entity:'missing-order',orderId:'o2',at:'2026-10-09 10:00:00'}},
+  {collection:'audit',id:'personnel',deleted:0,body:{id:'personnel',actorId:'admin',action:'LOGIN',entity:'AUTH',at:'2026-10-11 10:00:00'}},
+  {collection:'audit',id:'same-time-b',deleted:0,body:{id:'same-time-b',actorId:'admin',action:'LOGIN',entity:'AUTH',at:'2026-10-12 10:00:00'}},
+  {collection:'audit',id:'same-time-a',deleted:0,body:{id:'same-time-a',actorId:'admin',action:'LOGIN',entity:'AUTH',at:'2026-10-12 10:00:00'}},
+  {collection:'audit',id:'missing-fields',deleted:0,body:{id:'missing-fields',actorId:'admin',at:null}},
+  {collection:'audit',id:'manager-event',deleted:0,body:{id:'manager-event',actorId:'manager',action:'LOGIN',entity:'AUTH',at:'2026-10-08 10:00:00'}},
+  {collection:'audit',id:'leader-event',deleted:0,body:{id:'leader-event',actorId:'leader',action:'LOGIN',entity:'AUTH',at:'2026-10-07 10:00:00'}}
+ );
+ const adminPage=await f.api.readAuditPage(admin,1,2,{});
+ assert.deepEqual(adminPage.items.map(item=>item.id),['same-time-b','same-time-a']);
+ assert.equal(adminPage.total,8);assert.equal(adminPage.hasMore,true);
+ const orderPage=await f.api.readAuditPage({id:'accountant',role:'ACCOUNTING'},1,50,{ordersOnly:true,orderId:'o2',action:'UPDATE_ORDER'});
+ assert.deepEqual(orderPage.items.map(item=>item.id),['sql-new']);
+ const salePage=await f.api.readAuditPage({id:'sale',role:'SALE'},1,50,{actorId:'admin'});
+ assert.equal(salePage.total,0);
+ assert.deepEqual((await f.api.readAuditPage({id:'manager',role:'MANAGER'},1,50,{})).items.map(item=>item.id),['manager-event']);
+ assert.deepEqual((await f.api.readAuditPage({id:'leader',role:'LEADER'},1,50,{})).items.map(item=>item.id),['leader-event']);
+ const invalidPage=await f.api.readAuditPage({id:'x',role:'UNASSIGNED'},1,50,{});
+ assert.equal(invalidPage.total,0);assert.deepEqual(invalidPage.items,[]);
+ const filtered=await f.api.readAuditPage(admin,1,1,{search:'NVT-o2',ordersOnly:true});
+ assert.equal(filtered.total,1);assert.equal(filtered.items[0].id,'sql-new');
+ const clamped=await f.api.readAuditPage(admin,'2.9','9999',{});
+ assert.equal(clamped.page,2);assert.equal(clamped.limit,200);
 });
 
 test('Marketing gets synchronized CRM notes and full call history but only public Sale identities',async()=>{
