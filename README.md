@@ -1,4 +1,8 @@
-# NVT AGENCY CRM
+# NVT AFFILIATE CRM — WEB 2
+
+Repository này là Web 2 và dùng remote Git2: `CRM-NVT-AGENCY-SITE2`.
+
+Landing page demo nhận khách: `/demo-crm-flow.html`. Form gửi các trường họ tên, Gmail và số điện thoại vào webhook CRM hiện tại.
 
 ## Cấu trúc thư mục
 

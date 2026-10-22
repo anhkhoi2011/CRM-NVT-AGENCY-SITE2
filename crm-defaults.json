@@ -409,9 +409,9 @@
   "websites": [
     {
       "id": "WEB-NVT",
-      "name": "NVT Agency",
-      "domain": "hoangphucacademy.vn",
-      "sourceUrl": "https://www.hoangphucacademy.vn/",
+      "name": "NVT AFFILIATE",
+      "domain": "nvtagencyaffiliate.com",
+      "sourceUrl": "https://nvtagencyaffiliate.com/",
       "status": "ACTIVE",
       "provider": "LANDING_API",
       "endpoint": "",
@@ -469,7 +469,7 @@
     "dataBotChatId": "",
     "memberBotToken": "",
     "memberBotChatId": "",
-    "webhookPublicBase": "https://nvtagency.top",
+    "webhookPublicBase": "https://nvtagencyaffiliate.com",
     "googleSheetsBackupUrl": "https://docs.google.com/spreadsheets/d/1Gs50FplPekASSHN7Ha2eXlG0je1AVPHtIA_bD_I1Pns/edit?gid=0#gid=0",
     "attendanceIp": "",
     "attendanceDeadline": "09:00",

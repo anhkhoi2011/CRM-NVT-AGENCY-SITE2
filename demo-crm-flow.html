@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Đăng ký nhận tư vấn | NVT Agency</title>
+<title>Đăng ký nhận tư vấn | NVT Affiliate</title>
 <style>
 :root{--ink:#172033;--muted:#667085;--line:#e5e7eb;--brand:#0d6ea8;--bg:#f4f8fb;--ok:#087443;--bad:#b42318}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0,#dff4ff,transparent 38%),var(--bg);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
@@ -13,7 +13,7 @@
 <body>
 <main class="wrap">
 <section class="card">
-<div class="brand">NVT AGENCY</div>
+<div class="brand">NVT AFFILIATE</div>
 <h1>Nhận thông tin tư vấn</h1>
 <p>Để lại thông tin, đội ngũ tư vấn sẽ liên hệ với bạn sớm nhất.</p>
 <form id="leadForm" novalidate>
@@ -28,6 +28,8 @@
 </main>
 <script>
 const form=document.getElementById('leadForm'),button=document.getElementById('submit'),status=document.getElementById('status');
+const webhookPath='/api/data-sources/webhook/ds-1789180581447-IIM6U3AAD1R/';
+const webhookUrl=location.hostname==='localhost'||location.hostname==='127.0.0.1'?webhookPath:`https://nvtagencyaffiliate.com${webhookPath}`;
 const setStatus=(message,kind)=>{status.textContent=message;status.className=`status show ${kind}`;};
 form.addEventListener('submit',async event=>{
 event.preventDefault();
@@ -37,7 +39,7 @@ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){setStatus('Gmail chưa đúng đ�
 if(phone.replace(/\D/g,'').length<9){setStatus('Số điện thoại chưa đúng định dạng.','bad');return;}
 button.disabled=true;button.textContent='Đang gửi...';
 try{
-const response=await fetch('/api/data-sources/webhook/ds-1789180581447-IIM6U3AAD1R/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,phone})});
+const response=await fetch(webhookUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,phone})});
 if(!response.ok)throw new Error(`HTTP ${response.status}`);
 form.reset();setStatus('Đã gửi thành công. Dữ liệu đã chuyển vào CRM demo.','ok');
 }catch(error){setStatus(`Chưa gửi được dữ liệu (${error.message}). Vui lòng thử lại.`,'bad');}

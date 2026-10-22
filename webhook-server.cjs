@@ -1,5 +1,5 @@
 /**
- * Server webhook + static cho CRM NVT Agency.
+ * Server webhook + static cho CRM NVT AFFILIATE.
  *
  * Chạy:  node webhook-server.cjs
  * Mặc định: http://localhost:4173  (bind 0.0.0.0 nên máy khác trong LAN vào được)
@@ -47,7 +47,7 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_INSTANCE = crypto.randomUUID();
 let demoStateVersion = 1;
-const BUILD_VERSION = '20261021-mobile-performance-1';
+const BUILD_VERSION = '20261022-site2-webhook-1';
 const REPO_ROOT = path.resolve(__dirname);
 const runtimeStorage = require('./runtime-storage.cjs');
 const runtimeHome = process.env.HOME || path.dirname(REPO_ROOT);
@@ -279,7 +279,7 @@ const demoState = {
   orders: [], products: DEMO_MODE ? structuredClone(require('./product-catalog.json')) : [], productCategories: DEMO_MODE ? [...new Set(require('./product-catalog.json').map(item => item.category))] : [], registrations: [],
   customFieldDefinitions: DEMO_MODE ? structuredClone(require('./crm-defaults.json').customFieldDefinitions) : [], customerFieldHistory: [], assignmentHistory: [],
   resubmissions: [], notes: [], imports: [], attendance: [], dataOffers: [],
-  traffic: [], tasks: [], notifications: [], audit: [], websites: [{ id: 'WEB-DEMO', webhookSlug: 'ds-1789180581447-IIM6U3AAD1R', name: 'Nguồn local', domain: 'localhost:4173', sourceUrl: 'http://localhost:4173/', status: 'ACTIVE' }],
+  traffic: [], tasks: [], notifications: [], audit: [], websites: [{ id: 'WEB-DEMO', webhookSlug: 'ds-1789180581447-IIM6U3AAD1R', name: 'NVT AFFILIATE', domain: 'nvtagencyaffiliate.com', sourceUrl: 'https://nvtagencyaffiliate.com/', status: 'ACTIVE' }],
   integrations: [], webhookPending: [], blacklistIps: [], blacklistEntries: [], brokerageMetrics: [], careGroups: [], expenses: [], courseConfigs: [], bankStatements: [], pnlCustomers: [], pnlDailyLogs: [], pnlWeeklySummaries: [],
   settings: { assignmentMode: 'BALANCED', leaderCanUpdate: true, leaderAttendanceRequired: true },
   leaderDistribution: { enabled: true, enabledLeaderIds: ['demo-leader'], weights: { 'demo-leader': 1 }, sourceRules: [] },
@@ -2053,7 +2053,7 @@ async function handleLeadsExportApi(request, response, url) {
   }
   filtered.sort((a, b) => (parseCrmTimestamp(b.updatedAt || b.updated_at || b.createdAt || b.created_at) || 0) - (parseCrmTimestamp(a.updatedAt || a.updated_at || a.createdAt || a.created_at) || 0));
   const total = filtered.length, start = exportAll ? 0 : (page - 1) * limit, pageItems = exportAll ? filtered : filtered.slice(start, start + limit);
-  const nextPageUrl = exportAll || start + limit >= total ? null : (() => { const params = new URLSearchParams({ page: String(page + 1), limit: String(limit) }); if (sinceRaw) params.set('since', sinceRaw); if (sourceFilter) params.set('source', sourceFilter); if(phoneFilter)params.set('phone',phoneFilter);return new URL('/api/leads/export?' + params.toString(), DEMO_MODE ? url.origin : 'https://nvtagency.top').toString(); })();
+  const nextPageUrl = exportAll || start + limit >= total ? null : (() => { const params = new URLSearchParams({ page: String(page + 1), limit: String(limit) }); if (sinceRaw) params.set('since', sinceRaw); if (sourceFilter) params.set('source', sourceFilter); if(phoneFilter)params.set('phone',phoneFilter);return new URL('/api/leads/export?' + params.toString(), DEMO_MODE ? url.origin : 'https://nvtagencyaffiliate.com').toString(); })();
   return sendJson(response, 200, { data: pageItems.map(customer => formatLeadPayload(customer, memberMap, ordersByCust, notesByCustomer)), total, page: exportAll ? 1 : page, limit: exportAll ? total : limit, next_page_url: nextPageUrl }, corsHeaders(request));
 }
 

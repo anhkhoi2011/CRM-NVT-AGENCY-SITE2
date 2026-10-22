@@ -142,7 +142,7 @@
     const banner=document.createElement('div');
     banner.id='customerJourneyBanner';
     banner.className='customer-journey-banner';
-    banner.innerHTML='<img src="./customer-journey.svg?v=20260917-panorama" alt="Hành trình khách hàng NVT Agency">';
+    banner.innerHTML='<img src="./customer-journey.svg?v=20260917-panorama" alt="Hành trình khách hàng NVT Affiliate">';
     firstTable.before(banner);
   }
     // Nhóm KẾ TOÁN & HOA HỒNG gồm đúng 4 mục trên sidebar theo mẫu chuẩn
@@ -1977,7 +1977,7 @@
             </div>
             <label style="display:block;margin-top:12px;font-size:12.5px;font-weight:800;color:#1e335f">
               Người gửi
-              <input data-telegram-host value="Ban Quản Trị NVT Agency">
+              <input data-telegram-host value="Ban Quản Trị NVT Affiliate">
             </label>
             <label style="display:block;margin-top:12px;font-size:12.5px;font-weight:800;color:#1e335f">
               Nội dung
@@ -2013,7 +2013,7 @@
         modal.querySelector('[data-telegram-content]').value=item.content;
         const timeInput=modal.querySelector('[data-telegram-time]');if(timeInput)timeInput.value=item.time||'';
         const linkInput=modal.querySelector('[data-telegram-link]');if(linkInput)linkInput.value=item.link||'';
-        const hostInput=modal.querySelector('[data-telegram-host]');if(hostInput)hostInput.value=item.host||'Ban Quản Trị NVT Agency';
+        const hostInput=modal.querySelector('[data-telegram-host]');if(hostInput)hostInput.value=item.host||'Ban Quản Trị NVT Affiliate';
         toggleTelegramMeeting(modal);
       };
       presetsContainer.appendChild(b);
@@ -2053,11 +2053,11 @@
     editor('Cài đặt thông báo',Object.entries(keys).map(([key,label])=>formField(label,`<input id="ref-${key}" type="${key.endsWith('Token')?'password':'text'}" autocomplete="off" value="${esc(data.settings[key]||'')}">`)).join(''),()=>api.settings(Object.fromEntries(Object.keys(keys).map(k=>[k,q('#ref-'+k).value.trim()]))));
   }
   const telegramTemplates={
-    meeting_weekly:{type:'MEETING',title:'Họp tổng kết tuần & Trao thưởng Top 1 Doanh số',content:'Toàn bộ nhân sự Sale và Leader có mặt đúng giờ để tổng kết kết quả kinh doanh tuần qua, phổ biến mục tiêu tuần mới và trao thưởng nóng cho các cá nhân xuất sắc.',time:'16:30 chiều nay',link:'meet.google.com/nvt-agency-meet',host:'Ban Giám Đốc NVT Agency',target:'ALL',icon:'📅',badge:'Lịch họp',desc:'Tổng kết số & trao thưởng',tone:'blue'},
-    reward_fast:{type:'REWARD',title:'Chính sách thưởng nóng: Chốt cọc trong vòng 2 giờ!',content:'Từ hôm nay, bất kỳ đơn hàng nào được Sale tiếp nhận và chốt cọc thành công trong vòng 2 tiếng sẽ được nhận THƯỞNG NÓNG 500.000 VNĐ + cộng thêm 5% hoa hồng trực tiếp!',time:'',link:'',host:'Ban Quản Trị NVT Agency',target:'SALE',icon:'⚡',badge:'Thưởng nóng',desc:'+5% hoa hồng trong 2h',tone:'green'},
+    meeting_weekly:{type:'MEETING',title:'Họp tổng kết tuần & Trao thưởng Top 1 Doanh số',content:'Toàn bộ nhân sự Sale và Leader có mặt đúng giờ để tổng kết kết quả kinh doanh tuần qua, phổ biến mục tiêu tuần mới và trao thưởng nóng cho các cá nhân xuất sắc.',time:'16:30 chiều nay',link:'meet.google.com/nvt-agency-meet',host:'Ban Giám Đốc NVT Affiliate',target:'ALL',icon:'📅',badge:'Lịch họp',desc:'Tổng kết số & trao thưởng',tone:'blue'},
+    reward_fast:{type:'REWARD',title:'Chính sách thưởng nóng: Chốt cọc trong vòng 2 giờ!',content:'Từ hôm nay, bất kỳ đơn hàng nào được Sale tiếp nhận và chốt cọc thành công trong vòng 2 tiếng sẽ được nhận THƯỞNG NÓNG 500.000 VNĐ + cộng thêm 5% hoa hồng trực tiếp!',time:'',link:'',host:'Ban Quản Trị NVT Affiliate',target:'SALE',icon:'⚡',badge:'Thưởng nóng',desc:'+5% hoa hồng trong 2h',tone:'green'},
     honor_bestseller:{type:'REWARD',title:'VINH DANH BEST SELLER TUẦN: BÙNG NỔ 120 TRIỆU DOANH SỐ!',content:'Nhiệt liệt biểu dương chiến binh xuất sắc đã cán mốc doanh số ấn tượng nhất tuần qua. Tinh thần kỷ luật và bám sát khách hàng của bạn là tấm gương cho toàn Agency noi theo! 🔥',time:'',link:'',host:'Ban Giám Đốc & Khối Kinh Doanh',target:'ALL',icon:'🏆',badge:'Vinh danh',desc:'Khen thưởng bão đơn tuần',tone:'amber'},
     stale_warning:{type:'WARNING',title:'CẢNH BÁO: XỬ LÝ DỨT ĐIỂM DATA NÓNG TỒN ĐỌNG TRƯỚC 18H00',content:'Hiện tại hệ thống phát hiện vẫn còn một số data nhận từ sáng chưa được cập nhật cuộc gọi hoặc ghi chú. Yêu cầu toàn bộ Sale liên hệ ngay trước 18h00 để tránh hệ thống tự động thu hồi về hàng chờ.',time:'Trước 18:00 hôm nay',link:'',host:'Bộ Phận Vận Hành & Trưởng Nhóm Sale',target:'SALE',icon:'⚠️',badge:'Cảnh báo',desc:'Yêu cầu dứt điểm trước 18h',tone:'red'},
-    morning_motivation:{type:'MOTIVATION',title:'CHÚC TOÀN THỂ NVT AGENCY TUẦN MỚI BÃO ĐƠN & BỨT PHÁ!',content:'Thị trường đang có những tín hiệu rất đẹp, data khách hàng quan tâm khóa học và chỉ báo đang đổ về liên tục. Chúc anh em Sale tuần này bội thu doanh số và đạt mốc thưởng cao nhất! 🚀',time:'',link:'',host:'Ban Lãnh Đạo Agency',target:'ALL',icon:'🚀',badge:'Động viên',desc:'Khí thế bứt phá đầu tuần',tone:'purple'},
+    morning_motivation:{type:'MOTIVATION',title:'CHÚC TOÀN THỂ NVT AFFILIATE TUẦN MỚI BÃO ĐƠN & BỨT PHÁ!',content:'Thị trường đang có những tín hiệu rất đẹp, data khách hàng quan tâm khóa học và chỉ báo đang đổ về liên tục. Chúc anh em Sale tuần này bội thu doanh số và đạt mốc thưởng cao nhất! 🚀',time:'',link:'',host:'Ban Lãnh Đạo Agency',target:'ALL',icon:'🚀',badge:'Động viên',desc:'Khí thế bứt phá đầu tuần',tone:'purple'},
     emergency_meet:{type:'MEETING',title:'HỌP KHẨN CẤP: TRIỂN KHAI CHIẾN DỊCH QUẢNG CÁO MỚI',content:'Họp khẩn toàn bộ Leader và Sale để cập nhật kịch bản chốt đơn cho luồng data mới từ TikTok và Google Ads.',time:'14:00 hôm nay (Bắt buộc)',link:'meet.google.com/nvt-khan-cap',host:'CEO & Marketing Director',target:'MANAGERS',icon:'🚨',badge:'Khẩn cấp',desc:'Họp Leader & Sale gấp',tone:'red'}
   };
   function toggleTelegramMeeting(root){
@@ -3484,8 +3484,8 @@
           <div class="ao-slip-items"><table><thead><tr><th scope="col">Sản phẩm / dịch vụ</th><th scope="col">Đơn giá</th></tr></thead><tbody><tr><td>${esc(productName)}</td><td>${money(a.subtotal)}</td></tr></tbody></table></div>
           <dl class="ao-slip-totals"><div><dt>VAT <span>(10%)</span></dt><dd>${money(a.vatAmount)}</dd></div><div class="ao-slip-total"><dt>Tổng thanh toán <small>(gồm VAT)</small></dt><dd>${money(a.total)}</dd></div></dl>
           <div class="ao-slip-payment">${alreadyPaid>0?'<div><span>Đã thanh toán trước đó</span><strong>'+money(alreadyPaid)+'</strong></div>':''}<div><span>${alreadyPaid>0?'Thanh toán tiếp lần này':a.remaining>0?'Thanh toán đặt cọc lần này':'Thanh toán lần này'}</span><strong>${money(a.collected)}</strong></div><div><span>Còn lại sau thanh toán</span><strong>${money(a.remaining)}</strong></div></div>
-          <div class="ao-slip-bank"><div><h4>THÔNG TIN CHUYỂN KHOẢN</h4><p>Ngân hàng <b>MB Bank</b></p><p>Số tài khoản <strong class="ao-slip-account">75725888888</strong></p><p class="ao-slip-owner">CONG TY TNHH NVT AGENCY ACADEMY</p><div class="ao-slip-description"><small>Nội dung chuyển khoản</small><b>${esc(paymentReference)}</b></div></div><div class="ao-slip-qr"><img src="${esc(qr)}" alt="QR chuyển khoản MB theo số tiền thanh toán lần này"><span>Quét mã để thanh toán</span></div></div>
-          <footer><b>Cảm ơn quý khách đã tin tưởng NVT Agency Academy!</b><span>Vui lòng chuyển đúng số tiền và nội dung bên trên.</span></footer>
+          <div class="ao-slip-bank"><div><h4>THÔNG TIN CHUYỂN KHOẢN</h4><p>Ngân hàng <b>MB Bank</b></p><p>Số tài khoản <strong class="ao-slip-account">75725888888</strong></p><p class="ao-slip-owner">CONG TY TNHH NVT AFFILIATE ACADEMY</p><div class="ao-slip-description"><small>Nội dung chuyển khoản</small><b>${esc(paymentReference)}</b></div></div><div class="ao-slip-qr"><img src="${esc(qr)}" alt="QR chuyển khoản MB theo số tiền thanh toán lần này"><span>Quét mã để thanh toán</span></div></div>
+          <footer><b>Cảm ơn quý khách đã tin tưởng NVT Affiliate Academy!</b><span>Vui lòng chuyển đúng số tiền và nội dung bên trên.</span></footer>
         </section>`;
   }
   function ensureAccountingOrderStyles(){

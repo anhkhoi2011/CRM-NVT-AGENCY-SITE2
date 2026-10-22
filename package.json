@@ -1,8 +1,8 @@
 {
-  "name": "nvt-agency-crm",
+  "name": "nvt-agency-crm-site2",
   "private": true,
   "version": "1.0.0",
-  "description": "NVT Agency CRM static app and webhook server",
+  "description": "NVT Agency CRM Web 2 static app and webhook server",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",

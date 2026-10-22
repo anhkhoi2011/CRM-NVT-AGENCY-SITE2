@@ -345,7 +345,7 @@ function initialState() {
     bankStatements: [],
     audit: [],
     websites: [
-      { id: 'WEB-NVT', name: 'NVT Agency', domain: 'hoangphucacademy.vn', sourceUrl: 'https://www.hoangphucacademy.vn/', status: 'ACTIVE', provider: 'LANDING_API', endpoint: '', externalAccountId: '', campaignId: '', formId: '', webhookSlug: 'ds-1789180581447-IIM6U3AAD1R', webhookUrlOverride: '', connectionStatus: 'PENDING_BACKEND', domainVerificationStatus: 'UNVERIFIED', credentialConfigured: false, credentialLast4: '', lastVerifiedAt: '', lastError: '', lastSync: 'Chưa đồng bộ' },
+      { id: 'WEB-NVT', name: 'NVT AFFILIATE', domain: 'nvtagencyaffiliate.com', sourceUrl: 'https://nvtagencyaffiliate.com/', status: 'ACTIVE', provider: 'LANDING_API', endpoint: '', externalAccountId: '', campaignId: '', formId: '', webhookSlug: 'ds-1789180581447-IIM6U3AAD1R', webhookUrlOverride: '', connectionStatus: 'PENDING_BACKEND', domainVerificationStatus: 'UNVERIFIED', credentialConfigured: false, credentialLast4: '', lastVerifiedAt: '', lastError: '', lastSync: 'Chưa đồng bộ' },
       { id: 'WEB-NVT-2', name: 'web 2 - 3 buổi Vùng Phản Ứng', domain: 'dautuhanghoa.tech', sourceUrl: 'https://dautuhanghoa.tech/', status: 'ACTIVE', provider: 'LANDING_API', endpoint: '', externalAccountId: '', campaignId: '', formId: '', webhookSlug: 'ds-1789611803019-I7Q0GRUTNAS', webhookUrlOverride: '', connectionStatus: 'PENDING_BACKEND', domainVerificationStatus: 'UNVERIFIED', credentialConfigured: false, credentialLast4: '', lastVerifiedAt: '', lastError: '', lastSync: 'Chưa đồng bộ' },
     ],
     integrations: [],
@@ -358,7 +358,7 @@ function initialState() {
     saleDistributionByLeader: {
 
     },
-    settings: { leaderCanUpdate: true, notifyMilestones: true, leaderAttendanceRequired: true, assignmentMode: 'MANUAL', saleAssignmentModes: {}, assignmentCursor: { leaders: 0, salesByTeam: {} }, slaMinutes: 30, customAccent: '#e8572a', fontFamily: 'aptos', navigationFontSize: 12, contentFontSize: 14, dataBotToken: '', dataBotChatId: '', memberBotToken: '', memberBotChatId: '', webhookPublicBase: 'https://nvtagency.top', googleSheetsBackupUrl: 'https://docs.google.com/spreadsheets/d/1Gs50FplPekASSHN7Ha2eXlG0je1AVPHtIA_bD_I1Pns/edit?gid=0#gid=0', attendanceIp: '', attendanceDeadline: '09:00', acceptTimeoutHours: 24, notifyAccountCreated: true, notifyDataReceived: true, emailNotificationsEnabled: true, brokeragePublishedPeriods: [] },
+    settings: { leaderCanUpdate: true, notifyMilestones: true, leaderAttendanceRequired: true, assignmentMode: 'MANUAL', saleAssignmentModes: {}, assignmentCursor: { leaders: 0, salesByTeam: {} }, slaMinutes: 30, customAccent: '#e8572a', fontFamily: 'aptos', navigationFontSize: 12, contentFontSize: 14, dataBotToken: '', dataBotChatId: '', memberBotToken: '', memberBotChatId: '', webhookPublicBase: 'https://nvtagencyaffiliate.com', googleSheetsBackupUrl: 'https://docs.google.com/spreadsheets/d/1Gs50FplPekASSHN7Ha2eXlG0je1AVPHtIA_bD_I1Pns/edit?gid=0#gid=0', attendanceIp: '', attendanceDeadline: '09:00', acceptTimeoutHours: 24, notifyAccountCreated: true, notifyDataReceived: true, emailNotificationsEnabled: true, brokeragePublishedPeriods: [] },
     security: {
       twoFactorEnabled: false,
       loginHistory: []
@@ -471,11 +471,16 @@ function normalizeWebsiteRecord(item) {
   const id = cleanId(item.id);
   if (!id) return null;
   const connectionStatus = ['UNCONFIGURED', 'PENDING_BACKEND', 'VERIFIED', 'ERROR'].includes(item.connectionStatus) ? item.connectionStatus : 'UNCONFIGURED';
+  const rawDomain = cleanText(item.domain || (() => { try { return new URL(cleanSourceUrl(item.sourceUrl)).hostname; } catch { return ''; } })(), '', 253).toLowerCase();
+  const isAffiliateWebsite = id === 'WEB-NVT' || rawDomain === 'hoangphucacademy.vn' || String(item.name || '').trim().toLowerCase() === 'nvt agency';
+  const displayName = isAffiliateWebsite ? 'NVT AFFILIATE' : dataTerminology(cleanText(item.name, 'Website', 200));
+  const displayDomain = isAffiliateWebsite ? 'nvtagencyaffiliate.com' : rawDomain;
+  const displaySourceUrl = isAffiliateWebsite ? 'https://nvtagencyaffiliate.com/' : cleanSourceUrl(item.sourceUrl);
   return {
     id,
-    name: dataTerminology(cleanText(item.name, 'Website', 200)),
-    domain: cleanText(item.domain || (() => { try { return new URL(cleanSourceUrl(item.sourceUrl)).hostname; } catch { return ''; } })(), '', 253).toLowerCase(),
-    sourceUrl: cleanSourceUrl(item.sourceUrl) || (cleanText(item.domain, '', 253) ? `https://${cleanText(item.domain, '', 253).replace(/^https?:\/\//, '').replace(/\/+$/, '')}/` : ''),
+    name: displayName,
+    domain: displayDomain,
+    sourceUrl: displaySourceUrl || (cleanText(item.domain, '', 253) ? `https://${cleanText(item.domain, '', 253).replace(/^https?:\/\//, '').replace(/\/+$/, '')}/` : ''),
     status: item.status === 'ACTIVE' && connectionStatus === 'VERIFIED' ? 'ACTIVE' : 'PAUSED',
     provider: ['LANDING_API', 'NOTIFICATION'].includes(item.provider) ? item.provider : 'LANDING_API',
     designatedSalesEnabled: item.provider !== 'NOTIFICATION' && item.designatedSalesEnabled === true,
@@ -499,7 +504,7 @@ function normalizeWebsiteRecord(item) {
 
 const WEBHOOK_SLUG_PATTERN = /^ds-\d{13}-[A-Z0-9]{11}$/;
 const WEBHOOK_SUFFIX_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const DEFAULT_WEBHOOK_BASE = 'https://nvtagency.top';
+const DEFAULT_WEBHOOK_BASE = 'https://nvtagencyaffiliate.com';
 
 function randomWebhookSuffix(length) {
   const cryptoRef = typeof crypto !== 'undefined' && crypto ? crypto : null;
@@ -536,13 +541,15 @@ function cleanWebhookOverride(value) {
 }
 
 function webhookPublicBase() {
-  return cleanWebhookBase(state.settings.webhookPublicBase, DEFAULT_WEBHOOK_BASE);
+  const configured = cleanWebhookBase(state.settings.webhookPublicBase, DEFAULT_WEBHOOK_BASE);
+  return configured === 'https://nvtagency.top' ? DEFAULT_WEBHOOK_BASE : configured;
 }
 
 function webhookUrlFor(website) {
   const slug = cleanWebhookSlug(website?.webhookSlug);
   if (!slug) return '';
-  return cleanWebhookOverride(website?.webhookUrlOverride) || `${webhookPublicBase()}/api/data-sources/webhook/${slug}/`;
+  const override = cleanWebhookOverride(website?.webhookUrlOverride);
+  return override && !override.startsWith('https://nvtagency.top/') ? override : `${webhookPublicBase()}/api/data-sources/webhook/${slug}/`;
 }
 
 
@@ -656,8 +663,8 @@ async function sendTestEmail() {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
       recipients: [recipient],
-      subject: 'NVT AGENCY - Email thử',
-      text: `Email thử từ NVT AGENCY lúc ${stamp()}.`
+      subject: 'NVT AFFILIATE - Email thử',
+      text: `Email thử từ NVT AFFILIATE lúc ${stamp()}.`
     })
   }).catch(() => null);
   toast(response?.ok ? 'Đã gửi email thử' : 'Chưa gửi được email. Kiểm tra Gmail App Password trên server.');
@@ -3930,7 +3937,7 @@ function openAdminBroadcastModal() {
       type: 'MEETING',
       target: 'ALL',
       title: 'Họp tổng kết tuần & Đánh giá hiệu suất KPI',
-      host: 'Ban Giám Đốc NVT Agency',
+      host: 'Ban Giám Đốc NVT Affiliate',
       meeting_link: 'Phòng họp Tầng 2 & Google Meet: meet.google.com/nvt-agency',
       content: '1. Đánh giá doanh số tuần qua.\n2. Tuyên dương cá nhân bứt phá.\n3. Tháo gỡ khó khăn về data nóng và chốt cọc hợp đồng.\n4. Đề ra mục tiêu tuần mới.'
     },
@@ -3938,14 +3945,14 @@ function openAdminBroadcastModal() {
       type: 'REWARD',
       target: 'SALE',
       title: 'Chính sách thưởng nóng: Chốt cọc trong 2h kể từ lúc nhận data',
-      host: 'Ban Giám Đốc NVT Agency',
+      host: 'Ban Giám Đốc NVT Affiliate',
       content: '🔥 Thưởng nóng ngay 500.000 VNĐ tiền mặt cho mỗi hợp đồng cọc thành công trong vòng 2 giờ kể từ khi bấm nhận data!\n⚡ Áp dụng cho toàn bộ Sales chốt cọc trong ngày hôm nay. Anh em tăng tốc bám sát khách hàng!'
     },
     honor_bestseller: {
       type: 'REWARD',
       target: 'ALL',
       title: 'Vinh danh Best Seller tuần - Bứt phá doanh số ấn tượng',
-      host: 'Ban Giám Đốc NVT Agency',
+      host: 'Ban Giám Đốc NVT Affiliate',
       content: '🎉 Xin chúc mừng bạn Nguyễn Văn A (Team Bão Đơn) đã xuất sắc cán mốc doanh thu 150 triệu trong tuần này!\n👏 Toàn Agency cùng gửi lời chúc mừng và lấy đó làm động lực thi đua bứt phá mục tiêu tháng!'
     },
     stale_warning: {
@@ -3959,14 +3966,14 @@ function openAdminBroadcastModal() {
       type: 'MOTIVATION',
       target: 'ALL',
       title: 'Chào ngày mới - Tốc độ bám khách tạo ra bão đơn',
-      host: 'Ban Quản Trị NVT Agency',
-      content: '☀️ Chào buổi sáng toàn thể anh em NVT Agency! Hôm nay dự kiến có hơn 50+ data khách hàng nóng đổ về từ các chiến dịch.\n🎯 Mục tiêu hôm nay: 100% data được tiếp cận trong 5 phút đầu tiên. Chúc cả nhà ngày mới bão đơn!'
+      host: 'Ban Quản Trị NVT Affiliate',
+      content: '☀️ Chào buổi sáng toàn thể anh em NVT Affiliate! Hôm nay dự kiến có hơn 50+ data khách hàng nóng đổ về từ các chiến dịch.\n🎯 Mục tiêu hôm nay: 100% data được tiếp cận trong 5 phút đầu tiên. Chúc cả nhà ngày mới bão đơn!'
     },
     emergency_meet: {
       type: 'MEETING',
       target: 'MANAGERS',
       title: 'Họp khẩn cấp Cấp Quản Lý: Điều phối nguồn data & Tối ưu chuyển đổi',
-      host: 'Ban Giám Đốc NVT Agency',
+      host: 'Ban Giám Đốc NVT Affiliate',
       meeting_link: 'Phòng họp VIP Tầng 3',
       content: 'Họp khẩn các Leader/Manager để rà soát tỷ lệ phản hồi data nóng của từng team và điều chỉnh tỷ trọng phân phối tự động.'
     },
@@ -3974,7 +3981,7 @@ function openAdminBroadcastModal() {
       type: 'POLICY',
       target: 'SALE',
       title: 'Quy định chuẩn thời gian tiếp cận khách hàng (SLA 5 phút)',
-      host: 'Ban Quản Trị NVT Agency',
+      host: 'Ban Quản Trị NVT Affiliate',
       content: 'Quy định mới bắt buộc: Tất cả data khách hàng phân phối về Telegram cá nhân phải được gọi điện lần 1 trong vòng 5-15 phút. Nếu quá hạn không liên hệ, hệ thống sẽ hạ điểm uy tín nhận data của Sale.'
     }
   };
@@ -4088,7 +4095,7 @@ function openAdminBroadcastModal() {
           </div>
         </div>
         <label class="form-field" style="grid-column:1/-1">Người chủ trì / Ban hành
-          <input id="bcHost" value="${escapeHtml(currentAccount.name)}" placeholder="VD: Ban Giám Đốc NVT Agency">
+          <input id="bcHost" value="${escapeHtml(currentAccount.name)}" placeholder="VD: Ban Giám Đốc NVT Affiliate">
         </label>
         <label class="form-field" style="grid-column:1/-1">Nội dung chi tiết
           <textarea id="bcContent" rows="4" required placeholder="Nhập nội dung chi tiết thông báo..."></textarea>
@@ -4096,7 +4103,7 @@ function openAdminBroadcastModal() {
       </div>
     </div>
 
-    <div class="credential-hint" style="margin-top:10px">⚡ Thông báo sẽ được <b>Bot Telegram NVT Agency</b> phát tức thì tới từng nhân viên theo nhóm đối tượng đã chọn.</div>
+    <div class="credential-hint" style="margin-top:10px">⚡ Thông báo sẽ được <b>Bot Telegram NVT Affiliate</b> phát tức thì tới từng nhân viên theo nhóm đối tượng đã chọn.</div>
     <div class="modal-actions" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
       <button type="button" class="button button-secondary" data-close-modal>Hủy</button>
       <button type="submit" class="button button-primary" style="background:#7c3aed;color:#fff">🚀 Bắn thông báo Telegram ngay</button>
@@ -5614,8 +5621,8 @@ function switchAuthMode(mode) {
   $('#registerTab')?.setAttribute('aria-selected', String(registering));
   const heading = $('.login-card h2');
   const description = $('#authDescription');
-  if (heading) heading.textContent = registering ? 'ĐĂNG KÝ TÀI KHOẢN' : 'ĐĂNG NHẬP NVT AGENCY';
-  if (description) description.textContent = registering ? 'TẠO TÀI KHOẢN NVT AGENCY ĐỂ TRUY CẬP HỆ THỐNG NỘI BỘ.' : 'ĐĂNG NHẬP ĐỂ TRUY CẬP HỆ THỐNG NỘI BỘ.';
+  if (heading) heading.textContent = registering ? 'ĐĂNG KÝ TÀI KHOẢN' : 'ĐĂNG NHẬP NVT AFFILIATE';
+  if (description) description.textContent = registering ? 'TẠO TÀI KHOẢN NVT AFFILIATE ĐỂ TRUY CẬP HỆ THỐNG NỘI BỘ.' : 'ĐĂNG NHẬP ĐỂ TRUY CẬP HỆ THỐNG NỘI BỘ.';
   if (registering) $('#registerPhone')?.focus(); else $('#loginPhone')?.focus();
 }
 
