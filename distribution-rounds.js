@@ -83,7 +83,7 @@
     return {id:null,config:next,changed,cursor};
   }
   function recipients(members,leaderConfig={},saleConfigs={}){
-    members=members.filter(p=>p.active!==false);
+    members=members.filter(p=>p.active!==false&&p.active!==0);
     const leaders=members.filter(p=>p.role==='LEADER'&&p.teamId&&(leaderConfig.enabledLeaderIds||[]).includes(p.id));
     const directSales=managerId=>members.filter(p=>p.role==='SALE'&&(p.leaderId===managerId||p.managerId===managerId&&!members.some(l=>l.role==='LEADER'&&l.id===p.leaderId)));
     for(const manager of members.filter(p=>p.role==='MANAGER')){
@@ -115,6 +115,26 @@
   if(manager&&(!configured||config.enabledSaleIds.includes(manager.id)))addGlobal({...manager,role:'SALE',actualRole:'MANAGER',managerRecipient:true,leaderId:leader.id,teamId:leader.teamId},config.weights?.[manager.id]);
  }
 
+    // Explicit system rounds are authoritative. Legacy team settings may still
+    // contain only the two people configured before the system round was saved.
+    // Include selections from queued rounds as well so preview and promotion
+    // use the same eligible roster, without enabling unselected round slots.
+    const global=saleConfigs.$;
+    const rounds=Array.isArray(global?.rounds)&&global.rounds.length?global.rounds:global?[global]:[];
+    const selected=new Set(rounds.flatMap(round=>Array.isArray(round.enabledSaleIds)?round.enabledSaleIds:[]));
+    for(const person of members){
+      if(!selected.has(person.id)||!['MANAGER','LEADER','SALE'].includes(person.role))continue;
+      if(person.role==='LEADER'){
+        addGlobal({...person,role:'SALE',actualRole:'LEADER',leaderId:person.id,teamLeaderRecipient:true},global?.weights?.[person.id]);
+      }else if(person.role==='MANAGER'){
+        addGlobal({...person,role:'SALE',actualRole:'MANAGER',managerRecipient:true,leaderId:null},global?.weights?.[person.id]);
+      }else{
+        const supervisor=members.find(member=>member.id===person.leaderId);
+        const leader=supervisor?.role==='LEADER'?supervisor:null;
+        const managerId=leader?.managerId||(supervisor?.role==='MANAGER'?supervisor.id:person.managerId)||null;
+        addGlobal({...person,leaderId:leader?.id||null,teamId:leader?.teamId||person.teamId||null,managerId,...(!leader&&managerId?{directManagerBranch:true}:{})},global?.weights?.[person.id]);
+      }
+    }
     return {people:globalRecipients.sort((a,b)=>a.id.localeCompare(b.id)),weights:globalWeights};
   }
   function cursorFrom(store={}){return store.global&&typeof store.global==='object'?store.global:store.salesByTeam?.global??store.global;}

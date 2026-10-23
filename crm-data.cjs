@@ -867,7 +867,7 @@ function automaticPending(data){
  const offered=new Set([...data.dataOffers.values()].filter(o=>o.status==='PENDING').map(o=>o.customerId));
  const waiting=[...data.customers.values()].filter(row=>!row.saleId&&!row.leaderId&&!row.teamId&&!row.managerId&&row.status!=='ARCHIVED'&&row.assignmentSource!=='WEBHOOK_DESIGNATED'&&!offered.has(row.id));
  if(waiting.some(row=>designatedWebsite(data,row)?.designatedSaleIds?.some(id=>{const member=data.members.get(id);return ['SALE','LEADER','MANAGER'].includes(member?.role)&&member.active!==false;})))return true;
- return config.enabled===true&&waiting.some(row=>!designatedWebsite(data,row))&&automaticLeaders(data,config).leaders.length>0;
+ return config.enabled===true&&waiting.some(row=>!designatedWebsite(data,row))&&(automaticLeaders(data,config).leaders.length>0||distributionRounds.recipients([...data.members.values()],config,data.saleDistributionByLeader.get('$')||{}).people.length>0);
 }
 function designatedWebsite(data,row){
  // Manual/imported customers with the same source are not webhook intake.
@@ -986,7 +986,7 @@ async function distributeAutomatic(c, data = null, options = {}) {
    count++;
    continue;
   }
-  if(!automatic||!leaders.length||row.assignmentSource==='WEBHOOK_DESIGNATED')continue;
+  if(!automatic||(!leaders.length&&!globalRecipients.length)||row.assignmentSource==='WEBHOOK_DESIGNATED')continue;
   const sourceRule = (config.sourceRules || []).find(rule => {
    if (rule.active === false || !leaders.some(leader => leader.id === rule.targetLeaderId)) return false;
    const value = rule.matchType === 'WEBSITE' ? row.websiteId : rule.matchType === 'CAMPAIGN' ? row.campaign : row.source;

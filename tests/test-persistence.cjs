@@ -2731,3 +2731,67 @@ test('Blacklist quarantine and approval roll back atomically when document write
  assert.equal(f.db.customers.length,0);
  assert.equal(f.db.docs.find(row=>row.collection==='blacklistEntries').body.status,'PENDING');
 });
+
+
+test('Selected 21-person round is not reduced to two legacy recipients',()=>{
+ const rounds=require('./distribution-rounds.js');
+ const members=[{id:'lead',role:'LEADER',teamId:'T',active:true},...Array.from({length:20},(_,i)=>({id:'s'+i,role:'SALE',leaderId:'lead',teamId:'T',active:true}))];
+ const ids=members.map(m=>m.id),weights=Object.fromEntries(ids.map(id=>[id,1]));
+ const config={rounds:[{id:'active',enabledSaleIds:['lead','s0'],knownMemberIds:ids,weights:{lead:1,s0:1}},{id:'queued',enabledSaleIds:ids,knownMemberIds:ids,weights}]};
+ const saleConfigs={$:config,lead:{enabledSaleIds:['s0'],weights:{lead:1,s0:1}}};
+ const roster=rounds.recipients(members,{enabledLeaderIds:['lead']},saleConfigs);
+ const views=rounds.preview(config,{index:0,ids:['lead','s0'],roundId:'active'},roster.people,'ROUND_ROBIN');
+ assert.equal(views[0].ids.length,2);
+ assert.equal(views[1].ids.length,21);
+ let cursor={index:2,ids:['lead','s0'],roundId:'active'},next=config;const assigned=[];
+ for(let i=0;i<21;i++){const step=rounds.take(next,cursor,roster.people,'ROUND_ROBIN');assigned.push(step.id);next=step.config;cursor=step.cursor;}
+ assert.deepEqual(assigned.slice().sort(),ids.slice().sort());
+ assert.equal(cursor.roundId,'queued');
+});
+
+test('Explicit round keeps hierarchy and excludes inactive or unselected people',()=>{
+ const rounds=require('./distribution-rounds.js');
+ const members=[{id:'m',role:'MANAGER',active:true},{id:'l',role:'LEADER',managerId:'m',teamId:'T',active:true},{id:'s',role:'SALE',leaderId:'l',teamId:'T',active:true},{id:'direct',role:'SALE',managerId:'m',active:true},{id:'off',role:'SALE',active:false},{id:'zero-active',role:'SALE',active:0},{id:'excluded',role:'SALE',active:true}];
+ const config={rounds:[{id:'one',enabledSaleIds:['m','l','s','direct','off','zero-active'],weights:{m:1,l:1,s:2,direct:1,off:1,'zero-active':1}}]};
+ const roster=rounds.recipients(members,{enabledLeaderIds:[]},{$:config,'manager:m':{enabledSaleIds:['excluded']}});
+ const byId=new Map(roster.people.map(m=>[m.id,m]));
+ assert.equal(byId.get('m')?.managerRecipient,true);
+ assert.equal(byId.get('l')?.teamLeaderRecipient,true);
+ assert.equal(byId.get('s')?.leaderId,'l');
+ assert.equal(byId.get('direct')?.directManagerBranch,true);
+ const view=rounds.preview(config,null,roster.people,'BALANCED')[0];
+ assert.deepEqual(view.ids.slice().sort(),['direct','l','m','s','s']);
+});
+
+test('SQL allocation uses all 21 selected round members despite stale team settings',async()=>{
+ const f=fixture();
+ const members=[{id:'lead',name:'Leader',role:'LEADER',teamId:'T',active:true},...Array.from({length:20},(_,i)=>({id:'s'+i,name:'Sale '+i,role:'SALE',leaderId:'lead',teamId:'T',active:true}))];
+ const ids=members.map(m=>m.id),weights=Object.fromEntries(ids.map(id=>[id,1]));
+ await f.api.write(admin,'21-person-round',[
+  ...members.map(m=>change('members',m)),
+  {key:'settings',id:'$',base:null,value:{assignmentMode:'ROUND_ROBIN'}},
+  {key:'leaderDistribution',id:'$',base:null,value:{enabled:true,enabledLeaderIds:['lead'],weights:{lead:1}}},
+  {key:'saleDistributionByLeader',id:'$',base:null,value:{$:{rounds:[{id:'all-21',enabledSaleIds:ids,knownMemberIds:ids,weights}]},lead:{enabledSaleIds:['s0'],weights:{lead:1,s0:1}}}},
+  ...Array.from({length:21},(_,i)=>change('customers',{...customer,id:'round21-'+String(i).padStart(2,'0'),saleId:null,leaderId:null,teamId:null}))
+ ]);
+ const state=(await f.api.read(admin,{passive:true})).state;
+ const recipients=state.assignmentHistory.filter(h=>h.source==='AUTO').map(h=>h.toSaleId||h.offeredSaleId);
+ assert.equal(recipients.length,21);
+ assert.deepEqual(Array.from(recipients).sort(),ids.slice().sort());
+ assert.equal(state.dataOffers.length,20);
+ assert.equal(state.settings.assignmentCursor.global.ids.length,21);
+});
+
+test('Explicit round assigns standalone selected people without a legacy Leader branch',async()=>{
+ const f=fixture();
+ await f.api.write(admin,'standalone-round',[
+  change('members',{id:'standalone',name:'Independent',role:'SALE',active:true}),
+  {key:'settings',id:'$',base:null,value:{assignmentMode:'ROUND_ROBIN'}},
+  {key:'leaderDistribution',id:'$',base:null,value:{enabled:true,enabledLeaderIds:[]}},
+  {key:'saleDistributionByLeader',id:'$',base:null,value:{$:{rounds:[{id:'independent',enabledSaleIds:['standalone'],knownMemberIds:['standalone'],weights:{standalone:1}}]}}},
+  change('customers',{...customer,id:'independent-customer',saleId:null,leaderId:null,teamId:null})
+ ]);
+ const state=(await f.api.read(admin,{passive:true})).state;
+ assert.equal(state.dataOffers.length,1);
+ assert.equal(state.dataOffers[0].saleId,'standalone');
+});
