@@ -67,6 +67,7 @@ function fixture(){
   }
   if(sql.startsWith('SELECT * FROM crm_documents WHERE collection IN'))return [structuredClone(db.docs.filter(row=>v.includes(row.collection)))];
   if(sql.includes('FROM system_settings'))return [[{setting_key:'crm_defaults_v1',setting_value:'true'}]];
+  if(sql.includes("SELECT id,deleted FROM crm_documents WHERE collection='customFieldDefinitions'"))return [db.docs.filter(d=>d.collection==='customFieldDefinitions').map(d=>({id:d.id,deleted:d.deleted||0}))];
   if(sql.includes("SELECT deleted FROM crm_documents WHERE collection='customFieldDefinitions'"))return [[{deleted:0}]];
   if(sql.includes('FROM users'))return [structuredClone(db.users)];
   if(sql.includes('FROM staff_attendance'))return [structuredClone(db.staffAttendance)];
@@ -120,6 +121,11 @@ test('Đọc nền không giữ khóa ghi và không chạy lại quét phân da
  const f=fixture();await f.api.prepare();f.events.length=0;
  await f.api.read(admin,{passive:true});
  assert.equal(f.events.includes('lock'),false);
+});
+test('Existing CRM field collections restore every CRM1 legacy field',async()=>{
+ const f=fixture();f.db.docs.push({collection:'customFieldDefinitions',id:'customerLevel',body:{id:'customerLevel'},deleted:0});await f.api.prepare();
+ const ids=new Set(f.db.docs.filter(row=>row.collection==='customFieldDefinitions'&&!row.deleted).map(row=>row.id));
+ for(const field of JSON.parse(fs.readFileSync(ROOT+'/crm-defaults.json','utf8')).customFieldDefinitions)assert.ok(ids.has(field.id),field.id);
 });
 test('Lỗi giữa giao dịch rollback cả projection và documents',async()=>{
  const f=fixture();f.fail();await assert.rejects(f.api.write(admin,'fail',[change('customers',customer)]),/failure/);assert.equal(f.db.customers.length,0);assert.equal(f.db.history.length,0);assert.ok(f.events.includes('rollback'));
@@ -200,7 +206,8 @@ test('Chỉ Admin, Leader và Manager được đổi tên khách trong phạm v
  const changes=keys.map(key=>change(key,key==='courseConfigs'?{id:'row-'+key,courseKey:'K01',trainerIds:[],leaderIds:[],rateSale:15,rateLeader:5,rateTrainer:15,rateCompany:65}:key==='brokerageMetrics'?{id:'row-'+key,memberId:'sale',leaderId:'lead',teamId:'T',period:'2026-09',basicLots:0,microLots:0,nanoLots:0,lotCommissionRate:0,indicatorCommissionRate:0,courseCommissionRate:0,vatRate:.1}:key==='hrProfiles'?{id:'sale',employeeId:'sale',fields:{cccd:'012345678901'},driveFiles:[]}: {id:'row-'+key,value:'giữ lâu dài'}));
  for(const key of f.api.OBJECTS)changes.push({key,id:'$',base:null,value:key==='productCategories'?['Dịch vụ']:{test:'giữ'}});
  await f.api.write(admin,'all',changes);let result=await f.api.read(admin);
- for(const key of keys)assert.equal(result.state[key].length,1,key);
+ const legacyFieldCount=JSON.parse(fs.readFileSync(ROOT+'/crm-defaults.json','utf8')).customFieldDefinitions.length;
+ for(const key of keys)assert.equal(result.state[key].length,key==='customFieldDefinitions'?legacyFieldCount+1:1,key);
  await f.api.write(admin,'delete',[{key:'notes',id:'row-notes',base:result.versions['notes/row-notes'],value:null}]);
  result=await f.api.read(admin);assert.equal(result.state.notes.length,0);assert.equal(f.db.history[1].changes_json[0].before.value,'giữ lâu dài');assert.equal(f.db.docs.find(r=>r.collection==='notes').deleted,1);
 });

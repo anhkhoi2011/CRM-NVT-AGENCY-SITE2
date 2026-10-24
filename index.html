@@ -2216,6 +2216,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
                 <tr>
                   <th>NGÀY DATA</th>
                   <th>KHÁCH HÀNG</th>
+                  <th>S&#7888; &#272;I&#7878;N THO&#7840;I</th>
                   <th>NGUỒN / LANDING PAGE</th>
                   <th>TEAM / LEADER</th>
                   <th>SALE PHỤ TRÁCH</th>
@@ -2225,6 +2226,7 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
                   <th>TÌNH TRẠNG NHẬN TÀI LIỆU</th>
                   <th>KẾT QUẢ CHĂM SÓC</th>
                   <th>TRẠNG THÁI</th>
+                  <th data-reference-amount-column="1">D&#7918; LI&#7878;U KH&Aacute;CH THAM KH&#7842;O</th>
                   <th hidden aria-hidden="true">GHI CHÚ MỚI NHẤT</th>
                   <th>THAO TÁC</th>
                 </tr>
@@ -4161,6 +4163,28 @@ body:not(.reference-ready) > .bg-aura { visibility:hidden!important; }
           <select id="newCustSale">
             <option value="">— Chưa phân Sale —</option>
           </select>
+        </div>
+      </div>
+      <div class="grid-2-col" id="newCustLegacyFields">
+        <div class="form-group">
+          <label>G&#7885;i k&#7871;t n&#7889;i</label>
+          <select id="newCustCallStatus"></select>
+        </div>
+        <div class="form-group">
+          <label>T&#236;nh tr&#7841ng nh&#7853;n t&#224;i li&#7879;u</label>
+          <select id="newCustDocumentStatus"></select>
+        </div>
+        <div class="form-group">
+          <label>K&#7871;t qu&#7843; ch&#259;m s&#243;c</label>
+          <select id="newCustResult"></select>
+        </div>
+        <div class="form-group">
+          <label>Nhu c&#7847;u / Mong mu&#7889;n</label>
+          <select id="newCustNeeds" multiple size="3"></select>
+        </div>
+        <div class="form-group">
+          <label>Kho&#225; h&#7885;c</label>
+          <select id="newCustCourse" multiple size="3"></select>
         </div>
       </div>
     </div>

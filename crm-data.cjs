@@ -104,8 +104,19 @@ async function seedDefaults(){
  try{
   await c.beginTransaction();await c.query('SELECT id FROM crm_write_lock WHERE id=1 FOR UPDATE');
   const [existing]=await c.query("SELECT setting_key,setting_value FROM system_settings");
-  // customerLevel is mandatory. Repair legacy databases where the collection exists but this record is missing.
+  // customerLevel is mandatory. Repair legacy databases where this record was archived or missing.
   const defaults=require('./crm-defaults.json');
+  // Older CRM databases may already have a customFieldDefinitions collection
+  // containing only customerLevel. Seed each CRM1 field independently so the
+  // remaining legacy fields are restored without replacing admin customizations.
+  const legacyFields=Array.isArray(defaults.customFieldDefinitions)?defaults.customFieldDefinitions:[];
+  if(legacyFields.length){
+   const [rows]=await c.execute("SELECT id,deleted FROM crm_documents WHERE collection='customFieldDefinitions'");
+   const present=new Set(rows.map(row=>String(row.id)));
+   for(const field of legacyFields){
+    if(!present.has(String(field.id)))await c.execute("INSERT INTO crm_documents(collection,id,body,deleted) VALUES (?,?,?,?)",['customFieldDefinitions',field.id,JSON.stringify(field),0]);
+   }
+  }
   const requiredLevel=defaults.customFieldDefinitions?.find(field=>field.id==='customerLevel');
   if(requiredLevel){
    const [rows]=await c.execute("SELECT deleted FROM crm_documents WHERE collection='customFieldDefinitions' AND id='customerLevel' LIMIT 1");

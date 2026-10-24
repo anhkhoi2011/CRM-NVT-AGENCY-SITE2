@@ -197,7 +197,7 @@ window.setCarePage = setCarePage;
     if (document.getElementById('meterTotalCust')) document.getElementById('meterTotalCust').style.width = `${((connectedCust/totalCust)*100).toFixed(1)}%`;
 
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 40px; color: var(--text-muted);"><b>Không tìm thấy khách hàng</b><div style="font-size: 11px; margin-top: 4px;">Hãy thử từ khóa hoặc bộ lọc khác.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; padding: 40px; color: var(--text-muted);"><b>Không tìm thấy khách hàng</b><div style="font-size: 11px; margin-top: 4px;">Hãy thử từ khóa hoặc bộ lọc khác.</div></td></tr>`;
       renderCustomerPagination(0);
       return;
     }
@@ -220,6 +220,7 @@ window.setCarePage = setCarePage;
         ? escapeCustomerLabel(personnel.sale)
         : '<span style="color: var(--text-muted); font-style: italic;">Chưa phân Sale</span>';
       const profileLabel = escapeCustomerLabel(`Xem hồ sơ ${c.name}`);
+      const referenceAmount = c.referenceAmount ?? c.customFields?.referenceAmount ?? c.customFields?.customerReferenceAmount;
 
       return `<tr>
         <td style="font-family: var(--font-mono); font-size: 11px; white-space: nowrap;">${c.createdAt}</td>
@@ -229,6 +230,7 @@ window.setCarePage = setCarePage;
           </button>
           <span>${saleLabel}</span>
         </div></td>
+        <td data-phone-column="1"><span style="font-family: var(--font-mono); font-weight: 700;">${escapeCustomerLabel(c.phone || "\u2014")}</span></td>
         <td><span style="color: #2563eb; font-weight: 700;">${c.source}</span></td>
         <td>${personnel.teamLeader ? escapeCustomerLabel(personnel.teamLeader) : '<span style="color: var(--text-muted); font-style: italic;">Chưa phân Team / Leader</span>'}</td>
         <td>${saleLabel}</td>
@@ -245,6 +247,7 @@ window.setCarePage = setCarePage;
         <td>${c.docStatus}</td>
         <td><span style="font-weight: 600;">${c.careResult}</span></td>
         <td>${statusChip}</td>
+        <td data-reference-amount-column="1"><span style="font-family: var(--font-mono); font-weight: 700;">${referenceAmount == null || referenceAmount === "" ? "\u2014" : Number(referenceAmount).toLocaleString("vi-VN")}</span></td>
         <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${c.note}">${c.note}</td>
         <td style="white-space: nowrap;">
           <button class="btn-secondary" style="padding: 4px 8px; font-size: 11px; border-radius: 6px;" onclick="openDrawerForCust('${c.id}')">Hồ sơ</button>
